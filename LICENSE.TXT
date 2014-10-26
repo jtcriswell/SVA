@@ -44,7 +44,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS WITH THE
 SOFTWARE.
 
 ==============================================================================
-Copyrights and Licenses for Third Party Software Distributed with LLVM:
+Copyrights and Licenses for Third Party Software Distributed with SVA:
 ==============================================================================
 
 The SVA software contains code written by third parties.  Such software will
