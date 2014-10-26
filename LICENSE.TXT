@@ -48,9 +48,11 @@ Copyrights and Licenses for Third Party Software Distributed with LLVM:
 ==============================================================================
 
 The SVA software contains code written by third parties.  Such software will
-have its own individual LICENSE.TXT file in the directory in which it appears.
-This file will describe the copyrights, license, and restrictions which apply
-to that code (or where such notices can be found within the code).
+typically have its own individual LICENSE.TXT file in the directory in which
+it appears.  This file will describe the copyrights, license, and restrictions
+which apply to that code (or where such notices can be found within the code).
+In some instances, a source file will indicate additional or alternative
+copyrights and licenses for the code contained therein.
 
 The disclaimer of warranty in the University of Illinois Open Source License
 applies to all code in the SVA Distribution, and nothing in any of the
@@ -65,3 +67,4 @@ Program             Directory
 -------             ---------
 llvm                SVA/autoconf
 FreeBSD             SVA/FreeBSD9
+SVA                 SVA/lib

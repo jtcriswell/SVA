@@ -1,0 +1,27 @@
+This file is a partial list of people who have contributed to the SVA
+project.  If you have contributed a patch or made some other contribution to
+SVA, please let us know!
+
+The list is sorted by surname and formatted to allow easy grepping and
+beautification by scripts.  The fields are: name (N), email (E), web-address
+(W), PGP key ID and fingerprint (P), description (D), and snail-mail address
+(S).
+
+N: Vikram Adve
+W: http://www.cs.illinois.edu/~vadve/
+D: Provider of much wisdom and motivator for SVA
+
+N: John Criswell
+W: http://www.cs.rochester.edu/u/criswell
+D: Lead SVA maintainer, author and architect of SVA, Virtual Ghost, and KCoFI
+
+N: Nathan Dautenhahn
+D: FreeBSD port to SVA, MMU code for x86-64
+
+N: Nicolas Geoffray
+D: MMU code for SVA-OS for x86
+
+N: Andrew Lenharth
+W: http://www.lenharth.org/~andrewl/
+D: Improvements and optimizations for original SVA prototype
+
