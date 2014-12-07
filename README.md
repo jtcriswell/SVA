@@ -27,7 +27,17 @@ llvm:
   The source code for the modified version of LLVM used for compiling the
   SVA-OS run-time library and the FreeBSD kernel.
 
-FreeBSD9:
-  The source code for the FreeBSD 9.0 kernel and user-space.  The kernel has
-  been ported to use SVA-OS.
+freebsd9_patch_r15130:
+  A patch that will modify the FreeBSD 9.0 kernel source code to work on SVA.
+
+How to Compile SVA:
+-------------------
+
+Give that $SRC_ROOT is the location of the SVA source code, do the following:
+
+o Build the modified Clang/LLVM compiler
+  o Create a sub-directory in which to compile LLVM.  Call this $LLVM_OBJ_ROOT.
+  o cd $LLVM_OBJ_ROOT
+  o $SRC_ROOT/llvm/configure --enable-targets=host
+  o gmake
 
