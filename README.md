@@ -1,5 +1,5 @@
 SVA: Secure Virtual Architecture
-===============================
+================================
 
 Introduction:
 =============
@@ -16,6 +16,10 @@ License:
 ========
 The file LICENSE.TXT describes the licenses under which the source code is
 covered.
+
+Authors:
+========
+The file CREDITS.TXT lists individual authors of the SVA source code.
 
 Source Code Layout:
 ===================
