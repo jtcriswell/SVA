@@ -16,6 +16,7 @@ W: http://www.cs.rochester.edu/u/criswell
 D: Lead SVA maintainer, author and architect of SVA, Virtual Ghost, and KCoFI
 
 N: Nathan Dautenhahn
+W: http://nathandautenhahn.com
 D: FreeBSD port to SVA, MMU code for x86-64
 
 N: Nicolas Geoffray
