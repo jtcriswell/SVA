@@ -41,11 +41,11 @@ Give that $SRC_ROOT is the location of the SVA source code, do the following:
 
 o Build the modified Clang/LLVM compiler
 
-  o Create a sub-directory in which to compile LLVM.  Call this $LLVM_OBJ_ROOT.
+  - Create a sub-directory in which to compile LLVM.  Call this $LLVM_OBJ_ROOT.
 
-  o cd $LLVM_OBJ_ROOT
+  - cd $LLVM_OBJ_ROOT
 
-  o $SRC_ROOT/llvm/configure --enable-targets=host
+  - $SRC_ROOT/llvm/configure --enable-targets=host
 
-  o gmake
+  - gmake
 
