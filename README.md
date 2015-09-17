@@ -37,7 +37,7 @@ freebsd9_patch_r15130:
 How to Compile SVA:
 -------------------
 
-Give that $SRC_ROOT is the location of the SVA source code, do the following:
+Given that $SRC_ROOT is the location of the SVA source code, do the following:
 
 o Build the modified Clang/LLVM compiler
 
