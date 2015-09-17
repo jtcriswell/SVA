@@ -49,3 +49,25 @@ o Build the modified Clang/LLVM compiler
 
   - gmake
 
+o Build the SVA-OS run-time library
+
+  - Change directory to the SVA subdirectory in the SVA source code
+
+  - Compile the SVA-OS run-time library with the modified Clang/LLVM compiler:
+
+  - make CC=$LLVM_OBJ_ROOT/Release+Asserts/bin/clang \
+         CXX=$LLVM_OBJ_ROOT/Release+Asserts/bin/clang++ \
+         CPP=$LLVM_OBJ_ROOTRelease+Asserts/bin/clang-cpp
+
+o Download and extract the FreeBSD 9.0 source code:
+
+  -  fetch ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/amd64/9.0-RELEASE/src.txz
+
+  - xzcat src.gxz | tar -xvf -
+
+o Apply the SVA patch to the FreeBSD source code
+
+  - cd usr/src
+
+  - patch -p0 < ../../freebsd9_patch_r15130
+
