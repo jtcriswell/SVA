@@ -34,34 +34,34 @@ llvm:
 freebsd9_patch_r15130:
   A patch that will modify the FreeBSD 9.0 kernel source code to work on SVA.
 
+autoconf:
+  The source code to the AutoConf configure script.
+
 How to Compile SVA:
 -------------------
 
 Given that $SRC_ROOT is the location of the SVA source code, do the following:
 
-o Build the modified Clang/LLVM compiler
+o Run the configure script in the source tree to create make.conf
 
-  - Create a sub-directory in which to compile LLVM.  Call this $LLVM_OBJ_ROOT.
+  - cd $SRC_ROOT
 
-  - cd $LLVM_OBJ_ROOT
+  - ./configure --enable-targets=host
 
-  - $SRC_ROOT/llvm/configure --enable-targets=host
+o Change directory to the llvm directory and Build the modified Clang/LLVM
+  compiler.  Be sure to use GNU Make (gmake):
 
-  - gmake
+  - cd llvm ; gmake
 
-o Build the SVA-OS run-time library
+o Change directory to the SVA-OS subdirectory and Build the SVA-OS run-time
+  library
 
-  - Change directory to the SVA subdirectory in the SVA source code
-
-  - Compile the SVA-OS run-time library with the modified Clang/LLVM compiler:
-
-  - make CC=$LLVM_OBJ_ROOT/Release+Asserts/bin/clang \
-         CXX=$LLVM_OBJ_ROOT/Release+Asserts/bin/clang++ \
-         CPP=$LLVM_OBJ_ROOTRelease+Asserts/bin/clang-cpp
+  - cd ../SVA ; make
 
 o Download and extract the FreeBSD 9.0 source code:
 
-  -  fetch ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/amd64/9.0-RELEASE/src.txz
+  - cd ..
+  - fetch ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/amd64/9.0-RELEASE/src.txz
 
   - xzcat src.gxz | tar -xvf -
 
@@ -70,16 +70,6 @@ o Apply the SVA patch to the FreeBSD source code
   - cd usr/src
 
   - patch -p0 < ../../freebsd9_patch_r15130
-
-o Modify $SRC_ROOT/make.config so that
-
-  - The CC variable is set to $LLVM_OBJ_ROOT/Release+Asserts/bin/clang -I$SRC_ROOT/SVA/include
-
-  - The CXX variable is set to $LLVM_OBJ_ROOT/Release+Asserts/bin/clang++ -I$SRC_ROOT/SVA/include
-
-  - The CPP variable is set to $LLVM_OBJ_ROOT/Release+Asserts/bin/clang-cpp -I$SRC_ROOT/SVA/include
-
-  - The CFLAGS variable include the text -I$SRC_ROOT/SVA/include
 
 o Build the kernel, setting INSTKERNNAME to the name of the kernel
 
