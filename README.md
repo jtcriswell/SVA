@@ -71,3 +71,21 @@ o Apply the SVA patch to the FreeBSD source code
 
   - patch -p0 < ../../freebsd9_patch_r15130
 
+o Modify $SRC_ROOT/make.config so that
+
+  - The CC variable is set to $LLVM_OBJ_ROOT/Release+Asserts/bin/clang -I$SRC_ROOT/SVA/include
+
+  - The CXX variable is set to $LLVM_OBJ_ROOT/Release+Asserts/bin/clang++ -I$SRC_ROOT/SVA/include
+
+  - The CPP variable is set to $LLVM_OBJ_ROOT/Release+Asserts/bin/clang-cpp -I$SRC_ROOT/SVA/include
+
+  - The CFLAGS variable include the text -I$SRC_ROOT/SVA/include
+
+o Build the kernel, setting INSTKERNNAME to the name of the kernel
+
+  - make buildkernel INSTKERNNAME=svaKernel __MAKE_CONF=$SRC_ROOT/make.conf
+
+o As the root user, install the kernel
+
+  - make installkernel INSTKERNNAME=svaKernel __MAKE_CONF=$SRC_ROOT/make.conf
+
