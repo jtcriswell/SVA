@@ -63,7 +63,7 @@ o Download and extract the FreeBSD 9.0 source code:
   - cd ..
   - fetch ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/amd64/9.0-RELEASE/src.txz
 
-  - xzcat src.gxz | tar -xvf -
+  - xzcat src.txz | tar -xvf -
 
 o Apply the SVA patch to the FreeBSD source code
 
