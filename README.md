@@ -89,3 +89,25 @@ o As the root user, install the kernel
 
   - make installkernel INSTKERNNAME=svaKernel __MAKE_CONF=$SRC_ROOT/make.conf
 
+Incremental Kernel Compiles
+---------------------------
+
+Once the FreeBSD SVA kernel has been compiled, you can add the following
+four lines in make.conf to avoid reconfiguring the kernel and to prevent the
+kernel from being rebuilt from scratch:
+
+NO_KERNELCLEAN=true
+NO_KERNELCONFIG=true
+NO_KERNELDEPEND=true
+NO_KERNELOBJ=true
+
+Note that the FreeBSD Makefiles do not detect when the SVA Clang compiler
+has been modified.  If you modify the compiler, you will need to rebuild the
+kernel from scratch.
+
+Running the SVA FreeBSD Kernel
+------------------------------
+The SVA FreeBSD kernel only runs in single-user mode at present.  When booting,
+exit to the boot loader prompt (option 2 by default in the FreeBSD boot
+loader) and use "boot <kernelname> -s" to boot in single user mode.
+
