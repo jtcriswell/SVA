@@ -18,6 +18,9 @@
 
 #include <limits.h>
 
+/* Let the configure script determine if we enable Virtual Ghost */
+#undef VG
+
 /* Determine whether the virtual ghost features are enabled */
 #ifdef VG
 static const unsigned char vg = 1;
