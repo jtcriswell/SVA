@@ -42,11 +42,12 @@ How to Compile SVA:
 
 Given that $SRC_ROOT is the location of the SVA source code, do the following:
 
-o Run the configure script in the source tree to create make.conf
+o Run the configure script in the source tree to create make.conf.  If you want
+  to enable the Virtual Ghost features, add the --enable-vg option.
 
   - cd $SRC_ROOT
 
-  - ./configure --enable-targets=host
+  - ./configure --enable-targets=host  --enable-vg
 
 o Change directory to the llvm directory and Build the modified Clang/LLVM
   compiler.  Be sure to use GNU Make (gmake):
