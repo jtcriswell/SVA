@@ -58,9 +58,16 @@ o Change directory to the SVA-OS subdirectory and Build the SVA-OS run-time
 
   - cd ../SVA ; make
 
+o If you do not have write access to /usr/obj, create a directory for storing
+  object files created during the kernel build and set the MAKEOBJDIRPREFIX
+  variable to refer to this directory:
+
+  - cd $SRC_ROOT ; mkdir obj
+
+  - MAKEOBJDIRPREFIX=$SRC_ROOT/obj
+
 o Download and extract the FreeBSD 9.0 source code:
 
-  - cd ..
   - fetch ftp://ftp-archive.freebsd.org/pub/FreeBSD-Archive/old-releases/amd64/9.0-RELEASE/src.txz
 
   - xzcat src.txz | tar -xvf -
@@ -70,14 +77,6 @@ o Apply the SVA patch to the FreeBSD source code
   - cd usr/src
 
   - patch -p0 < ../../freebsd9_patch_r15130
-
-o If you do not have write access to /usr/obj, create a directory for storing
-  object files created during the kernel build and set the MAKEOBJDIRPREFIX
-  variable to refer to this directory:
-
-  - cd $SRC_ROOT ; mkdir obj
-
-  - MAKEOBJDIRPREFIX=$SRC_ROOT/obj
 
 o Build the kernel, setting INSTKERNNAME to the name of the kernel
 
