@@ -32,12 +32,12 @@ WITHOUT_ZFS=TRUE
 #
 # Configure the build to use the SVA Clang compiler
 #
-CC=LLVMOBJROOT/bin/clang -ISVASRCROOT/SVA/include
-CXX=LLVMOBJROOT/bin/clang++ -ISVASRCROOT/SVA/include
-CPP=LLVMOBJROOT/bin/clang-cpp -ISVASRCROOT/SVA/include
+CC=@abs_top_srcdir@/llvm/Release+Asserts/bin/clang -I@abs_top_srcdir@/SVA/include
+CXX=@abs_top_srcdir@/llvm/Release+Asserts/bin/clang++ -I@abs_top_srcdir@/SVA/include
+CPP=@abs_top_srcdir@/llvm/Release+Asserts/bin/clang-cpp -I@abs_top_srcdir@/SVA/include
 
 #
 # Include SVA header files
 #
-CFLAGS+=-ISVASRCROOT/SVA/include
+CFLAGS+=-I@abs_top_srcdir@/SVA/include
 
