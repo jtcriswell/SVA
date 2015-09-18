@@ -68,3 +68,4 @@ Program             Directory
 llvm                SVA/autoconf
 FreeBSD             SVA/FreeBSD9
 SVA                 SVA/lib
+install-sh          .
