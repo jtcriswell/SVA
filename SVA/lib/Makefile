@@ -1,15 +1,11 @@
 #
 # Makefile
 #
+
 #
-
-# Location of the LLVM Tools
-#LLVMTOOLS=/home/dautenh1/projects/sva/sva.svn/llvm
-#LLVMTOOLS=$(HOME)/box/x86/llvm-caddis
-
-#CC=${LLVMTOOLS}/Release+Asserts/bin/clang
-#CXX=${LLVMTOOLS}/Release+Asserts/bin/clang++
-#CPP=${LLVMTOOLS}/Release+Asserts/bin/clang-cpp
+# Include make.conf to configure the locations of the compiler
+#
+include ../../make.conf
 
 CFLAGS := -I../include -O2 -fno-omit-frame-pointer -mno-aes -mno-avx -mcmodel=kernel -mno-red-zone -mno-mmx -msoft-float  -fno-asynchronous-unwind-tables -ffreestanding -Xclang -backend-option -Xclang -x86-add-cfi
 
