@@ -71,6 +71,14 @@ o Apply the SVA patch to the FreeBSD source code
 
   - patch -p0 < ../../freebsd9_patch_r15130
 
+o If you do not have write access to /usr/obj, create a directory for storing
+  object files created during the kernel build and set the MAKEOBJDIRPREFIX
+  variable to refer to this directory:
+
+  - cd $SRC_ROOT ; mkdir obj
+
+  - MAKEOBJDIRPREFIX=$SRC_ROOT/obj
+
 o Build the kernel, setting INSTKERNNAME to the name of the kernel
 
   - make buildkernel INSTKERNNAME=svaKernel __MAKE_CONF=$SRC_ROOT/make.conf
