@@ -1,0 +1,6261 @@
+diff --git a/sys/amd64/amd64/amd64_mem.c b/sys/amd64/amd64/amd64_mem.c
+index fd96eba..e1b1c81 100644
+--- a/sys/amd64/amd64/amd64_mem.c
++++ b/sys/amd64/amd64/amd64_mem.c
+@@ -27,6 +27,11 @@
+ #include <sys/cdefs.h>
+ __FBSDID("$FreeBSD: release/9.0.0/sys/amd64/amd64/amd64_mem.c 217506 2011-01-17 17:30:35Z jkim $");
+ 
++#include "opt_sva_mmu.h"
++#ifdef SVA_MMU
++#include <sva/mmu_intrinsics.h>
++#endif
++
+ #include <sys/param.h>
+ #include <sys/kernel.h>
+ #include <sys/systm.h>
+@@ -319,7 +324,11 @@ amd64_mrstoreone(void *arg)
+ 
+ 	/* Disable caches (CD = 1, NW = 0). */
+ 	cr0 = rcr0();
++#ifdef SVA_MMU
++	sva_load_cr0((cr0 & ~CR0_NW) | CR0_CD);
++#else
+ 	load_cr0((cr0 & ~CR0_NW) | CR0_CD);
++#endif
+ 
+ 	/* Flushes caches and TLBs. */
+ 	wbinvd();
+@@ -399,7 +408,11 @@ amd64_mrstoreone(void *arg)
+ 	wrmsr(MSR_MTRRdefType, rdmsr(MSR_MTRRdefType) | MTRR_DEF_ENABLE);
+ 
+ 	/* Restore caches and PGE. */
++#ifdef SVA_MMU
++	sva_load_cr0(cr0);
++#else
+ 	load_cr0(cr0);
++#endif
+ 	load_cr4(cr4);
+ 
+ 	critical_exit();
+diff --git a/sys/amd64/amd64/apic_vector.S b/sys/amd64/amd64/apic_vector.S
+index f6f74d6..d14b3d8 100644
+--- a/sys/amd64/amd64/apic_vector.S
++++ b/sys/amd64/amd64/apic_vector.S
+@@ -43,6 +43,8 @@
+ 
+ #include "assym.s"
+ 
++#include <sva/cfi.h>
++
+ /*
+  * I/O Interrupt Entry Point.  Rather than having one entry point for
+  * each interrupt source, we use one entry point for each 32-bit word
+@@ -64,6 +66,7 @@ IDTVEC(vec_name) ;							\
+ 	movq	%rsp, %rsi	;                                       \
+ 	movl	%eax, %edi ;	/* pass the IRQ */			\
+ 	call	lapic_handle_intr ;					\
++	RETTARGET ; \
+ 1: ;									\
+ 	MEXITCOUNT ;							\
+ 	jmp	doreti
+@@ -101,6 +104,7 @@ IDTVEC(timerint)
+ 	FAKE_MCOUNT(TF_RIP(%rsp))
+ 	movq	%rsp, %rdi
+ 	call	lapic_handle_timer
++	RETTARGET
+ 	MEXITCOUNT
+ 	jmp	doreti
+ 
+@@ -113,6 +117,7 @@ IDTVEC(cmcint)
+ 	PUSH_FRAME
+ 	FAKE_MCOUNT(TF_RIP(%rsp))
+ 	call	lapic_handle_cmc
++	RETTARGET
+ 	MEXITCOUNT
+ 	jmp	doreti
+ 
+@@ -125,6 +130,7 @@ IDTVEC(errorint)
+ 	PUSH_FRAME
+ 	FAKE_MCOUNT(TF_RIP(%rsp))
+ 	call	lapic_handle_error
++	RETTARGET
+ 	MEXITCOUNT
+ 	jmp	doreti
+ 
+@@ -275,6 +281,7 @@ IDTVEC(ipi_intr_bitmap_handler)
+ 	FAKE_MCOUNT(TF_RIP(%rsp))
+ 
+ 	call	ipi_bitmap_handler
++	RETTARGET
+ 	MEXITCOUNT
+ 	jmp	doreti
+ 
+@@ -290,6 +297,7 @@ IDTVEC(cpustop)
+ 	movl	$0, LA_EOI(%rax)	/* End Of Interrupt to APIC */
+ 
+ 	call	cpustop_handler
++	RETTARGET
+ 	jmp	doreti
+ 
+ /*
+@@ -304,6 +312,7 @@ IDTVEC(cpususpend)
+ 	movl	$0, LA_EOI(%rax)	/* End Of Interrupt to APIC */
+ 
+ 	call	cpususpend_handler
++	RETTARGET
+ 
+ 	POP_FRAME
+ 	jmp	doreti_iret
+@@ -323,6 +332,7 @@ IDTVEC(rendezvous)
+ 	incq	(%rax)
+ #endif
+ 	call	smp_rendezvous_action
++	RETTARGET
+ 	movq	lapic, %rax
+ 	movl	$0, LA_EOI(%rax)	/* End Of Interrupt to APIC */
+ 	jmp	doreti
+diff --git a/sys/amd64/amd64/atpic_vector.S b/sys/amd64/amd64/atpic_vector.S
+index d7693cb..4cf04b9 100644
+--- a/sys/amd64/amd64/atpic_vector.S
++++ b/sys/amd64/amd64/atpic_vector.S
+@@ -40,6 +40,8 @@
+ 
+ #include "assym.s"
+ 
++#include <sva/cfi.h>
++
+ /*
+  * Macros for interrupt entry, call to handler, and exit.
+  */
+@@ -52,6 +54,7 @@ IDTVEC(vec_name) ;							\
+ 	movq	%rsp, %rsi	;                                       \
+ 	movl	$irq_num, %edi; 	/* pass the IRQ */		\
+ 	call	atpic_handle_intr ;					\
++	RETTARGET ; \
+ 	MEXITCOUNT ;							\
+ 	jmp	doreti
+ 
+diff --git a/sys/amd64/amd64/cpu_switch.S b/sys/amd64/amd64/cpu_switch.S
+index b8015f9..4a2e192 100644
+--- a/sys/amd64/amd64/cpu_switch.S
++++ b/sys/amd64/amd64/cpu_switch.S
+@@ -39,6 +39,8 @@
+ #include "assym.s"
+ #include "opt_sched.h"
+ 
++#include <sva/cfi.h>
++
+ /*****************************************************************************/
+ /* Scheduling                                                                */
+ /*****************************************************************************/
+@@ -224,7 +226,7 @@ done_load_dr:
+ 	movq	PCB_RBX(%r8),%rbx
+ 	movq	PCB_RIP(%r8),%rax
+ 	movq	%rax,(%rsp)
+-	ret
++	RETQ
+ 
+ 	/*
+ 	 * We order these strangely for several reasons.
+@@ -359,5 +361,5 @@ ENTRY(savectx)
+ 	movq	%rsi,%cr0	/* The previous %cr0 is saved in %rsi. */
+ 
+ 	movl	$1,%eax
+-	ret
++	RETQ
+ END(savectx)
+diff --git a/sys/amd64/amd64/exception.S b/sys/amd64/amd64/exception.S
+index 4d346d7..cefefd0 100644
+--- a/sys/amd64/amd64/exception.S
++++ b/sys/amd64/amd64/exception.S
+@@ -46,6 +46,8 @@
+ 
+ #include "assym.s"
+ 
++#include <sva/cfi.h>
++
+ #ifdef KDTRACE_HOOKS
+ 	.bss
+ 	.globl	dtrace_invop_jump_addr
+@@ -66,6 +68,14 @@ dtrace_invop_calltrap_addr:
+ 	ENTRY(start_exceptions)
+ #endif
+ 
++#if 1
++.global SVAsyscall
++.type SVAsyscall, @function
++
++.global SVAsysret
++.type SVAsysret, @function
++#endif
++
+ /*****************************************************************************/
+ /* Trap handling                                                             */
+ /*****************************************************************************/
+@@ -226,6 +236,7 @@ alltraps_pushregs_no_rdi:
+ calltrap:
+ 	movq	%rsp,%rdi
+ 	call	trap
++	RETTARGET
+ 	MEXITCOUNT
+ 	jmp	doreti			/* Handle any pending ASTs */
+ 
+@@ -282,6 +293,7 @@ IDTVEC(dblfault)
+ 1:
+ 	movq	%rsp,%rdi
+ 	call	dblfault_handler
++	RETTARGET
+ 2:
+ 	hlt
+ 	jmp	2b
+@@ -344,6 +356,14 @@ IDTVEC(prot)
+  * entries from an LDT).
+  */
+ IDTVEC(fast_syscall)
++#if 1
++  /*
++   * Determine if this is an SVA system call or an original system call.  If
++   * it is an SVA system call (the upper bit in the system call number is set),
++   * let SVA handle it.
++   */
++  jmp SVAsyscall
++#endif
+ 	swapgs
+ 	movq	%rsp,PCPU(SCRATCH_RSP)
+ 	movq	PCPU(RSP0),%rsp
+@@ -385,6 +405,7 @@ IDTVEC(fast_syscall)
+ 	movl	TF_RFLAGS(%rsp),%esi
+ 	andl	$PSL_T,%esi
+ 	call	amd64_syscall
++	RETTARGET
+ 1:	movq	PCPU(CURPCB),%rax
+ 	/* Disable interrupts before testing PCB_FULL_IRET. */
+ 	cli
+@@ -396,12 +417,18 @@ IDTVEC(fast_syscall)
+ 	jne	2f
+ 	/* Restore preserved registers. */
+ 	MEXITCOUNT
++#if 1
+ 	movq	TF_RDI(%rsp),%rdi	/* bonus; preserve arg 1 */
+ 	movq	TF_RSI(%rsp),%rsi	/* bonus: preserve arg 2 */
+ 	movq	TF_RDX(%rsp),%rdx	/* return value 2 */
+ 	movq	TF_RAX(%rsp),%rax	/* return value 1 */
+ 	movq	TF_RFLAGS(%rsp),%r11	/* original %rflags */
++#endif
+ 	movq	TF_RIP(%rsp),%rcx	/* original %rip */
++#if 0
++	call SVAsysret
++	RETTARGET
++#endif
+ 	movq	TF_RSP(%rsp),%rsp	/* user stack pointer */
+ 	swapgs
+ 	sysretq
+@@ -410,6 +437,7 @@ IDTVEC(fast_syscall)
+ 	sti
+ 	movq	%rsp,%rdi
+ 	call	ast
++	RETTARGET
+ 	jmp	1b
+ 
+ 3:	/* Requested full context restore, use doreti for that. */
+@@ -499,6 +527,7 @@ nmi_calltrap:
+ 	FAKE_MCOUNT(TF_RIP(%rsp))
+ 	movq	%rsp,%rdi
+ 	call	trap
++	RETTARGET
+ 	MEXITCOUNT
+ #ifdef HWPMC_HOOKS
+ 	/*
+@@ -561,7 +590,8 @@ outofnmi:
+ 	movq	$PMC_FN_USER_CALLCHAIN,%rsi	/* command */
+ 	movq	%rsp,%rdx			/* frame */
+ 	sti
+-	call	*%rax
++	CALLQ(*%rax)
++	RETTARGET
+ 	cli
+ nocallchain:
+ #endif
+@@ -600,6 +630,7 @@ ENTRY(fork_trampoline)
+ 	movq	%rbx,%rsi		/* arg1 */
+ 	movq	%rsp,%rdx		/* trapframe pointer */
+ 	call	fork_exit
++	RETTARGET
+ 	MEXITCOUNT
+ 	jmp	doreti			/* Handle any ASTs */
+ 
+@@ -671,6 +702,7 @@ doreti_ast:
+ 	sti
+ 	movq	%rsp,%rdi	/* pass a pointer to the trapframe */
+ 	call	ast
++	RETTARGET
+ 	jmp	doreti_ast
+ 
+ 	/*
+@@ -817,46 +849,56 @@ doreti_iret_fault:
+ 	ALIGN_TEXT
+ 	.globl	ds_load_fault
+ ds_load_fault:
++	STARTFUNC
+ 	movl	$T_PROTFLT,TF_TRAPNO(%rsp)
+ 	movq	%rsp,%rdi
+ 	call	trap
++	RETTARGET
+ 	movw	$KUDSEL,TF_DS(%rsp)
+ 	jmp	doreti
+ 
+ 	ALIGN_TEXT
+ 	.globl	es_load_fault
+ es_load_fault:
++	STARTFUNC
+ 	movl	$T_PROTFLT,TF_TRAPNO(%rsp)
+ 	movq	%rsp,%rdi
+ 	call	trap
++	RETTARGET
+ 	movw	$KUDSEL,TF_ES(%rsp)
+ 	jmp	doreti
+ 
+ 	ALIGN_TEXT
+ 	.globl	fs_load_fault
+ fs_load_fault:
++	STARTFUNC
+ 	movl	$T_PROTFLT,TF_TRAPNO(%rsp)
+ 	movq	%rsp,%rdi
+ 	call	trap
++	RETTARGET
+ 	movw	$KUF32SEL,TF_FS(%rsp)
+ 	jmp	doreti
+ 
+ 	ALIGN_TEXT
+ 	.globl	gs_load_fault
+ gs_load_fault:
++	STARTFUNC
+ 	popfq
+ 	movl	$T_PROTFLT,TF_TRAPNO(%rsp)
+ 	movq	%rsp,%rdi
+ 	call	trap
++	RETTARGET
+ 	movw	$KUG32SEL,TF_GS(%rsp)
+ 	jmp	doreti
+ 
+ 	ALIGN_TEXT
+ 	.globl	fsbase_load_fault
+ fsbase_load_fault:
++	STARTFUNC
+ 	movl	$T_PROTFLT,TF_TRAPNO(%rsp)
+ 	movq	%rsp,%rdi
+ 	call	trap
++	RETTARGET
+ 	movq	PCPU(CURTHREAD),%r8
+ 	movq	TD_PCB(%r8),%r8
+ 	movq	$0,PCB_FSBASE(%r8)
+@@ -865,9 +907,11 @@ fsbase_load_fault:
+ 	ALIGN_TEXT
+ 	.globl	gsbase_load_fault
+ gsbase_load_fault:
++	STARTFUNC
+ 	movl	$T_PROTFLT,TF_TRAPNO(%rsp)
+ 	movq	%rsp,%rdi
+ 	call	trap
++	RETTARGET
+ 	movq	PCPU(CURTHREAD),%r8
+ 	movq	TD_PCB(%r8),%r8
+ 	movq	$0,PCB_GSBASE(%r8)
+diff --git a/sys/amd64/amd64/fpu.c b/sys/amd64/amd64/fpu.c
+index b837c2a..da1ed79 100644
+--- a/sys/amd64/amd64/fpu.c
++++ b/sys/amd64/amd64/fpu.c
+@@ -147,6 +147,7 @@ void
+ fpuexit(struct thread *td)
+ {
+ 
++#if 0
+ 	critical_enter();
+ 	if (curthread == PCPU_GET(fpcurthread)) {
+ 		stop_emulating();
+@@ -155,6 +156,7 @@ fpuexit(struct thread *td)
+ 		PCPU_SET(fpcurthread, 0);
+ 	}
+ 	critical_exit();
++#endif
+ }
+ 
+ int
+@@ -391,6 +393,7 @@ static int err_count = 0;
+ void
+ fpudna(void)
+ {
++#if 0
+ 	struct pcb *pcb;
+ 
+ 	critical_enter();
+@@ -434,6 +437,7 @@ fpudna(void)
+ 	} else
+ 		fxrstor(pcb->pcb_save);
+ 	critical_exit();
++#endif
+ }
+ 
+ void
+@@ -457,6 +461,7 @@ fpudrop()
+ int
+ fpugetregs(struct thread *td)
+ {
++#if 0
+ 	struct pcb *pcb;
+ 
+ 	pcb = td->td_pcb;
+@@ -476,6 +481,7 @@ fpugetregs(struct thread *td)
+ 		critical_exit();
+ 		return (_MC_FPOWNED_PCB);
+ 	}
++#endif
+ }
+ 
+ void
+@@ -497,6 +503,7 @@ fpuuserinited(struct thread *td)
+ void
+ fpusetregs(struct thread *td, struct savefpu *addr)
+ {
++#if 0
+ 	struct pcb *pcb;
+ 
+ 	pcb = td->td_pcb;
+@@ -510,6 +517,7 @@ fpusetregs(struct thread *td, struct savefpu *addr)
+ 		bcopy(addr, &td->td_pcb->pcb_user_save, sizeof(*addr));
+ 		fpuuserinited(td);
+ 	}
++#endif
+ }
+ 
+ /*
+diff --git a/sys/amd64/amd64/locore.S b/sys/amd64/amd64/locore.S
+index 0706fa6..e84c5ad 100644
+--- a/sys/amd64/amd64/locore.S
++++ b/sys/amd64/amd64/locore.S
+@@ -33,6 +33,8 @@
+ 
+ #include "assym.s"
+ 
++#include <sva/cfi.h>
++
+ /*
+  * Compiled KERNBASE location
+  */
+@@ -77,8 +79,10 @@ NON_GPROF_ENTRY(btext)
+ 	xorl	%ebp, %ebp
+ 
+ 	call	hammer_time		/* set up cpu for unix operation */
++	RETTARGET
+ 	movq	%rax,%rsp		/* set up kstack for mi_startup() */
+ 	call	mi_startup		/* autoconfiguration, mountroot etc */
++	RETTARGET
+ 0:	hlt
+ 	jmp	0b
+ 
+diff --git a/sys/amd64/amd64/machdep.c b/sys/amd64/amd64/machdep.c
+index 0890c1b..52bcfb2 100644
+--- a/sys/amd64/amd64/machdep.c
++++ b/sys/amd64/amd64/machdep.c
+@@ -55,6 +55,7 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/amd64/amd64/machdep.c 225617 2011-09-16 13
+ #include "opt_perfmon.h"
+ #include "opt_sched.h"
+ #include "opt_kdtrace.h"
++#include "opt_sva_mmu.h"
+ 
+ #include <sys/param.h>
+ #include <sys/proc.h>
+@@ -141,6 +142,14 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/amd64/amd64/machdep.c 225617 2011-09-16 13
+ #include <isa/isareg.h>
+ #include <isa/rtc.h>
+ 
++#include <sva/init.h>
++#include <sva/state.h>
++
++#ifdef SVA_MMU
++#include <sva/mmu_intrinsics.h>
++#define SVA_DEBUG 0
++#endif
++
+ /* Sanity check for __curthread() */
+ CTASSERT(offsetof(struct pcpu, pc_curthread) == 0);
+ 
+@@ -334,6 +343,7 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
+ 	sf.sf_uc.uc_stack = td->td_sigstk;
+ 	sf.sf_uc.uc_stack.ss_flags = (td->td_pflags & TDP_ALTSTACK)
+ 	    ? ((oonstack) ? SS_ONSTACK : 0) : SS_DISABLE;
++#if 0
+ 	sf.sf_uc.uc_mcontext.mc_onstack = (oonstack) ? 1 : 0;
+ 	bcopy(regs, &sf.sf_uc.uc_mcontext.mc_rdi, sizeof(*regs));
+ 	sf.sf_uc.uc_mcontext.mc_len = sizeof(sf.sf_uc.uc_mcontext); /* magic */
+@@ -344,10 +354,14 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
+ 	bzero(sf.sf_uc.uc_mcontext.mc_spare,
+ 	    sizeof(sf.sf_uc.uc_mcontext.mc_spare));
+ 	bzero(sf.sf_uc.__spare__, sizeof(sf.sf_uc.__spare__));
++#endif
+ 
+ 	/* Allocate space for the signal handler context. */
+ 	if ((td->td_pflags & TDP_ALTSTACK) != 0 && !oonstack &&
+ 	    SIGISMEMBER(psp->ps_sigonstack, sig)) {
++#if 1
++    panic ("SVA: signal altstacks not supported!\n");
++#endif
+ 		sp = td->td_sigstk.ss_sp +
+ 		    td->td_sigstk.ss_size - sizeof(struct sigframe);
+ #if defined(COMPAT_43)
+@@ -363,27 +377,69 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
+ 		sig = p->p_sysent->sv_sigtbl[_SIG_IDX(sig)];
+ 
+ 	/* Build the argument list for the signal handler. */
++#if 0
+ 	regs->tf_rdi = sig;			/* arg 1 in %rdi */
+ 	regs->tf_rdx = (register_t)&sfp->sf_uc;	/* arg 3 in %rdx */
++#endif
+ 	bzero(&sf.sf_si, sizeof(sf.sf_si));
+ 	if (SIGISMEMBER(psp->ps_siginfo, sig)) {
++#if 0
+ 		/* Signal handler installed with SA_SIGINFO. */
+ 		regs->tf_rsi = (register_t)&sfp->sf_si;	/* arg 2 in %rsi */
++#endif
+ 		sf.sf_ahu.sf_action = (__siginfohandler_t *)catcher;
+ 
+ 		/* Fill in POSIX parts */
+ 		sf.sf_si = ksi->ksi_info;
+ 		sf.sf_si.si_signo = sig; /* maybe a translated signal */
++#if 0
+ 		regs->tf_rcx = (register_t)ksi->ksi_addr; /* arg 4 in %rcx */
++#endif
+ 	} else {
+ 		/* Old FreeBSD-style arguments. */
++#if 0
+ 		regs->tf_rsi = ksi->ksi_code;	/* arg 2 in %rsi */
+ 		regs->tf_rcx = (register_t)ksi->ksi_addr; /* arg 4 in %rcx */
++#endif
+ 		sf.sf_ahu.sf_handler = catcher;
+ 	}
+ 	mtx_unlock(&psp->ps_mtx);
+ 	PROC_UNLOCK(p);
+ 
++#if 1
++  /*
++   * Save the interrupt context.
++   */
++  sva_save_icontext ();
++
++  /*
++   * Allocate a signal frame on the stack.
++   */
++  sfp = (struct sigframe *) sva_ialloca (sizeof (struct sigframe), 4, &sf);
++
++  /* Determine the arguments for the signal handler */
++  uintptr_t arg2;
++  uintptr_t arg4;
++	if (SIGISMEMBER(psp->ps_siginfo, sig)) {
++		arg2 = (uintptr_t)&sfp->sf_si;
++		arg4 = (uintptr_t)ksi->ksi_addr;
++  } else {
++		arg2 = ksi->ksi_code;	/* arg 2 in %rsi */
++		arg4 = (register_t)ksi->ksi_addr; /* arg 4 in %rcx */
++  }
++
++  /*
++   * Push the signal handler function on to the user-space stack
++   */
++  sva_ipush_function5 (p->p_sysent->sv_sigcode_base,
++                       sig,
++                       arg2,
++                       (register_t)&sfp->sf_uc,
++                       arg4,
++                       catcher);
++#endif
++
++#if 0
+ 	/*
+ 	 * Copy the sigframe out to the user's stack.
+ 	 */
+@@ -394,7 +450,9 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
+ 		PROC_LOCK(p);
+ 		sigexit(td, SIGILL);
+ 	}
++#endif
+ 
++#if 0
+ 	regs->tf_rsp = (long)sfp;
+ 	regs->tf_rip = p->p_sysent->sv_sigcode_base;
+ 	regs->tf_rflags &= ~(PSL_T | PSL_D);
+@@ -405,6 +463,7 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
+ 	regs->tf_gs = _ugssel;
+ 	regs->tf_flags = TF_HASSEGS;
+ 	set_pcb_flags(pcb, PCB_FULL_IRET);
++#endif
+ 	PROC_LOCK(p);
+ 	mtx_lock(&psp->ps_mtx);
+ }
+@@ -436,8 +495,14 @@ sys_sigreturn(td, uap)
+ 	int cs, error, ret;
+ 	ksiginfo_t ksi;
+ 
++  /* SVA: FIXME:
++   * We need to copy in the signal mask (or store it somewhere in kernel
++   * memory).
++   */
++#if 0
+ 	pcb = td->td_pcb;
+ 	p = td->td_proc;
++#endif
+ 
+ 	error = copyin(uap->sigcntxp, &uc, sizeof(uc));
+ 	if (error != 0) {
+@@ -446,6 +511,7 @@ sys_sigreturn(td, uap)
+ 		return (error);
+ 	}
+ 	ucp = &uc;
++#if 0
+ 	if ((ucp->uc_mcontext.mc_flags & ~_MC_FLAG_MASK) != 0) {
+ 		uprintf("pid %d (%s): sigreturn mc_flags %x\n", p->p_pid,
+ 		    td->td_name, ucp->uc_mcontext.mc_flags);
+@@ -506,9 +572,17 @@ sys_sigreturn(td, uap)
+ 	else
+ 		td->td_sigstk.ss_flags &= ~SS_ONSTACK;
+ #endif
++#endif
++
++#if 1
++  /* Load the old interrupted state back on into the interrupt context. */
++  sva_load_icontext ();
++#endif
+ 
+ 	kern_sigprocmask(td, SIG_SETMASK, &ucp->uc_sigmask, NULL, 0);
++#if 0
+ 	set_pcb_flags(pcb, PCB_FULL_IRET);
++#endif
+ 	return (EJUSTRETURN);
+ }
+ 
+@@ -885,10 +959,13 @@ exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
+ 	else
+ 		mtx_unlock(&dt_lock);
+ 	
++#if 0
+ 	pcb->pcb_fsbase = 0;
+ 	pcb->pcb_gsbase = 0;
+ 	clear_pcb_flags(pcb, PCB_32BIT | PCB_GS32BIT);
++#endif
+ 	pcb->pcb_initial_fpucw = __INITIAL_FPUCW__;
++#if 0
+ 	set_pcb_flags(pcb, PCB_FULL_IRET);
+ 
+ 	bzero((char *)regs, sizeof(struct trapframe));
+@@ -904,7 +981,15 @@ exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
+ 	regs->tf_gs = _ugssel;
+ 	regs->tf_flags = TF_HASSEGS;
+ 	td->td_retval[1] = 0;
++#else
++#if 1
++  uintptr_t handle = sva_translate (imgp->entry_addr);
++  if (handle)
++    sva_reinit_icontext (handle, 0, ((stack - 8) & ~0xFul) + 8, stack);
++#endif
++#endif
+ 
++#if 0
+ 	/*
+ 	 * Reset the hardware debug registers if they were in use.
+ 	 * They won't have any meaning for the newly exec'd process.
+@@ -926,6 +1011,7 @@ exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
+ 		}
+ 		clear_pcb_flags(pcb, PCB_DBREGS);
+ 	}
++#endif
+ 
+ 	/*
+ 	 * Drop the FP state if we hold it, so that the process gets a
+@@ -945,7 +1031,14 @@ cpu_setregs(void)
+ 	 * BSP.  See the comments there about why we set them.
+ 	 */
+ 	cr0 |= CR0_MP | CR0_NE | CR0_TS | CR0_WP | CR0_AM;
+-	load_cr0(cr0);
++	
++    /* Store the new value to cr0 */
++#ifdef SVA_MMU
++	sva_load_cr0(cr0);
++#else
++    load_cr0(cr0);
++#endif
++
+ }
+ 
+ /*
+@@ -1103,6 +1196,34 @@ setidt(idx, func, typ, dpl, ist)
+ {
+ 	struct gate_descriptor *ip;
+ 
++#if 1
++  switch (idx) {
++    case IDT_DB:
++    case IDT_BP:
++    case IDT_DF:
++    case IDT_MF:
++    case IDT_NMI:
++      break;
++
++    default:
++      printf ("SVA: setidt: %d\n", idx);
++      __asm__ __volatile__ ("xchg %%bx, %%bx\n" : : "a" (idx));
++      break;
++  }
++#endif
++
++#if 1
++  /*
++   * Do not change the vectors used by SVA.
++   */
++  if ((idx == 0x7f) || (idx == 0x7e))
++    panic ("SVA: Don't overwrite me!\n");
++
++  if (idx == IDT_DE) return;
++  if (ist == 3)
++    panic ("SVA: Bad IST value!\n");
++#endif
++
+ 	ip = idt + idx;
+ 	ip->gd_looffset = (uintptr_t)func;
+ 	ip->gd_selector = GSEL(GCODE_SEL, SEL_KPL);
+@@ -1409,7 +1530,7 @@ getmemsize(caddr_t kmdp, u_int64_t first)
+ 	if (getenv_quad("dcons.addr", &dcons_addr) == 0 ||
+ 	    getenv_quad("dcons.size", &dcons_size) == 0)
+ 		dcons_addr = 0;
+-
++    
+ 	/*
+ 	 * physmap is in bytes, so when converting to page boundaries,
+ 	 * round up the start address and round down the end address.
+@@ -1446,7 +1567,13 @@ getmemsize(caddr_t kmdp, u_int64_t first)
+ 			/*
+ 			 * map page into kernel: valid, read/write,non-cacheable
+ 			 */
++            /* SVA-TODO: enabled this after initialization is figured out */
++#if 0//def SVA_MMU
++            /* Update the mapping to the pte with SVA */
++            sva_update_l1_mapping(pte, (unsigned long) (pa | PG_V | PG_RW | PG_N));
++#else
+ 			*pte = pa | PG_V | PG_RW | PG_N;
++#endif
+ 			invltlb();
+ 
+ 			tmp = *(int *)ptr;
+@@ -1528,7 +1655,14 @@ do_next:
+ 				break;
+ 		}
+ 	}
++
++    /* SVA-TODO: enabled this after initialization is figured out */
++#if 0//def SVA_MMU
++    /* Update the mapping to the pte with SVA */
++    sva_update_l1_mapping(pte, 0);
++#else
+ 	*pte = 0;
++#endif
+ 	invltlb();
+ 
+ 	/*
+@@ -1553,6 +1687,19 @@ do_next:
+ 	msgbufp = (struct msgbuf *)PHYS_TO_DMAP(phys_avail[pa_indx]);
+ }
+ 
++#if 1
++/*
++ * Function: spurious_handler()
++ *
++ * Description:
++ *  Handle (ignore) spurious APIC interrupts.
++ */
++void
++spurious_handler (unsigned intNum, sva_icontext_t * p) {
++  return;
++}
++#endif
++
+ u_int64_t
+ hammer_time(u_int64_t modulep, u_int64_t physfree)
+ {
+@@ -1611,9 +1758,24 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
+ 
+ 	wrmsr(MSR_FSBASE, 0);		/* User value */
+ 	wrmsr(MSR_GSBASE, (u_int64_t)pc);
++#if 0
+ 	wrmsr(MSR_KGSBASE, 0);		/* User value while in the kernel */
++#else
++	wrmsr(MSR_KGSBASE, (u_int64_t)pc);		/* User value while in the kernel */
++#endif
+ 
+ 	pcpu_init(pc, 0, sizeof(struct pcpu));
++#if 1
++  /*
++   * Initialize the rest of the PCPU structures because we need them for
++   * proper SVA interrupt handling.
++   */
++  for (unsigned index = 0; index < MAXCPU; ++index) {
++    if (!(__pcpu[index].svaIContext = sva_getCPUState(&(common_tss[index])))) {
++      panic ("SVA: Unable to setup interrupt context for this processor\n");
++    }
++  }
++#endif
+ 	dpcpu_init((void *)(physfree + KERNBASE), 0);
+ 	physfree += DPCPU_SIZE;
+ 	PCPU_SET(prvspace, pc);
+@@ -1638,35 +1800,79 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
+ 	mtx_init(&icu_lock, "icu", NULL, MTX_SPIN | MTX_NOWITNESS);
+ 	mtx_init(&dt_lock, "descriptor tables", NULL, MTX_DEF);
+ 
++#if 1
++  /*
++   * Initialize the SVA virtual machine on the primary processor.
++   */
++  sva_init_primary();
++#endif
++
+ 	/* exceptions */
++#if 0
+ 	for (x = 0; x < NIDT; x++)
+ 		setidt(x, &IDTVEC(rsvd), SDT_SYSIGT, SEL_KPL, 0);
++#endif
++#if 1
++	extern void fr_sva_trap(int type);
++#endif
++#if 0
+ 	setidt(IDT_DE, &IDTVEC(div),  SDT_SYSIGT, SEL_KPL, 0);
++#else
++	sva_register_general_exception(IDT_DE, fr_sva_trap);
++#endif
+ 	setidt(IDT_DB, &IDTVEC(dbg),  SDT_SYSIGT, SEL_KPL, 0);
+-	setidt(IDT_NMI, &IDTVEC(nmi),  SDT_SYSIGT, SEL_KPL, 2);
+  	setidt(IDT_BP, &IDTVEC(bpt),  SDT_SYSIGT, SEL_UPL, 0);
++#if 0
+ 	setidt(IDT_OF, &IDTVEC(ofl),  SDT_SYSIGT, SEL_KPL, 0);
+ 	setidt(IDT_BR, &IDTVEC(bnd),  SDT_SYSIGT, SEL_KPL, 0);
+ 	setidt(IDT_UD, &IDTVEC(ill),  SDT_SYSIGT, SEL_KPL, 0);
++#else
++	sva_register_general_exception(IDT_OF, fr_sva_trap);
++	sva_register_general_exception(IDT_BR, fr_sva_trap);
++	sva_register_general_exception(IDT_UD, fr_sva_trap);
++#endif
++#if 0
+ 	setidt(IDT_NM, &IDTVEC(dna),  SDT_SYSIGT, SEL_KPL, 0);
++#endif
+ 	setidt(IDT_DF, &IDTVEC(dblfault), SDT_SYSIGT, SEL_KPL, 1);
++#if 0
+ 	setidt(IDT_FPUGP, &IDTVEC(fpusegm),  SDT_SYSIGT, SEL_KPL, 0);
++#else
++	sva_register_general_exception(IDT_FPUGP, fr_sva_trap);
++#endif
++#if 0
+ 	setidt(IDT_TS, &IDTVEC(tss),  SDT_SYSIGT, SEL_KPL, 0);
+ 	setidt(IDT_NP, &IDTVEC(missing),  SDT_SYSIGT, SEL_KPL, 0);
+ 	setidt(IDT_SS, &IDTVEC(stk),  SDT_SYSIGT, SEL_KPL, 0);
++#endif
++#if 0
++	setidt(IDT_NMI, &IDTVEC(nmi),  SDT_SYSIGT, SEL_KPL, 2);
+ 	setidt(IDT_GP, &IDTVEC(prot),  SDT_SYSIGT, SEL_KPL, 0);
+ 	setidt(IDT_PF, &IDTVEC(page),  SDT_SYSIGT, SEL_KPL, 0);
++#else
++	setidt(IDT_NMI, &IDTVEC(nmi),  SDT_SYSIGT, SEL_KPL, 2);
++	sva_register_general_exception(IDT_GP, fr_sva_trap);
++	sva_register_general_exception(IDT_PF, fr_sva_trap);
++#endif
+ 	setidt(IDT_MF, &IDTVEC(fpu),  SDT_SYSIGT, SEL_KPL, 0);
++#if 0
+ 	setidt(IDT_AC, &IDTVEC(align), SDT_SYSIGT, SEL_KPL, 0);
+ 	setidt(IDT_MC, &IDTVEC(mchk),  SDT_SYSIGT, SEL_KPL, 0);
+ 	setidt(IDT_XF, &IDTVEC(xmm), SDT_SYSIGT, SEL_KPL, 0);
++#else
++	sva_register_general_exception(IDT_AC, fr_sva_trap);
++	sva_register_general_exception(IDT_MC, fr_sva_trap);
++	sva_register_general_exception(IDT_XF, fr_sva_trap);
++#endif
+ #ifdef KDTRACE_HOOKS
+ 	setidt(IDT_DTRACE_RET, &IDTVEC(dtrace_ret), SDT_SYSIGT, SEL_UPL, 0);
+ #endif
+ 
++#if 0
+ 	r_idt.rd_limit = sizeof(idt0) - 1;
+ 	r_idt.rd_base = (long) idt;
+ 	lidt(&r_idt);
++#endif
+ 
+ 	/*
+ 	 * Initialize the i8254 before the console so that console
+@@ -1691,8 +1897,13 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
+ 	 * Point the ICU spurious interrupt vectors at the APIC spurious
+ 	 * interrupt handler.
+ 	 */
++#if 0
+ 	setidt(IDT_IO_INTS + 7, IDTVEC(spuriousint), SDT_SYSIGT, SEL_KPL, 0);
+ 	setidt(IDT_IO_INTS + 15, IDTVEC(spuriousint), SDT_SYSIGT, SEL_KPL, 0);
++#else
++	sva_register_interrupt(IDT_IO_INTS + 7, spurious_handler);
++	sva_register_interrupt(IDT_IO_INTS + 15, spurious_handler);
++#endif
+ #endif
+ #else
+ #error "have you forgotten the isa device?";
+@@ -1738,8 +1949,16 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
+ 	/* Set up the fast syscall stuff */
+ 	msr = rdmsr(MSR_EFER) | EFER_SCE;
+ 	wrmsr(MSR_EFER, msr);
++#if 1
+ 	wrmsr(MSR_LSTAR, (u_int64_t)IDTVEC(fast_syscall));
+ 	wrmsr(MSR_CSTAR, (u_int64_t)IDTVEC(fast_syscall32));
++#else
++  {
++    extern void SVAsyscall(void);
++    wrmsr(MSR_LSTAR, (u_int64_t)SVAsyscall);
++    wrmsr(MSR_CSTAR, (u_int64_t)IDTVEC(fast_syscall32));
++  }
++#endif
+ 	msr = ((u_int64_t)GSEL(GCODE_SEL, SEL_KPL) << 32) |
+ 	      ((u_int64_t)GSEL(GUCODE32_SEL, SEL_UPL) << 48);
+ 	wrmsr(MSR_STAR, msr);
+@@ -1747,9 +1966,9 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
+ 
+ 	getmemsize(kmdp, physfree);
+ 	init_param2(physmem);
+-
++    
+ 	/* now running on new page tables, configured,and u/iom is accessible */
+-
++    
+ 	msgbufinit(msgbufp, msgbufsize);
+ 	fpuinit();
+ 
+@@ -1770,6 +1989,9 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
+ 	thread0.td_pcb->pcb_cr3 = KPML4phys;
+ 	thread0.td_frame = &proc0_tf;
+ 
++#if 1
++  thread0.svaID = 0;
++#endif
+         env = getenv("kernelname");
+ 	if (env != NULL)
+ 		strlcpy(kernelname, env, sizeof(kernelname));
+@@ -2397,6 +2619,254 @@ user_dbreg_trap(void)
+         return 0;
+ }
+ 
++/*
++ * Function: cpu_switch_sva()
++ *
++ * Description:
++ *  This is a replacement for the architecture-dependent context-switch
++ *  function, cpu_switch().  This version uses SVA to do the context switching.
++ */
++void
++cpu_switch_sva (struct thread * old, struct thread * new, struct mtx * mtx)
++{
++  /* Context switch result */
++  uintptr_t didSwap;
++  uintptr_t rsp;
++
++#if 0
++  printf ("SVA: switch: [%d:%d](%lx/%d) -> [%d:%d](%lx:%d)\n",
++          old->td_proc->p_pid, old->td_tid, old->svaID, old->sva,
++          new->td_proc->p_pid, new->td_tid, new->svaID, new->sva);
++  printf ("SVA: switch: %p %p\n", old->td_lock, new->td_lock);
++#endif
++
++  /*
++   * Tell the new process which process was running before it.
++   */
++  new->prev = old;
++  new->mtx = mtx;
++
++  /*
++   * Use SVA to context switch from the old thread to the new thread.
++   */
++  if (new->sva) {
++    /*
++     * Mark that the old process is about to have SVA state saved for it.
++     */
++    old->sva = 1;
++
++    /*
++     * Release the old thread (I think this does some unlocking stuff when
++     * sharing page tables).
++     */
++    if ((old->td_pcb->pcb_cr3) == (new->td_pcb->pcb_cr3)) {
++      /* Release the old thread */
++      mtx = __sync_lock_test_and_set (&(old->td_lock), mtx);
++    } else {
++#if SVA_DEBUG
++      printf("-- Calling sva load pagetable...\n");
++#endif
++      /*
++       * Switch to the new page table.
++       */
++      sva_mm_load_pgtable (new->td_pcb->pcb_cr3);
++
++#if SVA_DEBUG
++      printf("-- Finished sva load pagetable...\n");
++#endif
++
++      /*
++       * Fetch the pmap (physical page mapping) structure from the per-CPU
++       * data structure.
++       */
++      struct pmap * pmap = PCPU_GET(curpmap);
++
++      /*
++       * Change the flag in pmap based on the current active CPU.
++       */
++      unsigned int cpuid = PCPU_GET(cpuid);
++      __asm__ __volatile__ ("lock btrl %1, %0\n"
++                            : "=m" (pmap->pm_active)
++                            : "r" (cpuid));
++
++      /* Release the old thread */
++      mtx = __sync_lock_test_and_set (&(old->td_lock), mtx);
++
++      /*
++       * Set the flag in the new process's pmap structure.
++       */
++      __asm__ __volatile__ ("lock btsl %1, %0\n"
++                            : "=m" (new->td_proc->p_vmspace->vm_pmap.pm_active)
++                            : "r" (cpuid));
++
++      PCPU_SET (curpmap, &(new->td_proc->p_vmspace->vm_pmap));
++    }
++
++#if defined(SCHED_ULE) && defined(SMP)
++    panic ("SVA: SMP Swap Start\n");
++    /* Do some locking blocking stuff for the ULE scheduler */
++    extern struct mtx blocked_lock;
++    while (old->td_lock == &blocked_lock) {
++      __asm__ __volatile__ ("pause");
++    }
++    printf ("SVA: SMP Swap End\n");
++#endif
++
++    /*
++     * Update the FreeBSD per-cpu data structure to know which thread is
++     * running on this CPU.
++     */
++    PCPU_SET (curthread, new);
++
++    /*
++     * Swap to the new state.
++     */
++    didSwap = sva_swap_integer (new->svaID, &(old->svaID));
++  } else {
++#if 0
++    /* Do an old style context switch */
++    old->sva = 0;
++    cpu_switch(old, new, mtx);
++    printf ("SVA: Returned to kernel from FreeBSD!\n");
++    return 0;
++#else
++    panic ("SVA: Should not do old context switch anymore!\n");
++#endif
++  }
++
++  /*
++   * If the process that we took off the processor is a zombie, get rid of its
++   * SVA state.  It will never go on the CPU again.
++   */
++  if (curthread->prev->td_proc->p_state == PRS_ZOMBIE) {
++    sva_release_stack (curthread->prev->svaID);
++  }
++  return;
++}
++
++/*
++ * Function: cpu_throw_sva()
++ *
++ * Description:
++ *  This is a replacement for the architecture-dependent context-switch
++ *  function, cpu_throw().  This version uses SVA to do the context switching.
++ */
++void
++cpu_throw_sva (struct thread * old, struct thread * new, struct mtx * mtx)
++{
++  /* Context switch result */
++  uintptr_t didSwap;
++  uintptr_t rsp;
++
++#if 0
++  printf ("SVA: switch: [%d:%d](%lx/%d) -> [%d:%d](%lx:%d)\n",
++          old->td_proc->p_pid, old->td_tid, old->svaID, old->sva,
++          new->td_proc->p_pid, new->td_tid, new->svaID, new->sva);
++  printf ("SVA: switch: %p %p\n", old->td_lock, new->td_lock);
++#endif
++
++  /*
++   * Tell the new process which process was running before it.
++   */
++  new->prev = old;
++  new->mtx = mtx;
++
++  /*
++   * Use SVA to context switch from the old thread to the new thread.
++   */
++  if (new->sva) {
++    /*
++     * Mark that the old process is about to have SVA state saved for it.
++     */
++    old->sva = 1;
++
++    /*
++     * Release the old thread (I think this does some unlocking stuff when
++     * sharing page tables).
++     */
++    if ((old->td_pcb->pcb_cr3) == (new->td_pcb->pcb_cr3)) {
++      /* Release the old thread */
++      mtx = __sync_lock_test_and_set (&(old->td_lock), mtx);
++    } else {
++#if SVA_DEBUG
++      printf("-- Calling sva load pagetable...\n");
++#endif
++      /*
++       * Switch to the new page table.
++       */
++      sva_mm_load_pgtable (new->td_pcb->pcb_cr3);
++
++#if SVA_DEBUG
++      printf("-- Finished sva load pagetable...\n");
++#endif
++
++      /*
++       * Fetch the pmap (physical page mapping) structure from the per-CPU
++       * data structure.
++       */
++      struct pmap * pmap = PCPU_GET(curpmap);
++
++      /*
++       * Change the flag in pmap based on the current active CPU.
++       */
++      unsigned int cpuid = PCPU_GET(cpuid);
++      __asm__ __volatile__ ("lock btrl %1, %0\n"
++                            : "=m" (pmap->pm_active)
++                            : "r" (cpuid));
++
++      /* Release the old thread */
++      mtx = __sync_lock_test_and_set (&(old->td_lock), mtx);
++
++      /*
++       * Set the flag in the new process's pmap structure.
++       */
++      __asm__ __volatile__ ("lock btsl %1, %0\n"
++                            : "=m" (new->td_proc->p_vmspace->vm_pmap.pm_active)
++                            : "r" (cpuid));
++
++      PCPU_SET (curpmap, &(new->td_proc->p_vmspace->vm_pmap));
++    }
++
++#if defined(SCHED_ULE) && defined(SMP)
++    panic ("SVA: SMP Swap Start\n");
++    /* Do some locking blocking stuff for the ULE scheduler */
++    extern struct mtx blocked_lock;
++    while (old->td_lock == &blocked_lock) {
++      __asm__ __volatile__ ("pause");
++    }
++    printf ("SVA: SMP Swap End\n");
++#endif
++
++    /*
++     * Update the FreeBSD per-cpu data structure to know which thread is
++     * running on this CPU.
++     */
++    PCPU_SET (curthread, new);
++
++    /*
++     * Swap to the new state.
++     */
++    didSwap = sva_swap_integer (new->svaID, &(old->svaID));
++  } else {
++#if 0
++    /* Do an old style context switch */
++    old->sva = 0;
++    cpu_switch(old, new, mtx);
++    printf ("SVA: Returned to kernel from FreeBSD!\n");
++    return 0;
++#else
++    panic ("SVA: Should not do old context switch anymore!\n");
++#endif
++  }
++
++  /*
++   * Release the old thread as we don't need it anymore.
++   */
++  printf ("FreeBSD: Releasing %x\n", curthread->prev->svaID);
++  sva_release_stack (curthread->prev->svaID);
++  return;
++}
++
+ #ifdef KDB
+ 
+ /*
+diff --git a/sys/amd64/amd64/mp_machdep.c b/sys/amd64/amd64/mp_machdep.c
+index 64a712c..a0ed7f0 100644
+--- a/sys/amd64/amd64/mp_machdep.c
++++ b/sys/amd64/amd64/mp_machdep.c
+@@ -31,6 +31,7 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/amd64/amd64/mp_machdep.c 223758 2011-07-04
+ #include "opt_kstack_pages.h"
+ #include "opt_sched.h"
+ #include "opt_smp.h"
++#include "opt_sva_mmu.h"
+ 
+ #include <sys/param.h>
+ #include <sys/systm.h>
+@@ -69,6 +70,15 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/amd64/amd64/mp_machdep.c 223758 2011-07-04
+ #include <machine/specialreg.h>
+ #include <machine/tss.h>
+ 
++#if 1
++#include <sva/init.h>
++#endif
++
++#ifdef SVA_MMU
++#include <sva/mmu_intrinsics.h>
++#define SVA_DEBUG 0
++#endif
++
+ #define WARMBOOT_TARGET		0
+ #define WARMBOOT_OFF		(KERNBASE + 0x0467)
+ #define WARMBOOT_SEG		(KERNBASE + 0x0469)
+@@ -615,7 +625,18 @@ init_secondary(void)
+ 	cpu = bootAP;
+ 
+ 	/* Init tss */
++#if 0
+ 	common_tss[cpu] = common_tss[0];
++#else
++  /*
++   * SVA: Don't reconfigure the SVA IST configuration.
++   */
++  {
++    uintptr_t ist = common_tss[cpu].tss_ist3;
++    common_tss[cpu] = common_tss[0];
++    common_tss[cpu].tss_ist3 = ist;
++  }
++#endif
+ 	common_tss[cpu].tss_rsp0 = 0;   /* not used until after switch */
+ 	common_tss[cpu].tss_iobase = sizeof(struct amd64tss) +
+ 	    IOPAGES * PAGE_SIZE;
+@@ -664,7 +685,13 @@ init_secondary(void)
+ 	wrmsr(MSR_GSBASE, (u_int64_t)pc);
+ 	wrmsr(MSR_KGSBASE, (u_int64_t)pc);	/* XXX User value while we're in the kernel */
+ 
++#if 0
++	r_idt.rd_base = (long) idt;
+ 	lidt(&r_idt);
++#else
++  /* Initialize SVA for this processor */
++  sva_init_secondary();
++#endif
+ 
+ 	gsel_tss = GSEL(GPROC0_SEL, SEL_KPL);
+ 	ltr(gsel_tss);
+@@ -676,7 +703,11 @@ init_secondary(void)
+ 	 */
+ 	cr0 = rcr0();
+ 	cr0 &= ~(CR0_CD | CR0_NW | CR0_EM);
++#ifdef SVA_MMU
++	sva_load_cr0(cr0);
++#else
+ 	load_cr0(cr0);
++#endif
+ 
+ 	/* Set up the fast syscall stuff */
+ 	msr = rdmsr(MSR_EFER) | EFER_SCE;
+diff --git a/sys/amd64/amd64/pmap.c b/sys/amd64/amd64/pmap.c
+index 2c2ee83..e28ed9d 100644
+--- a/sys/amd64/amd64/pmap.c
++++ b/sys/amd64/amd64/pmap.c
+@@ -107,6 +107,12 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/amd64/amd64/pmap.c 225418 2011-09-06 10:30
+ 
+ #include "opt_pmap.h"
+ #include "opt_vm.h"
++#include "opt_sva_mmu.h"
++
++#ifdef SVA_MMU
++#include <sva/mmu_intrinsics.h>
++#define SVA_DEBUG 0
++#endif
+ 
+ #include <sys/param.h>
+ #include <sys/systm.h>
+@@ -485,11 +491,39 @@ create_pagetables(vm_paddr_t *firstaddr)
+ 		((pt_entry_t *)KPTphys)[i] |= PG_RW | PG_V | PG_G;
+ 	}
+ 
++#if SVA_DEBUG
++    printf("KPTphys[0]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPTphys)[0],
++            ((pdp_entry_t *)KPTphys)[0]);
++    printf("KPTphys[1]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPTphys)[1],
++            ((pdp_entry_t *)KPTphys)[1]);
++    printf("KPTphys[2]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPTphys)[2],
++            ((pdp_entry_t *)KPTphys)[2]);
++    printf("KPTphys[25]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPTphys)[25],
++            ((pdp_entry_t *)KPTphys)[25]);
++    printf("KPTphys[%d]:\t\t\t %p, val: 0x%lx\n", i-1, &((pdp_entry_t *)KPTphys)[i-1],
++            ((pdp_entry_t *)KPTphys)[i-1]);
++    printf("firstaddr:\t\t\t %p, val: 0x%lx\n", firstaddr, *firstaddr);
++#endif
++
+ 	/* Now map the page tables at their location within PTmap */
+ 	for (i = 0; i < NKPT; i++) {
+ 		((pd_entry_t *)KPDphys)[i] = KPTphys + (i << PAGE_SHIFT);
+ 		((pd_entry_t *)KPDphys)[i] |= PG_RW | PG_V;
+ 	}
++    
++#if SVA_DEBUG
++    printf("Map the pts at location in ptmap");
++    printf("KPDphys[0]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPDphys)[0],
++            ((pdp_entry_t *)KPDphys)[0]);
++    printf("KPDphys[1]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPDphys)[1],
++            ((pdp_entry_t *)KPDphys)[1]);
++    printf("KPDphys[2]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPDphys)[2],
++            ((pdp_entry_t *)KPDphys)[2]);
++    printf("KPDphys[25]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPDphys)[25],
++            ((pdp_entry_t *)KPDphys)[25]);
++    printf("KPDphys[%d]:\t\t\t %p, val: 0x%lx\n", i-1, &((pdp_entry_t *)KPDphys)[i-1],
++            ((pdp_entry_t *)KPDphys)[i-1]);
++#endif
+ 
+ 	/* Map from zero to end of allocations under 2M pages */
+ 	/* This replaces some of the KPTphys entries above */
+@@ -497,6 +531,20 @@ create_pagetables(vm_paddr_t *firstaddr)
+ 		((pd_entry_t *)KPDphys)[i] = i << PDRSHIFT;
+ 		((pd_entry_t *)KPDphys)[i] |= PG_RW | PG_V | PG_PS | PG_G;
+ 	}
++    
++#if SVA_DEBUG
++    printf("Now doing zero to end of alloc under 2M pages\n");
++    printf("KPDphys[0]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPDphys)[0],
++            ((pdp_entry_t *)KPDphys)[0]);
++    printf("KPDphys[1]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPDphys)[1],
++            ((pdp_entry_t *)KPDphys)[1]);
++    printf("KPDphys[2]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPDphys)[2],
++            ((pdp_entry_t *)KPDphys)[2]);
++    printf("KPDphys[25]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPDphys)[25],
++            ((pdp_entry_t *)KPDphys)[25]);
++    printf("KPDphys[%d]:\t\t\t %p, val: 0x%lx\n", i-1, &((pdp_entry_t *)KPDphys)[i-1],
++            ((pdp_entry_t *)KPDphys)[i-1]);
++#endif
+ 
+ 	/* And connect up the PD to the PDP */
+ 	for (i = 0; i < NKPDPE; i++) {
+@@ -504,6 +552,20 @@ create_pagetables(vm_paddr_t *firstaddr)
+ 		    (i << PAGE_SHIFT);
+ 		((pdp_entry_t *)KPDPphys)[i + KPDPI] |= PG_RW | PG_V | PG_U;
+ 	}
++    
++#if SVA_DEBUG
++    printf("PDP entry connect to pds\n");
++    printf("KPDPphys[0]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPDPphys)[0],
++            ((pdp_entry_t *)KPDPphys)[0]);
++    printf("KPDPphys[1]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPDPphys)[1],
++            ((pdp_entry_t *)KPDPphys)[1]);
++    printf("KPDPphys[2]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPDPphys)[2],
++            ((pdp_entry_t *)KPDPphys)[2]);
++    printf("KPDPphys[25]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)KPDPphys)[25],
++            ((pdp_entry_t *)KPDPphys)[25]);
++    printf("KPDPphys[%d]:\t\t\t %p, val: 0x%lx\n", i-1, &((pdp_entry_t *)KPDPphys)[i-1],
++            ((pdp_entry_t *)KPDPphys)[i-1]);
++#endif
+ 
+ 	/*
+ 	 * Now, set up the direct map region using 2MB and/or 1GB pages.  If
+@@ -529,21 +591,54 @@ create_pagetables(vm_paddr_t *firstaddr)
+ 		((pdp_entry_t *)DMPDPphys)[i] = DMPDphys + (j << PAGE_SHIFT);
+ 		((pdp_entry_t *)DMPDPphys)[i] |= PG_RW | PG_V | PG_U;
+ 	}
++#if SVA_DEBUG
++    printf("DMPDphys Addr: %p\n", DMPDphys);
++    printf("DMPDphys[0]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)DMPDphys)[0],
++            ((pdp_entry_t *)DMPDphys)[0]);
++    printf("DMPDphys[1]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)DMPDphys)[1],
++            ((pdp_entry_t *)DMPDphys)[1]);
++    printf("DMPDphys[2]:\t\t\t %p, val: 0x%lx\n",&((pdp_entry_t *)DMPDphys)[2],
++            ((pdp_entry_t *)DMPDphys)[2]);
++    printf("DMPDphys[%d]:\t\t\t %p, val: 0x%lx\n", i-1, &((pdp_entry_t *)DMPDphys)[i-1],
++            ((pdp_entry_t *)DMPDphys)[i-1]);
++#endif
+ 
+ 	/* And recursively map PML4 to itself in order to get PTmap */
+ 	((pdp_entry_t *)KPML4phys)[PML4PML4I] = KPML4phys;
+ 	((pdp_entry_t *)KPML4phys)[PML4PML4I] |= PG_RW | PG_V | PG_U;
+ 
++#if SVA_DEBUG
++    printf("KVA self reflecting spot:\t\t\t %p, %lx\n",&((pdp_entry_t *)KPML4phys)[PML4PML4I],
++            ((pdp_entry_t *)KPML4phys)[PML4PML4I]);
++#endif
++
++#if SVA_DEBUG
++    printf("PML4 DMAP Entries\n");
++#endif
+ 	/* Connect the Direct Map slot(s) up to the PML4. */
+ 	for (i = 0; i < NDMPML4E; i++) {
+ 		((pdp_entry_t *)KPML4phys)[DMPML4I + i] = DMPDPphys +
+ 		    (i << PAGE_SHIFT);
+-		((pdp_entry_t *)KPML4phys)[DMPML4I + i] |= PG_RW | PG_V | PG_U;
++        ((pdp_entry_t *)KPML4phys)[DMPML4I + i] |= PG_RW | PG_V | PG_U;
++#if SVA_DEBUG
++        printf("KPML4phys[%d]: ptr:%p, val:%p\n", DMPML4I + i, 
++                &((pdp_entry_t *)KPML4phys)[DMPML4I + i],
++                 ((pdp_entry_t *)KPML4phys)[DMPML4I + i]
++              );
++#endif 
+ 	}
+ 
+ 	/* Connect the KVA slot up to the PML4 */
+ 	((pdp_entry_t *)KPML4phys)[KPML4I] = KPDPphys;
+ 	((pdp_entry_t *)KPML4phys)[KPML4I] |= PG_RW | PG_V | PG_U;
++
++#if SVA_DEBUG
++    printf("pml4[0]:\t\t\t %p: 0x%lx\n", &((pdp_entry_t *)KPML4phys)[0], 
++            ((pdp_entry_t *)KPML4phys)[0]);
++    printf("KVA slot to the pml4:\t\t\t %p: 0x%lx\n", &((pdp_entry_t *)KPML4phys)[KPML4I], 
++            ((pdp_entry_t *)KPML4phys)[KPML4I]);
++#endif 
++
+ }
+ 
+ /*
+@@ -567,15 +662,43 @@ pmap_bootstrap(vm_paddr_t *firstaddr)
+ 	 */
+ 	create_pagetables(firstaddr);
+ 
++#if 1
++  /* 
++   * Set the static address locations in the struct here to aid in kernel MMU
++   * initialization. Note that we pass in the page mapping for the pml4 page.
++   * This function will also initialize the cr3.
++   */
++  sva_mmu_init (&((pdp_entry_t *)KPML4phys)[PML4PML4I],
++                NPDEPG,
++                firstaddr,
++                (uintptr_t)btext,
++                (uintptr_t)etext); 
++#endif
++
+ 	virtual_avail = (vm_offset_t) KERNBASE + *firstaddr;
+ 	virtual_avail = pmap_kmem_choose(virtual_avail);
+-
+ 	virtual_end = VM_MAX_KERNEL_ADDRESS;
+ 
+-
+ 	/* XXX do %cr0 as well */
+ 	load_cr4(rcr4() | CR4_PGE | CR4_PSE);
+-	load_cr3(KPML4phys);
++
++#ifdef SVA_MMU
++#if 0
++  /* 
++   * Set the static address locations in the struct here to aid in kernel MMU
++   * initialization. Note that we pass in the page mapping for the pml4 page.
++   * This function will also initialize the cr3.
++   */
++  sva_mmu_init (&((pdp_entry_t *)KPML4phys)[PML4PML4I],
++                NPDEPG,
++                firstaddr,
++                (uintptr_t)btext,
++                (uintptr_t)etext); 
++
++#endif
++#else /* !SVA_MMU */
++    load_cr3(KPML4phys);
++#endif
+ 
+ 	/*
+ 	 * Initialize the kernel pmap (which is statically allocated).
+@@ -607,7 +730,7 @@ pmap_bootstrap(vm_paddr_t *firstaddr)
+ 	SYSMAP(caddr_t, unused, crashdumpmap, MAXDUMPPGS)
+ 
+ 	virtual_avail = va;
+-
++    
+ 	/* Initialize the PAT MSR. */
+ 	pmap_init_pat();
+ }
+@@ -674,7 +797,11 @@ pmap_init_pat(void)
+ 
+ 	/* Disable caches (CD = 1, NW = 0). */
+ 	cr0 = rcr0();
++#ifdef SVA_MMU
++	sva_load_cr0((cr0 & ~CR0_NW) | CR0_CD);
++#else
+ 	load_cr0((cr0 & ~CR0_NW) | CR0_CD);
++#endif
+ 
+ 	/* Flushes caches and TLBs. */
+ 	wbinvd();
+@@ -690,7 +817,11 @@ pmap_init_pat(void)
+ 	invltlb();
+ 
+ 	/* Restore caches and PGE. */
++#ifdef SVA_MMU
++	sva_load_cr0(cr0);
++#else
+ 	load_cr0(cr0);
++#endif
+ 	load_cr4(cr4);
+ }
+ 
+@@ -1017,8 +1148,14 @@ pmap_update_pde_action(void *arg)
+ {
+ 	struct pde_action *act = arg;
+ 
+-	if (act->store == PCPU_GET(cpuid))
+-		pde_store(act->pde, act->newpde);
++    if (act->store == PCPU_GET(cpuid)){
++#ifdef SVA_MMU
++        /* SVA update the mapping to the newly created pde */
++        sva_update_l2_mapping(act->pde, act->newpde);
++#else
++        pde_store(act->pde, act->newpde);
++#endif
++    }
+ }
+ 
+ static void
+@@ -1064,7 +1201,12 @@ pmap_update_pde(pmap_t pmap, vm_offset_t va, pd_entry_t *pde, pd_entry_t newpde)
+ 		    smp_no_rendevous_barrier, pmap_update_pde_action,
+ 		    pmap_update_pde_teardown, &act);
+ 	} else {
+-		pde_store(pde, newpde);
++#ifdef SVA_MMU
++        /* SVA update the mapping to the newly created pde */
++        sva_update_l2_mapping(pde, newpde);
++#else
++        pde_store(pde, newpde);
++#endif
+ 		if (CPU_ISSET(cpuid, &active))
+ 			pmap_update_pde_invalidate(va, newpde);
+ 	}
+@@ -1112,7 +1254,12 @@ static void
+ pmap_update_pde(pmap_t pmap, vm_offset_t va, pd_entry_t *pde, pd_entry_t newpde)
+ {
+ 
++#ifdef SVA_MMU
++    /* SVA update the mapping to the newly created pde */
++    sva_update_l2_mapping(pde, newpde);
++#else
+ 	pde_store(pde, newpde);
++#endif
+ 	if (pmap == kernel_pmap || !CPU_EMPTY(&pmap->pm_active))
+ 		pmap_update_pde_invalidate(va, newpde);
+ }
+@@ -1319,8 +1466,13 @@ pmap_kenter(vm_offset_t va, vm_paddr_t pa)
+ {
+ 	pt_entry_t *pte;
+ 
+-	pte = vtopte(va);
+-	pte_store(pte, pa | PG_RW | PG_V | PG_G);
++    pte = vtopte(va);
++#ifdef SVA_MMU
++    /* Update the initial mapping of the leaf page */
++    sva_update_l1_mapping(pte, (pd_entry_t)(pa | PG_RW | PG_V | PG_G));
++#else
++    pte_store(pte, pa | PG_RW | PG_V | PG_G);
++#endif
+ }
+ 
+ static __inline void
+@@ -1329,7 +1481,13 @@ pmap_kenter_attr(vm_offset_t va, vm_paddr_t pa, int mode)
+ 	pt_entry_t *pte;
+ 
+ 	pte = vtopte(va);
++#ifdef SVA_MMU
++    /* Update the initial mapping of the leaf page */
++    sva_update_l1_mapping(pte, (pd_entry_t)(pa | PG_RW | PG_V | PG_G |
++                pmap_cache_bits(mode, 0))); 
++#else
+ 	pte_store(pte, pa | PG_RW | PG_V | PG_G | pmap_cache_bits(mode, 0));
++#endif
+ }
+ 
+ /*
+@@ -1341,8 +1499,13 @@ pmap_kremove(vm_offset_t va)
+ {
+ 	pt_entry_t *pte;
+ 
+-	pte = vtopte(va);
+-	pte_clear(pte);
++    pte = vtopte(va);
++#ifdef SVA_MMU
++		/* Clear the pte entry */
++		sva_remove_mapping(pte);
++#else
++    pte_clear(pte);
++#endif
+ }
+ 
+ /*
+@@ -1387,7 +1550,26 @@ pmap_qenter(vm_offset_t sva, vm_page_t *ma, int count)
+ 		pa = VM_PAGE_TO_PHYS(m) | pmap_cache_bits(m->md.pat_mode, 0);
+ 		if ((*pte & (PG_FRAME | PG_PTE_CACHE)) != pa) {
+ 			oldpte |= *pte;
+-			pte_store(pte, pa | PG_G | PG_RW | PG_V);
++#ifdef SVA_MMU
++            /* Print out the pml4e, pdpe, and pde, address */
++            /* 
++             * FIXME:XXX for some reason the act of obtaining the pde and
++             * dereferencing it causes a bug to disappear. Dereffing the pte is
++             * required for it to work.
++             */
++#if 0//SVA_DEBUG
++            pd_entry_t *pde = vtopde(sva);
++            pde = pde;
++            printf(">---- FBSD<pmap_qenter> VA: %p \n", sva);
++            printf("\tpde: %p, *pde: 0x%lx\n", pde, *pde);
++            printf("\tpte: %p, *pte: 0x%lx, physAddr: %p\n", pte, *pte, pa);
++#endif
++
++            /* Update the initial mapping of the leaf page */
++            sva_update_l1_mapping(pte, (pd_entry_t)(pa | PG_G | PG_RW | PG_V));
++#else
++            pte_store(pte, pa | PG_G | PG_RW | PG_V);
++#endif
+ 		}
+ 		pte++;
+ 	}
+@@ -1444,6 +1626,10 @@ pmap_add_delayed_free_list(vm_page_t m, vm_page_t *free, boolean_t set_PG_ZERO)
+ 	else
+ 		m->flags &= ~PG_ZERO;
+ 	m->right = *free;
++#if 1
++  /* Remove this page if it is a page table page */
++	sva_remove_page (VM_PAGE_TO_PHYS(m));
++#endif
+ 	*free = m;
+ }
+ 	
+@@ -1554,17 +1740,34 @@ _pmap_unwire_pte_hold(pmap_t pmap, vm_offset_t va, vm_page_t m,
+ 		/* PDP page */
+ 		pml4_entry_t *pml4;
+ 		pml4 = pmap_pml4e(pmap, va);
++
++		/*
++		 * Update the pml4 pdp page
++		 */
++#ifdef SVA_MMU 
++		sva_update_l4_mapping(pml4, 0);
++#else
+ 		*pml4 = 0;
++#endif
++
+ 	} else if (m->pindex >= NUPDE) {
+ 		/* PD page */
+ 		pdp_entry_t *pdp;
+ 		pdp = pmap_pdpe(pmap, va);
++#ifdef SVA_MMU 
++		sva_update_l3_mapping(pdp, 0);
++#else
+ 		*pdp = 0;
++#endif
+ 	} else {
+ 		/* PTE page */
+ 		pd_entry_t *pd;
+ 		pd = pmap_pde(pmap, va);
++#ifdef SVA_MMU 
++		sva_update_l2_mapping(pd, 0);
++#else
+ 		*pd = 0;
++#endif
+ 	}
+ 	pmap_resident_count_dec(pmap, 1);
+ 	if (m->pindex < NUPDE) {
+@@ -1614,6 +1817,10 @@ pmap_unuse_pt(pmap_t pmap, vm_offset_t va, pd_entry_t ptepde, vm_page_t *free)
+ 	return (pmap_unwire_pte_hold(pmap, va, mpte, free));
+ }
+ 
++/* 
++ * SVA-TODO this function is called by ../../kernel/init_main.c
++ * Analyze it to setup initialization of mmu code.
++ */
+ void
+ pmap_pinit0(pmap_t pmap)
+ {
+@@ -1637,6 +1844,9 @@ pmap_pinit(pmap_t pmap)
+ 	vm_page_t pml4pg;
+ 	static vm_pindex_t color;
+ 	int i;
++#ifdef SVA_MMU
++    pml4_entry_t * pml4e_self;
++#endif
+ 
+ 	PMAP_LOCK_INIT(pmap);
+ 
+@@ -1649,24 +1859,119 @@ pmap_pinit(pmap_t pmap)
+ 
+ 	pmap->pm_pml4 = (pml4_entry_t *)PHYS_TO_DMAP(VM_PAGE_TO_PHYS(pml4pg));
+ 
++#ifdef SVA_MMU
++	/* 
++	 * Due to the large page size mapping on PDEs in the DMAP we need to demote
++	 * the PDE to a set of PTs so that we can control the new PTPs alone.
++	 */
++	pmap_demote_DMAP(VM_PAGE_TO_PHYS(pml4pg), PAGE_SIZE, FALSE);
++#endif
++
+ 	if ((pml4pg->flags & PG_ZERO) == 0)
+ 		pagezero(pmap->pm_pml4);
+ 
++#ifdef SVA_MMU
++	/* 
++	 * SVA self referential entry, which is used when declaring this particular
++	 * page.
++	 */
++	pml4e_self = (pml4_entry_t *) &pmap->pm_pml4[PML4PML4I];
++
++#if 0//SVA_DEBUG
++	/* TODO: figure out if this check is needed. */
++	if ((pml4pg->flags & PG_ZERO) != 0)
++		panic("SVA: about to call declare l4 on a page that says not to zero");
++#endif
++	/* 
++	 * Declare the l4 page to SVA. This will initialize paging structures
++	 * and make the page table page as read only. 
++	 *  
++	 * SVA-TODO: Think more on how this pte is used for managing access to this
++	 * particular page. Instead should we setup something like the cr3 to
++	 * capture this new data? Can we always assume the reference is in this
++	 * address? What if an attacker modifies it so that the self references is
++	 * somewhere else in memory? I suppose we are forcing the mapping to be
++	 * here for correct execution. So if the attacker changes then it will
++	 * automatically break the system. 
++	 */
++
++#if SVA_DEBUG
++	printf("CR0: %p, CR3: %p, CR4: %p\n",rcr0(), rcr3(), rcr4());
++	printf("Virtual Address: pml4: %p, *pml4: %p\n", pmap->pm_pml4, *pmap->pm_pml4);
++#endif
++	sva_declare_l4_page(VM_PAGE_TO_PHYS(pml4pg));
++#endif
++
+ 	/* Wire in kernel global address entries. */
++#ifdef SVA_MMU
++	/* 
++	 * Update the L4 mapping with the kernel VAs. Note that these pages were
++	 * initialized during system startup and thus the reason we don't have a
++	 * declare here.
++	 */
++	sva_update_l4_mapping(&pmap->pm_pml4[KPML4I], (pd_entry_t)(KPDPphys | PG_RW
++                | PG_V | PG_U)); 
++#else /* !SVA_MMU */
+ 	pmap->pm_pml4[KPML4I] = KPDPphys | PG_RW | PG_V | PG_U;
+-	for (i = 0; i < NDMPML4E; i++) {
++
++#endif 
++
++    for (i = 0; i < NDMPML4E; i++) {
++        /* Wire in kernel global address entries. */
++
++#ifdef SVA_MMU
++        /* 
++         * Update the L4 mapping with the kernel VAs. Note that these pages were
++         * initialized during system startup and thus the reason we don't have a
++         * declare here.
++         */
++        sva_update_l4_mapping( &pmap->pm_pml4[DMPML4I + i],
++                (pd_entry_t)((DMPDPphys + (i << PAGE_SHIFT)) | PG_RW | PG_V |
++                    PG_U));
++#else /* !SVA_MMU */
+ 		pmap->pm_pml4[DMPML4I + i] = (DMPDPphys + (i << PAGE_SHIFT)) |
+ 		    PG_RW | PG_V | PG_U;
+-	}
++#endif
++
++    }
++
++#ifdef SVA_MMU
++    /*
++     * Update the l4 self-referential address mapping to the newly created
++     * page table page. Note that we place a self reference here, so we are
++     * doing the update on the newly created l4 page table page we just
++     * declared.
++     */
++    sva_update_l4_mapping(&(pmap->pm_pml4[PML4PML4I]), (pd_entry_t) (VM_PAGE_TO_PHYS(pml4pg) | PG_V |
++                PG_RW | PG_A | PG_M));
++#else
++    /* install self-referential address mapping entry(s) */
++    pmap->pm_pml4[PML4PML4I] = VM_PAGE_TO_PHYS(pml4pg) | PG_V | PG_RW | PG_A | PG_M;
++#endif
+ 
+-	/* install self-referential address mapping entry(s) */
+-	pmap->pm_pml4[PML4PML4I] = VM_PAGE_TO_PHYS(pml4pg) | PG_V | PG_RW | PG_A | PG_M;
++#if SVA_DEBUG
++    printf("pmap->pm_root: %p, *pmap->pm_root: %p\n",&pmap->pm_root,pmap->pm_root);
++    printf("pmap: %p\n", pmap);
++    printf("DMAP phys of pmap: %p, pmap->pm_root: %p\n", DMAP_TO_PHYS((unsigned long) pmap),
++            DMAP_TO_PHYS((unsigned long)pmap->pm_root));
+ 
+-	pmap->pm_root = NULL;
+-	CPU_ZERO(&pmap->pm_active);
++    printf("CR0: %p, CR3: %p, CR4: %p\n",rcr0(), rcr3(), rcr4());
++    //sva_load_cr0( (rcr0() & ~CR0_WP) );
++    printf("CR0: %p, CR3: %p, CR4: %p\n",rcr0(), rcr3(), rcr4());
++#endif
++
++    pmap->pm_root = NULL;
++    CPU_ZERO(&pmap->pm_active);
+ 	TAILQ_INIT(&pmap->pm_pvchunk);
+ 	bzero(&pmap->pm_stats, sizeof pmap->pm_stats);
+ 
++#if SVA_DEBUG
++    printf("CR0: %p, CR3: %p, CR4: %p\n",rcr0(), rcr3(), rcr4());
++    //sva_load_cr0( (rcr0() | CR0_WP) );
++    printf("CR0: %p, CR3: %p, CR4: %p\n",rcr0(), rcr3(), rcr4());
++    //panic("\n---------\n");
++#endif
++
+ 	return (1);
+ }
+ 
+@@ -1708,7 +2013,8 @@ _pmap_allocpte(pmap_t pmap, vm_pindex_t ptepindex, int flags)
+ 		 */
+ 		return (NULL);
+ 	}
+-	if ((m->flags & PG_ZERO) == 0)
++	
++    if ((m->flags & PG_ZERO) == 0)
+ 		pmap_zero_page(m);
+ 
+ 	/*
+@@ -1723,7 +2029,29 @@ _pmap_allocpte(pmap_t pmap, vm_pindex_t ptepindex, int flags)
+ 		/* Wire up a new PDPE page */
+ 		pml4index = ptepindex - (NUPDE + NUPDPE);
+ 		pml4 = &pmap->pm_pml4[pml4index];
++
++#ifdef SVA_MMU
++
++		pdp_entry_t *pdp = (pdp_entry_t *)PHYS_TO_DMAP(VM_PAGE_TO_PHYS(m));
++
++#if SVA_DEBUG
++        printf("<<< FBSD __pmap_allocatepte: pre declare l3: ");
++        printf("%p, contents: 0x%lx\n", pdp, *pdp); 
++#endif
++        /* 
++         * Declare the l3 page to SVA. This will initialize paging structures
++         * and make the page table page as read only
++         */
++        sva_declare_l3_page(VM_PAGE_TO_PHYS(m));
++
++        /*
++         * Update the l4 mappings to the newly created page table page
++         */
++        sva_update_l4_mapping(pml4, (pd_entry_t) (VM_PAGE_TO_PHYS(m) | PG_U |
++                    PG_RW | PG_V | PG_A | PG_M));
++#else
+ 		*pml4 = VM_PAGE_TO_PHYS(m) | PG_U | PG_RW | PG_V | PG_A | PG_M;
++#endif
+ 
+ 	} else if (ptepindex >= NUPDE) {
+ 		vm_pindex_t pml4index;
+@@ -1754,7 +2082,33 @@ _pmap_allocpte(pmap_t pmap, vm_pindex_t ptepindex, int flags)
+ 
+ 		/* Now find the pdp page */
+ 		pdp = &pdp[pdpindex & ((1ul << NPDPEPGSHIFT) - 1)];
++
++#if 0//SVA_DEBUG
++        printf("<<< FBSD __pmap_allocatepte: pre declare va-pentry: ");
++        printf(" %p, contents: 0x%lx\n", pdp, *pdp); 
++#endif
++
++#ifdef SVA_MMU
++        /* 
++         * Declare the l2 page to SVA. This will initialize paging structures
++         * and make the page table page as read only
++         */
++        sva_declare_l2_page(VM_PAGE_TO_PHYS(m));
++
++        /*
++         * Update the l3 mappings to the newly created page table page
++         */
++        sva_update_l3_mapping(pdp, (pd_entry_t) (VM_PAGE_TO_PHYS(m) | PG_U |
++                    PG_RW | PG_V | PG_A | PG_M));
++
++#else  /* !SVA_DEBUG */
+ 		*pdp = VM_PAGE_TO_PHYS(m) | PG_U | PG_RW | PG_V | PG_A | PG_M;
++#endif 
++
++#if 0//SVA_DEBUG
++        printf("<<< FBSD __pmap_allocatepte: post l2_update: ");
++        printf("%p, contents: 0x%lx\n", pdp, *pdp); 
++#endif
+ 
+ 	} else {
+ 		vm_pindex_t pml4index;
+@@ -1795,6 +2149,11 @@ _pmap_allocpte(pmap_t pmap, vm_pindex_t ptepindex, int flags)
+ 				}
+ 			} else {
+ 				/* Add reference to the pd page */
++                /* 
++                 * SVA TODO: here we are mapping in an already mapped pd page.
++                 * Do we need to also call an SVA function to change the
++                 * mapping counts? 
++                 */
+ 				pdpg = PHYS_TO_VM_PAGE(*pdp & PG_FRAME);
+ 				pdpg->wire_count++;
+ 			}
+@@ -1803,7 +2162,51 @@ _pmap_allocpte(pmap_t pmap, vm_pindex_t ptepindex, int flags)
+ 
+ 		/* Now we know where the page directory page is */
+ 		pd = &pd[ptepindex & ((1ul << NPDEPGSHIFT) - 1)];
++
++#if 0//SVA_DEBUG
++		printf("<<< FBSD __pmap_allocatepte: pre declare va-pentry: ");
++		printf("%p, contents: 0x%lx\n", pd, *pd); 
++#endif
++
++#ifdef SVA_MMU
++		/* 
++		 * Declare the l1 page to SVA. This will initialize paging structures
++		 * and make the page table entry referencing the new page as read only.
++		 */
++#if 0
++		printf("Pre dec l1: pde: %p, old mapping: 0x%lx\n", 
++						pd, *pd);
++#endif
++
++		sva_declare_l1_page(VM_PAGE_TO_PHYS(m));
++
++#if 0
++		printf("Post dec l1: pde: %p, old mapping: 0x%lx, new mapping: 0x%lx\n", 
++						pd, *pd, (pd_entry_t) (VM_PAGE_TO_PHYS(m) | PG_U | PG_RW | PG_V
++								| PG_A | PG_M));
++#endif
++		/* Update the l2 mapping to the requested value */
++		sva_update_l2_mapping(pd, (pd_entry_t) (VM_PAGE_TO_PHYS(m) | PG_U |
++								PG_RW | PG_V | PG_A | PG_M));
++
++#if 0
++		printf("Post up l1: pde: %p, old mapping: 0x%lx, new mapping: 0x%lx\n",
++						pd, *pd, (pd_entry_t) (VM_PAGE_TO_PHYS(m) | PG_U | PG_RW | PG_V
++								| PG_A | PG_M));
++		*pd = VM_PAGE_TO_PHYS(m) | PG_U | PG_RW | PG_V | PG_A | PG_M;
++		printf("Post pde: %p, new mapping: 0x%lx\n", pd, *pd);
++		panic ("");
++#endif
++
++#else  /* !SVA_DEBUG */
+ 		*pd = VM_PAGE_TO_PHYS(m) | PG_U | PG_RW | PG_V | PG_A | PG_M;
++#endif 
++
++#if 0//SVA_DEBUG
++        printf("<<< FBSD __pmap_allocatepte: post l2_update: ");
++        printf("%p, contents: 0x%lx\n", pd, *pd); 
++#endif
++
+ 	}
+ 
+ 	pmap_resident_count_inc(pmap, 1);
+@@ -1852,17 +2255,37 @@ pmap_allocpte(pmap_t pmap, vm_offset_t va, int flags)
+ 	/*
+ 	 * Calculate pagetable page index
+ 	 */
++    // NDD: va shifted to the right 21 bits, gets the top half of va including
++    // the pml4, pdp, and pd.  I don't get why it says ptepindex here... this
++    // is a pde page index... but it also has other stuff...
+ 	ptepindex = pmap_pde_pindex(va);
+ retry:
+ 	/*
+ 	 * Get the page directory entry
+ 	 */
++    // NDD: the pde references a page table --- pd is actually a pde****
+ 	pd = pmap_pde(pmap, va);
+ 
+ 	/*
+ 	 * This supports switching from a 2MB page to a
+ 	 * normal 4K page.
+ 	 */
++
++    /***** NDD_ NOTE
++     * So if the pde has both the 2MB and valid bits set then we demote the
++     * pde. The demote action does a lot of potential creation of new l2 and l1
++     * mappings as well as modifications to the entries on those pages. I did
++     * not go through it in detail, but to be able to capture these
++     * modifications in SVA we will need to go through in depth and instrument. 
++     * Note though that this only happens if we the PDE is configured with a 
++     * 2MB page size. Oh so if we are dealing with a 2MB page size for this
++     * particular entry in the pdp and in the case of this function we are
++     * attempting to allocate a PTE, which only exists if we have 4kb page
++     * size. So we need to demote the particular PDE to work with a 4kb page
++     * size, which means we need to modify the configuration of this pde as
++     * well as generate new pd-page and the subsequent mappings of adding a new
++     * level. 
++     */
+ 	if (pd != NULL && (*pd & (PG_PS | PG_V)) == (PG_PS | PG_V)) {
+ 		if (!pmap_demote_pde(pmap, pd, va)) {
+ 			/*
+@@ -1880,6 +2303,7 @@ retry:
+ 	if (pd != NULL && (*pd & PG_V) != 0) {
+ 		m = PHYS_TO_VM_PAGE(*pd & PG_FRAME);
+ 		m->wire_count++;
++        /* SVA-TODO: NDD -- update mapping count for this page */
+ 	} else {
+ 		/*
+ 		 * Here if the pte page isn't mapped, or if it has been
+@@ -1897,11 +2321,13 @@ retry:
+  * Pmap allocation/deallocation routines.
+  ***************************************************/
+ 
++/* SVA-TODO: assess this function for page deallocation */
+ /*
+  * Release any resources held by the given physical map.
+  * Called when a pmap initialized by pmap_pinit is being released.
+  * Should only be called if the map contains no valid mappings.
+  */
++
+ void
+ pmap_release(pmap_t pmap)
+ {
+@@ -1916,17 +2342,35 @@ pmap_release(pmap_t pmap)
+ 
+ 	m = PHYS_TO_VM_PAGE(pmap->pm_pml4[PML4PML4I] & PG_FRAME);
+ 
++#ifdef SVA_MMU
++    sva_update_l4_mapping(&pmap->pm_pml4[KPML4I], 0); 
++#else
+ 	pmap->pm_pml4[KPML4I] = 0;	/* KVA */
+-	for (i = 0; i < NDMPML4E; i++)	/* Direct Map */
+-		pmap->pm_pml4[DMPML4I + i] = 0;
+-	pmap->pm_pml4[PML4PML4I] = 0;	/* Recursive Mapping */
++#endif
++
++	for (i = 0; i < NDMPML4E; i++) {	/* Direct Map */
++#ifdef SVA_MMU
++        sva_update_l4_mapping(&pmap->pm_pml4[DMPML4I + i], 0); 
++#else
++        pmap->pm_pml4[DMPML4I + i] = 0;
++#endif
++    }
++
++#ifdef SVA_MMU
++    sva_update_l4_mapping(&pmap->pm_pml4[PML4PML4I], 0); 
++#else
++    pmap->pm_pml4[PML4PML4I] = 0;	/* Recursive Mapping */
++#endif
+ 
+ 	m->wire_count--;
+ 	atomic_subtract_int(&cnt.v_wire_count, 1);
++#ifdef SVA_MMU
++  sva_remove_page (VM_PAGE_TO_PHYS(m));
++#endif
+ 	vm_page_free_zero(m);
+ 	PMAP_LOCK_DESTROY(pmap);
+ }
+-
++
+ static int
+ kvm_size(SYSCTL_HANDLER_ARGS)
+ {
+@@ -1993,8 +2437,24 @@ pmap_growkernel(vm_offset_t addr)
+ 			if ((nkpg->flags & PG_ZERO) == 0)
+ 				pmap_zero_page(nkpg);
+ 			paddr = VM_PAGE_TO_PHYS(nkpg);
++
++#ifdef SVA_MMU
++			/* 
++			 * Declare the l2 page to SVA. This will initialize paging
++			 * structures and make the page table page as read only
++			 */
++			sva_declare_l2_page(paddr);
++
++			/*
++			 * SVA update the mappings to the newly created page table page
++			 */
++			sva_update_l3_mapping(pdpe, (paddr | PG_V | PG_RW | PG_A | PG_M));
++#else
+ 			*pdpe = (pdp_entry_t)
+ 				(paddr | PG_V | PG_RW | PG_A | PG_M);
++#endif
++
++            
+ 			continue; /* try again */
+ 		}
+ 		pde = pmap_pdpe_to_pde(pdpe, kernel_vm_end);
+@@ -2016,7 +2476,21 @@ pmap_growkernel(vm_offset_t addr)
+ 			pmap_zero_page(nkpg);
+ 		paddr = VM_PAGE_TO_PHYS(nkpg);
+ 		newpdir = (pd_entry_t) (paddr | PG_V | PG_RW | PG_A | PG_M);
++
++#ifdef SVA_MMU
++		/* 
++		 * Declare the l1 page to SVA. This will initialize paging structures
++		 * and make the page table page as read only
++		 */
++		sva_declare_l1_page(paddr);
++
++		/*
++		 * Update the mapping in the level 2 entry.
++		 */
++		sva_update_l2_mapping(pde, newpdir);
++#else
+ 		pde_store(pde, newpdir);
++#endif
+ 
+ 		kernel_vm_end = (kernel_vm_end + NBPDR) & ~PDRMASK;
+ 		if (kernel_vm_end - 1 >= kernel_map->max_offset) {
+@@ -2119,7 +2593,18 @@ pmap_collect(pmap_t locked_pmap, struct vpgqueues *vpq)
+ 			KASSERT((*pde & PG_PS) == 0, ("pmap_collect: found"
+ 			    " a 2mpage in page %p's pv list", m));
+ 			pte = pmap_pde_to_pte(pde, va);
++
++#ifdef SVA_MMU
++			/* 
++			 * To emulate the proper behavior here we first read the pte value then
++			 * do an update mapping to remove the mapping. Pass in a value of zero
++			 * to remove the mapping.
++			 */
++			tpte = *pte;
++			sva_remove_mapping(pte);
++#else
+ 			tpte = pte_load_clear(pte);
++#endif
+ 			KASSERT((tpte & PG_W) == 0,
+ 			    ("pmap_collect: wired pte %#lx", tpte));
+ 			if (tpte & PG_A)
+@@ -2459,7 +2944,12 @@ pmap_fill_ptp(pt_entry_t *firstpte, pt_entry_t newpte)
+ 	pt_entry_t *pte;
+ 
+ 	for (pte = firstpte; pte < firstpte + NPTEPG; pte++) {
++#ifdef SVA_MMU
++		/* Update the pte with the new page mapping */
++		sva_update_l1_mapping(pte, newpte);
++#else
+ 		*pte = newpte;
++#endif
+ 		newpte += PAGE_SIZE;
+ 	}
+ }
+@@ -2526,6 +3016,13 @@ pmap_demote_pde(pmap_t pmap, pd_entry_t *pde, vm_offset_t va)
+ 	if ((newpte & PG_PDE_PAT) != 0)
+ 		newpte ^= PG_PDE_PAT | PG_PTE_PAT;
+ 
++#ifdef SVA_MMU
++	/*
++	 * Declare the new PTE page as a page table page.
++	 */
++	sva_declare_l1_page (mptepa);
++#endif
++
+ 	/*
+ 	 * If the page table page is new, initialize it.
+ 	 */
+@@ -2552,9 +3049,16 @@ pmap_demote_pde(pmap_t pmap, pd_entry_t *pde, vm_offset_t va)
+ 	 * the read above and the store below. 
+ 	 */
+ 	if (workaround_erratum383)
+-		pmap_update_pde(pmap, va, pde, newpde);
+-	else
+-		pde_store(pde, newpde);
++        pmap_update_pde(pmap, va, pde, newpde);
++    else {
++#ifdef SVA_MMU
++        /* SVA update the mapping to the newly created pde */
++        /* TODO this is a 2MB pde, we need to handle this in the update function */
++        sva_update_l2_mapping(pde, newpde);
++#else
++        pde_store(pde, newpde);
++#endif
++    }
+ 
+ 	/*
+ 	 * Invalidate a stale recursive mapping of the page table page.
+@@ -2595,7 +3099,15 @@ pmap_remove_pde(pmap_t pmap, pd_entry_t *pdq, vm_offset_t sva,
+ 	PMAP_LOCK_ASSERT(pmap, MA_OWNED);
+ 	KASSERT((sva & PDRMASK) == 0,
+ 	    ("pmap_remove_pde: sva is not 2mpage aligned"));
++
++#ifdef SVA_MMU
++	/* Store the current mapping and then remove the page mapping */
++	oldpde = *pdq;
++	sva_remove_mapping(pdq);
++#else
+ 	oldpde = pte_load_clear(pdq);
++#endif
++
+ 	if (oldpde & PG_W)
+ 		pmap->pm_stats.wired_count -= NBPDR / PAGE_SIZE;
+ 
+@@ -2636,6 +3148,7 @@ pmap_remove_pde(pmap_t pmap, pd_entry_t *pdq, vm_offset_t sva,
+ 			atomic_subtract_int(&cnt.v_wire_count, 1);
+ 		}
+ 	}
++
+ 	return (pmap_unuse_pt(pmap, sva, *pmap_pdpe(pmap, sva), free));
+ }
+ 
+@@ -2650,7 +3163,19 @@ pmap_remove_pte(pmap_t pmap, pt_entry_t *ptq, vm_offset_t va,
+ 	vm_page_t m;
+ 
+ 	PMAP_LOCK_ASSERT(pmap, MA_OWNED);
++
++#ifdef SVA_MMU
++	/* 
++	 * To emulate the proper behavior here we first read the pte value then do
++	 * an update mapping to remove the mapping. Pass in a value of zero to
++	 * remove the mapping.
++	 */
++	oldpte = *ptq;
++	sva_remove_mapping(ptq);
++#else
+ 	oldpte = pte_load_clear(ptq);
++#endif
++
+ 	if (oldpte & PG_W)
+ 		pmap->pm_stats.wired_count -= 1;
+ 	pmap_resident_count_dec(pmap, 1);
+@@ -2868,7 +3393,19 @@ pmap_remove_all(vm_page_t m)
+ 		KASSERT((*pde & PG_PS) == 0, ("pmap_remove_all: found"
+ 		    " a 2mpage in page %p's pv list", m));
+ 		pte = pmap_pde_to_pte(pde, pv->pv_va);
++
++#ifdef SVA_MMU
++		/* 
++		 * To emulate the proper behavior here we first read the pte value then
++		 * do an update mapping to remove the mapping. Pass in a value of zero
++		 * to remove the mapping.
++		 */
++		tpte = *pte;
++		sva_remove_mapping(pte);
++#else
+ 		tpte = pte_load_clear(pte);
++#endif
++
+ 		if (tpte & PG_W)
+ 			pmap->pm_stats.wired_count--;
+ 		if (tpte & PG_A)
+@@ -2919,8 +3456,12 @@ retry:
+ 	if ((prot & VM_PROT_EXECUTE) == 0)
+ 		newpde |= pg_nx;
+ 	if (newpde != oldpde) {
++#if 0
+ 		if (!atomic_cmpset_long(pde, oldpde, newpde))
+ 			goto retry;
++#else
++    sva_update_l2_mapping (pde, newpde);
++#endif
+ 		if (oldpde & PG_G)
+ 			pmap_invalidate_page(pmap, sva);
+ 		else
+@@ -3034,8 +3575,12 @@ retry:
+ 				pbits |= pg_nx;
+ 
+ 			if (pbits != obits) {
++#if 0
+ 				if (!atomic_cmpset_long(pte, obits, pbits))
+ 					goto retry;
++#else
++				sva_update_l1_mapping (pte, pbits);
++#endif
+ 				if (obits & PG_G)
+ 					pmap_invalidate_page(pmap, sva);
+ 				else
+@@ -3085,8 +3630,12 @@ setpde:
+ 		 * When PG_M is already clear, PG_RW can be cleared without
+ 		 * a TLB invalidation.
+ 		 */
++#if 0
+ 		if (!atomic_cmpset_long(firstpte, newpde, newpde & ~PG_RW))
+ 			goto setpde;
++#else
++		sva_update_l1_mapping (firstpte, newpde & ~PG_RW);
++#endif
+ 		newpde &= ~PG_RW;
+ 	}
+ 
+@@ -3110,8 +3659,12 @@ setpte:
+ 			 * When PG_M is already clear, PG_RW can be cleared
+ 			 * without a TLB invalidation.
+ 			 */
++#if 0
+ 			if (!atomic_cmpset_long(pte, oldpte, oldpte & ~PG_RW))
+ 				goto setpte;
++#else
++			sva_update_l1_mapping (pte, oldpte & ~PG_RW);
++#endif
+ 			oldpte &= ~PG_RW;
+ 			oldpteva = (oldpte & PG_FRAME & PDRMASK) |
+ 			    (va & ~PDRMASK);
+@@ -3157,8 +3710,14 @@ setpte:
+ 	 */
+ 	if (workaround_erratum383)
+ 		pmap_update_pde(pmap, va, pde, PG_PS | newpde);
+-	else
+-		pde_store(pde, PG_PS | newpde);
++    else{
++#ifdef SVA_MMU
++        /* SVA update the mapping to the newly created pde */
++        sva_update_l2_mapping(pde, PG_PS | newpde);
++#else
++        pde_store(pde, PG_PS | newpde);
++#endif
++    }
+ 
+ 	pmap_pde_promotions++;
+ 	CTR2(KTR_PMAP, "pmap_promote_pde: success for va %#lx"
+@@ -3188,6 +3747,7 @@ pmap_enter(pmap_t pmap, vm_offset_t va, vm_prot_t access, vm_page_t m,
+ 	vm_paddr_t opa, pa;
+ 	vm_page_t mpte, om;
+ 	boolean_t invlva;
++    boolean_t newMapping;
+ 
+ 	va = trunc_page(va);
+ 	KASSERT(va <= VM_MAX_KERNEL_ADDRESS, ("pmap_enter: toobig"));
+@@ -3223,6 +3783,10 @@ pmap_enter(pmap_t pmap, vm_offset_t va, vm_prot_t access, vm_page_t m,
+ 	origpte = *pte;
+ 	opa = origpte & PG_FRAME;
+ 
++#ifdef SVA_MMU
++	newMapping = pa == opa;
++#endif
++
+ 	/*
+ 	 * Mapping has not changed, must be protection or wiring change.
+ 	 */
+@@ -3322,7 +3886,13 @@ validate:
+ 			newpte |= PG_M;
+ 		if (origpte & PG_V) {
+ 			invlva = FALSE;
++            /* SVA TODO Figure out what the heck this does */
++#if 0
+ 			origpte = pte_load_store(pte, newpte);
++#else
++      origpte = *pte;
++			sva_update_l1_mapping(pte, newpte);
++#endif
+ 			if (origpte & PG_A) {
+ 				if (origpte & PG_MANAGED)
+ 					vm_page_aflag_set(om, PGA_REFERENCED);
+@@ -3342,8 +3912,14 @@ validate:
+ 				vm_page_aflag_clear(om, PGA_WRITEABLE);
+ 			if (invlva)
+ 				pmap_invalidate_page(pmap, va);
+-		} else
++		} else {
++#ifdef SVA_MMU
++			/* Insert new l1 mapping */
++			sva_update_l1_mapping(pte, newpte);
++#else
+ 			pte_store(pte, newpte);
++#endif
++        }
+ 	}
+ 
+ 	/*
+@@ -3419,8 +3995,14 @@ pmap_enter_pde(pmap_t pmap, vm_offset_t va, vm_page_t m, vm_prot_t prot)
+ 	/*
+ 	 * Map the superpage.
+ 	 */
++#ifdef SVA_MMU
++    /* SVA update the mapping to the newly created pde */
++    /* TODO this is a 2MB pde, we need to handle this in the update function */
++    sva_update_l2_mapping(pde, newpde);
++#else
+ 	pde_store(pde, newpde);
+-
++#endif
++    
+ 	pmap_pde_mappings++;
+ 	CTR2(KTR_PMAP, "pmap_enter_pde: success for va %#lx"
+ 	    " in pmap %p", va, pmap);
+@@ -3459,7 +4041,12 @@ pmap_enter_object(pmap_t pmap, vm_offset_t start, vm_offset_t end,
+ 		    (VM_PAGE_TO_PHYS(m) & PDRMASK) == 0 &&
+ 		    pg_ps_enabled && vm_reserv_level_iffullpop(m) == 0 &&
+ 		    pmap_enter_pde(pmap, va, m, prot))
++        {
+ 			m = &m[NBPDR / PAGE_SIZE - 1];
++#ifdef SVA_MMU
++            printf("\n\n Got a 2mb page!!");
++#endif
++        }
+ 		else
+ 			mpte = pmap_enter_quick_locked(pmap, va, m, prot,
+ 			    mpte);
+@@ -3581,10 +4168,23 @@ pmap_enter_quick_locked(pmap_t pmap, vm_offset_t va, vm_page_t m,
+ 	/*
+ 	 * Now validate mapping with RO protection
+ 	 */
+-	if ((m->oflags & VPO_UNMANAGED) != 0)
++	if ((m->oflags & VPO_UNMANAGED) != 0) {
++#ifdef SVA_MMU
++		/* Update the initial mapping of the leaf page */
++		sva_update_l1_mapping(pte, (pd_entry_t)(pa | PG_V | PG_U));
++#else
+ 		pte_store(pte, pa | PG_V | PG_U);
+-	else
++#endif
++    } else {
++#ifdef SVA_MMU
++        /* Update the initial mapping of the leaf page */
++        sva_update_l1_mapping(pte, (pd_entry_t)(pa | PG_V | PG_U | PG_MANAGED));
++
++#else
+ 		pte_store(pte, pa | PG_V | PG_U | PG_MANAGED);
++#endif
++    }
++
+ 	return (mpte);
+ }
+ 
+@@ -3674,9 +4274,16 @@ pmap_object_init_pt(pmap_t pmap, vm_offset_t addr, vm_object_t object,
+ 			}
+ 			pde = (pd_entry_t *)PHYS_TO_DMAP(VM_PAGE_TO_PHYS(pdpg));
+ 			pde = &pde[pmap_pde_index(addr)];
+-			if ((*pde & PG_V) == 0) {
+-				pde_store(pde, pa | PG_PS | PG_M | PG_A |
+-				    PG_U | PG_RW | PG_V);
++            if ((*pde & PG_V) == 0) {
++#ifdef SVA_MMU
++                /* SVA update the mapping to the newly created pde */
++                /* TODO this is a 2MB pde, we need to handle this in the update function */
++                sva_update_l2_mapping(pde, (pa | PG_PS | PG_M | PG_A | PG_U |
++                            PG_RW | PG_V));
++#else
++                pde_store(pde, pa | PG_PS | PG_M | PG_A |
++                        PG_U | PG_RW | PG_V);
++#endif
+ 				pmap_resident_count_inc(pmap, NBPDR / PAGE_SIZE);
+ 				pmap_pde_mappings++;
+ 			} else {
+@@ -3733,10 +4340,18 @@ retry:
+ 	pte = pmap_pde_to_pte(pde, va);
+ 	if (wired && (*pte & PG_W) == 0) {
+ 		pmap->pm_stats.wired_count++;
++#if 0
+ 		atomic_set_long(pte, PG_W);
++#else
++    sva_update_l1_mapping (pte, *pte | PG_W);
++#endif
+ 	} else if (!wired && (*pte & PG_W) != 0) {
+ 		pmap->pm_stats.wired_count--;
++#if 0
+ 		atomic_clear_long(pte, PG_W);
++#else
++    sva_update_l1_mapping (pte, *pte & (~PG_W));
++#endif
+ 	}
+ out:
+ 	if (are_queues_locked)
+@@ -3817,7 +4432,12 @@ pmap_copy(pmap_t dst_pmap, pmap_t src_pmap, vm_offset_t dst_addr, vm_size_t len,
+ 			if (*pde == 0 && ((srcptepaddr & PG_MANAGED) == 0 ||
+ 			    pmap_pv_insert_pde(dst_pmap, addr, srcptepaddr &
+ 			    PG_PS_FRAME))) {
++#ifdef SVA_MMU
++				/* Update the pde to include the new mapping */
++				sva_update_l2_mapping(pde, srcptepaddr & ~PG_W);
++#else
+ 				*pde = srcptepaddr & ~PG_W;
++#endif
+ 				pmap_resident_count_inc(dst_pmap, NBPDR / PAGE_SIZE);
+ 			} else
+ 				dstmpde->wire_count--;
+@@ -3859,8 +4479,12 @@ pmap_copy(pmap_t dst_pmap, pmap_t src_pmap, vm_offset_t dst_addr, vm_size_t len,
+ 					 * accessed (referenced) bits
+ 					 * during the copy.
+ 					 */
++#ifdef SVA_MMU
++					sva_update_l1_mapping (dst_pte, ptetemp & ~(PG_W | PG_M | PG_A));
++#else
+ 					*dst_pte = ptetemp & ~(PG_W | PG_M |
+ 					    PG_A);
++#endif
+ 					pmap_resident_count_inc(dst_pmap, 1);
+ 	 			} else {
+ 					free = NULL;
+@@ -4122,7 +4746,12 @@ pmap_remove_pages(pmap_t pmap)
+ 					("pmap_remove_pages: bad tpte %#jx",
+ 					(uintmax_t)tpte));
+ 
++#ifdef SVA_MMU
++				/* Clear the pte entry */
++				sva_remove_mapping(pte);
++#else
+ 				pte_clear(pte);
++#endif
+ 
+ 				/*
+ 				 * Update the vm_page_t clean/reference bits.
+@@ -4361,9 +4990,13 @@ pmap_remove_write(vm_page_t m)
+ retry:
+ 		oldpte = *pte;
+ 		if (oldpte & PG_RW) {
++#if 0
+ 			if (!atomic_cmpset_long(pte, oldpte, oldpte &
+ 			    ~(PG_RW | PG_M)))
+ 				goto retry;
++#else
++			sva_update_l1_mapping (pte, oldpte & ~(PG_RW | PG_M));
++#endif
+ 			if ((oldpte & PG_M) != 0)
+ 				vm_page_dirty(m);
+ 			pmap_invalidate_page(pmap, pv->pv_va);
+@@ -4444,7 +5077,11 @@ pmap_ts_referenced(vm_page_t m)
+ 			    " found a 2mpage in page %p's pv list", m));
+ 			pte = pmap_pde_to_pte(pde, pv->pv_va);
+ 			if ((*pte & PG_A) != 0) {
++#if 0
+ 				atomic_clear_long(pte, PG_A);
++#else
++        sva_update_l1_mapping(pte, *pte & (~PG_A));
++#endif
+ 				pmap_invalidate_page(pmap, pv->pv_va);
+ 				rtval++;
+ 				if (rtval > 4)
+@@ -4505,10 +5142,14 @@ pmap_clear_modify(vm_page_t m)
+ 					pte = pmap_pde_to_pte(pde, va);
+ 					oldpte = *pte;
+ 					if ((oldpte & PG_V) != 0) {
++#if 0
+ 						while (!atomic_cmpset_long(pte,
+ 						    oldpte,
+ 						    oldpte & ~(PG_M | PG_RW)))
+ 							oldpte = *pte;
++#else
++            sva_update_l1_mapping (pte, oldpte & ~(PG_M | PG_RW));
++#endif
+ 						vm_page_dirty(m);
+ 						pmap_invalidate_page(pmap, va);
+ 					}
+@@ -4525,7 +5166,11 @@ pmap_clear_modify(vm_page_t m)
+ 		    " a 2mpage in page %p's pv list", m));
+ 		pte = pmap_pde_to_pte(pde, pv->pv_va);
+ 		if ((*pte & (PG_M | PG_RW)) == (PG_M | PG_RW)) {
++#if 0
+ 			atomic_clear_long(pte, PG_M);
++#else
++      sva_update_l1_mapping (pte, *pte & (~PG_M));
++#endif
+ 			pmap_invalidate_page(pmap, pv->pv_va);
+ 		}
+ 		PMAP_UNLOCK(pmap);
+@@ -4582,7 +5227,11 @@ pmap_clear_reference(vm_page_t m)
+ 		    " a 2mpage in page %p's pv list", m));
+ 		pte = pmap_pde_to_pte(pde, pv->pv_va);
+ 		if (*pte & PG_A) {
++#if 0
+ 			atomic_clear_long(pte, PG_A);
++#else
++			sva_update_l1_mapping(pte, *pte & (~PG_A));
++#endif
+ 			pmap_invalidate_page(pmap, pv->pv_va);
+ 		}
+ 		PMAP_UNLOCK(pmap);
+@@ -4604,11 +5253,20 @@ pmap_pte_attr(pt_entry_t *pte, int cache_bits)
+ 	 * The cache mode bits are all in the low 32-bits of the
+ 	 * PTE, so we can just spin on updating the low 32-bits.
+ 	 */
++#if 0
+ 	do {
+ 		opte = *(u_int *)pte;
+ 		npte = opte & ~PG_PTE_CACHE;
+ 		npte |= cache_bits;
+ 	} while (npte != opte && !atomic_cmpset_int((u_int *)pte, opte, npte));
++#else
++	do {
++		opte = *(u_int *)pte;
++		npte = opte & ~PG_PTE_CACHE;
++		npte |= cache_bits;
++    sva_update_l1_mapping (pte, npte);
++	} while (npte != opte);
++#endif
+ }
+ 
+ /* Adjust the cache mode for a 2MB page mapped via a PDE. */
+@@ -4621,11 +5279,21 @@ pmap_pde_attr(pd_entry_t *pde, int cache_bits)
+ 	 * The cache mode bits are all in the low 32-bits of the
+ 	 * PDE, so we can just spin on updating the low 32-bits.
+ 	 */
++#if 0
+ 	do {
+ 		opde = *(u_int *)pde;
+ 		npde = opde & ~PG_PDE_CACHE;
+ 		npde |= cache_bits;
+ 	} while (npde != opde && !atomic_cmpset_int((u_int *)pde, opde, npde));
++#else
++  /* SVA: SVA requires the use of intrinsics to update PDEs */
++	do {
++		opde = *(u_int *)pde;
++		npde = opde & ~PG_PDE_CACHE;
++		npde |= cache_bits;
++    sva_update_l2_mapping (pde, npde);
++	} while (npde != opde);
++#endif
+ }
+ 
+ /*
+@@ -4696,6 +5364,7 @@ pmap_unmapdev(vm_offset_t va, vm_size_t size)
+ /*
+  * Tries to demote a 1GB page mapping.
+  */
++/*SVA-TODO: analyze the remainder of this function to find declares*/
+ static boolean_t
+ pmap_demote_pdpe(pmap_t pmap, pdp_entry_t *pdpe, vm_offset_t va)
+ {
+@@ -4715,6 +5384,9 @@ pmap_demote_pdpe(pmap_t pmap, pdp_entry_t *pdpe, vm_offset_t va)
+ 		return (FALSE);
+ 	}
+ 	mpdepa = VM_PAGE_TO_PHYS(mpde);
++#ifdef SVA_MMU
++	sva_declare_l2_page (mpdepa);
++#endif
+ 	firstpde = (pd_entry_t *)PHYS_TO_DMAP(mpdepa);
+ 	newpdpe = mpdepa | PG_M | PG_A | (oldpdpe & PG_U) | PG_RW | PG_V;
+ 	KASSERT((oldpdpe & PG_A) != 0,
+@@ -4727,14 +5399,24 @@ pmap_demote_pdpe(pmap_t pmap, pdp_entry_t *pdpe, vm_offset_t va)
+ 	 * Initialize the page directory page.
+ 	 */
+ 	for (pde = firstpde; pde < firstpde + NPDEPG; pde++) {
++#ifdef SVA_MMU
++		/* SVA update the mapping to the newly created pde */
++		sva_update_l2_mapping(pde, newpde);
++#else
+ 		*pde = newpde;
++#endif
+ 		newpde += NBPDR;
+ 	}
+ 
+ 	/*
+ 	 * Demote the mapping.
+ 	 */
++#ifdef SVA_MMU
++	/* Update the l3 mappings to the newly created page table page */
++	sva_update_l3_mapping(pdpe, newpdpe);
++#else
+ 	*pdpe = newpdpe;
++#endif
+ 
+ 	/*
+ 	 * Invalidate a stale recursive mapping of the page directory page.
+diff --git a/sys/amd64/amd64/sigtramp.S b/sys/amd64/amd64/sigtramp.S
+index 4047f1c..fe5b332 100644
+--- a/sys/amd64/amd64/sigtramp.S
++++ b/sys/amd64/amd64/sigtramp.S
+@@ -39,7 +39,15 @@
+  *
+  */
+ NON_GPROF_ENTRY(sigcode)
++#if 0
+ 	call	*SIGF_HANDLER(%rsp)	/* call signal handler */
++#else
++  /*
++   * SVA: The pointer to the actual signal handler is the fifth argument.
++   * All the other arguments remain unchanged.
++   */
++  callq *%r8               /* Call signal handler */
++#endif
+ 	lea	SIGF_UC(%rsp),%rdi	/* get ucontext_t */
+ 	pushq	$0			/* junk to fake return addr. */
+ 	movq	$SYS_sigreturn,%rax
+diff --git a/sys/amd64/amd64/support.S b/sys/amd64/amd64/support.S
+index 2f73775..81cfddd 100644
+--- a/sys/amd64/amd64/support.S
++++ b/sys/amd64/amd64/support.S
+@@ -38,6 +38,8 @@
+ 
+ #include "assym.s"
+ 
++#include <sva/cfi.h>
++
+ 	.text
+ 
+ /*
+@@ -57,7 +59,7 @@ ENTRY(bzero)
+ 	andq	$7,%rcx
+ 	rep
+ 	stosb
+-	ret
++	RETQ
+ END(bzero)
+ 	
+ /* Address: %rdi */
+@@ -73,7 +75,7 @@ ENTRY(pagezero)
+ 	addq	$32,%rdx
+ 	jne	1b
+ 	sfence
+-	ret
++	RETQ
+ END(pagezero)
+ 
+ ENTRY(bcmp)
+@@ -91,7 +93,7 @@ ENTRY(bcmp)
+ 1:
+ 	setne	%al
+ 	movsbl	%al,%eax
+-	ret
++	RETQ
+ END(bcmp)
+ 
+ /*
+@@ -116,7 +118,8 @@ ENTRY(bcopy)
+ 	andq	$7,%rcx				/* any bytes left? */
+ 	rep
+ 	movsb
+-	ret
++	RETQ
++	retq
+ 
+ 	/* ALIGN_TEXT */
+ 1:
+@@ -135,7 +138,7 @@ ENTRY(bcopy)
+ 	rep
+ 	movsq
+ 	cld
+-	ret
++	RETQ
+ END(bcopy)
+ 	
+ /*
+@@ -151,7 +154,7 @@ ENTRY(memcpy)
+ 	andq	$7,%rcx				/* any bytes left? */
+ 	rep
+ 	movsb
+-	ret
++	RETQ
+ END(memcpy)
+ 
+ /*
+@@ -178,7 +181,7 @@ ENTRY(pagecopy)
+ 	addq	$32,%rdx
+ 	jne	2b
+ 	sfence
+-	ret
++	RETQ
+ END(pagecopy)
+ 
+ /* fillw(pat, base, cnt) */  
+@@ -190,7 +193,7 @@ ENTRY(fillw)
+ 	cld
+ 	rep
+ 	stosw
+-	ret
++	RETQ
+ END(fillw)
+ 
+ /*****************************************************************************/
+@@ -209,9 +212,13 @@ END(fillw)
+  * copyout(from_kernel, to_user, len)  - MP SAFE
+  *         %rdi,        %rsi,    %rdx
+  */
+-ENTRY(copyout)
++ENTRY(real_copyout)
+ 	movq	PCPU(CURPCB),%rax
++#if 0
+ 	movq	$copyout_fault,PCB_ONFAULT(%rax)
++#else
++	movq	$1,PCB_ONFAULT(%rax)
++#endif
+ 	testq	%rdx,%rdx			/* anything to do? */
+ 	jz	done_copyout
+ 
+@@ -255,23 +262,27 @@ done_copyout:
+ 	xorl	%eax,%eax
+ 	movq	PCPU(CURPCB),%rdx
+ 	movq	%rax,PCB_ONFAULT(%rdx)
+-	ret
++	RETQ
+ 
+ 	ALIGN_TEXT
+ copyout_fault:
+ 	movq	PCPU(CURPCB),%rdx
+ 	movq	$0,PCB_ONFAULT(%rdx)
+ 	movq	$EFAULT,%rax
+-	ret
++	RETQ
+ END(copyout)
+ 
+ /*
+  * copyin(from_user, to_kernel, len) - MP SAFE
+  *        %rdi,      %rsi,      %rdx
+  */
+-ENTRY(copyin)
++ENTRY(real_copyin)
+ 	movq	PCPU(CURPCB),%rax
++#if 0
+ 	movq	$copyin_fault,PCB_ONFAULT(%rax)
++#else
++	movq	$1,PCB_ONFAULT(%rax)
++#endif
+ 	testq	%rdx,%rdx			/* anything to do? */
+ 	jz	done_copyin
+ 
+@@ -301,23 +312,27 @@ done_copyin:
+ 	xorl	%eax,%eax
+ 	movq	PCPU(CURPCB),%rdx
+ 	movq	%rax,PCB_ONFAULT(%rdx)
+-	ret
++	RETQ
+ 
+ 	ALIGN_TEXT
+ copyin_fault:
+ 	movq	PCPU(CURPCB),%rdx
+ 	movq	$0,PCB_ONFAULT(%rdx)
+ 	movq	$EFAULT,%rax
+-	ret
++	RETQ
+ END(copyin)
+ 
+ /*
+  * casuword32.  Compare and set user integer.  Returns -1 or the current value.
+  *        dst = %rdi, old = %rsi, new = %rdx
+  */
+-ENTRY(casuword32)
++ENTRY(real_casuword32)
+ 	movq	PCPU(CURPCB),%rcx
++#if 0
+ 	movq	$fusufault,PCB_ONFAULT(%rcx)
++#else
++	movq	$1,PCB_ONFAULT(%rcx)
++#endif
+ 
+ 	movq	$VM_MAXUSER_ADDRESS-4,%rax
+ 	cmpq	%rax,%rdi			/* verify address is valid */
+@@ -337,16 +352,20 @@ ENTRY(casuword32)
+ 
+ 	movq	PCPU(CURPCB),%rcx
+ 	movq	$0,PCB_ONFAULT(%rcx)
+-	ret
++	RETQ
+ END(casuword32)
+ 
+ /*
+  * casuword.  Compare and set user word.  Returns -1 or the current value.
+  *        dst = %rdi, old = %rsi, new = %rdx
+  */
+-ENTRY(casuword)
++ENTRY(real_casuword)
+ 	movq	PCPU(CURPCB),%rcx
++#if 0
+ 	movq	$fusufault,PCB_ONFAULT(%rcx)
++#else
++	movq	$1,PCB_ONFAULT(%rcx)
++#endif
+ 
+ 	movq	$VM_MAXUSER_ADDRESS-4,%rax
+ 	cmpq	%rax,%rdi			/* verify address is valid */
+@@ -367,7 +386,7 @@ ENTRY(casuword)
+ 	movq	PCPU(CURPCB),%rcx
+ 	movq	$fusufault,PCB_ONFAULT(%rcx)
+ 	movq	$0,PCB_ONFAULT(%rcx)
+-	ret
++	RETQ
+ END(casuword)
+ 
+ /*
+@@ -376,10 +395,14 @@ END(casuword)
+  * addr = %rdi
+  */
+ 
+-ALTENTRY(fuword64)
+-ENTRY(fuword)
++ALTENTRY(real_fuword64)
++ENTRY(real_fuword)
+ 	movq	PCPU(CURPCB),%rcx
++#if 0
+ 	movq	$fusufault,PCB_ONFAULT(%rcx)
++#else
++	movq	$1,PCB_ONFAULT(%rcx)
++#endif
+ 
+ 	movq	$VM_MAXUSER_ADDRESS-8,%rax
+ 	cmpq	%rax,%rdi			/* verify address is valid */
+@@ -387,13 +410,17 @@ ENTRY(fuword)
+ 
+ 	movq	(%rdi),%rax
+ 	movq	$0,PCB_ONFAULT(%rcx)
+-	ret
++	RETQ
+ END(fuword64)	
+ END(fuword)
+ 
+-ENTRY(fuword32)
++ENTRY(real_fuword32)
+ 	movq	PCPU(CURPCB),%rcx
++#if 0
+ 	movq	$fusufault,PCB_ONFAULT(%rcx)
++#else
++	movq	$1,PCB_ONFAULT(%rcx)
++#endif
+ 
+ 	movq	$VM_MAXUSER_ADDRESS-4,%rax
+ 	cmpq	%rax,%rdi			/* verify address is valid */
+@@ -401,7 +428,7 @@ ENTRY(fuword32)
+ 
+ 	movl	(%rdi),%eax
+ 	movq	$0,PCB_ONFAULT(%rcx)
+-	ret
++	RETQ
+ END(fuword32)
+ 
+ /*
+@@ -414,13 +441,17 @@ END(fuword32)
+ ALTENTRY(suswintr)
+ ENTRY(fuswintr)
+ 	movq	$-1,%rax
+-	ret
++	RETQ
+ END(suswintr)
+ END(fuswintr)
+ 
+-ENTRY(fuword16)
++ENTRY(real_fuword16)
+ 	movq	PCPU(CURPCB),%rcx
++#if 0
+ 	movq	$fusufault,PCB_ONFAULT(%rcx)
++#else
++	movq	$1,PCB_ONFAULT(%rcx)
++#endif
+ 
+ 	movq	$VM_MAXUSER_ADDRESS-2,%rax
+ 	cmpq	%rax,%rdi
+@@ -428,12 +459,16 @@ ENTRY(fuword16)
+ 
+ 	movzwl	(%rdi),%eax
+ 	movq	$0,PCB_ONFAULT(%rcx)
+-	ret
++	RETQ
+ END(fuword16)
+ 
+-ENTRY(fubyte)
++ENTRY(real_fubyte)
+ 	movq	PCPU(CURPCB),%rcx
++#if 0
+ 	movq	$fusufault,PCB_ONFAULT(%rcx)
++#else
++	movq	$1,PCB_ONFAULT(%rcx)
++#endif
+ 
+ 	movq	$VM_MAXUSER_ADDRESS-1,%rax
+ 	cmpq	%rax,%rdi
+@@ -441,7 +476,7 @@ ENTRY(fubyte)
+ 
+ 	movzbl	(%rdi),%eax
+ 	movq	$0,PCB_ONFAULT(%rcx)
+-	ret
++	RETQ
+ END(fubyte)
+ 
+ 	ALIGN_TEXT
+@@ -450,17 +485,21 @@ fusufault:
+ 	xorl	%eax,%eax
+ 	movq	%rax,PCB_ONFAULT(%rcx)
+ 	decq	%rax
+-	ret
++	RETQ
+ 
+ /*
+  * Store a 64-bit word, a 32-bit word, a 16-bit word, or an 8-bit byte to
+  * user memory.  All these functions are MPSAFE.
+  * addr = %rdi, value = %rsi
+  */
+-ALTENTRY(suword64)
+-ENTRY(suword)
++ALTENTRY(real_suword64)
++ENTRY(real_suword)
+ 	movq	PCPU(CURPCB),%rcx
++#if 0
+ 	movq	$fusufault,PCB_ONFAULT(%rcx)
++#else
++	movq	$1,PCB_ONFAULT(%rcx)
++#endif
+ 
+ 	movq	$VM_MAXUSER_ADDRESS-8,%rax
+ 	cmpq	%rax,%rdi			/* verify address validity */
+@@ -470,13 +509,17 @@ ENTRY(suword)
+ 	xorl	%eax,%eax
+ 	movq	PCPU(CURPCB),%rcx
+ 	movq	%rax,PCB_ONFAULT(%rcx)
+-	ret
++	RETQ
+ END(suword64)
+ END(suword)
+ 
+-ENTRY(suword32)
++ENTRY(real_suword32)
+ 	movq	PCPU(CURPCB),%rcx
++#if 0
+ 	movq	$fusufault,PCB_ONFAULT(%rcx)
++#else
++	movq	$1,PCB_ONFAULT(%rcx)
++#endif
+ 
+ 	movq	$VM_MAXUSER_ADDRESS-4,%rax
+ 	cmpq	%rax,%rdi			/* verify address validity */
+@@ -486,12 +529,16 @@ ENTRY(suword32)
+ 	xorl	%eax,%eax
+ 	movq	PCPU(CURPCB),%rcx
+ 	movq	%rax,PCB_ONFAULT(%rcx)
+-	ret
++	RETQ
+ END(suword32)
+ 
+-ENTRY(suword16)
++ENTRY(real_suword16)
+ 	movq	PCPU(CURPCB),%rcx
++#if 0
+ 	movq	$fusufault,PCB_ONFAULT(%rcx)
++#else
++	movq	$1,PCB_ONFAULT(%rcx)
++#endif
+ 
+ 	movq	$VM_MAXUSER_ADDRESS-2,%rax
+ 	cmpq	%rax,%rdi			/* verify address validity */
+@@ -501,12 +548,16 @@ ENTRY(suword16)
+ 	xorl	%eax,%eax
+ 	movq	PCPU(CURPCB),%rcx		/* restore trashed register */
+ 	movq	%rax,PCB_ONFAULT(%rcx)
+-	ret
++	RETQ
+ END(suword16)
+ 
+-ENTRY(subyte)
++ENTRY(real_subyte)
+ 	movq	PCPU(CURPCB),%rcx
++#if 0
+ 	movq	$fusufault,PCB_ONFAULT(%rcx)
++#else
++	movq	$1,PCB_ONFAULT(%rcx)
++#endif
+ 
+ 	movq	$VM_MAXUSER_ADDRESS-1,%rax
+ 	cmpq	%rax,%rdi			/* verify address validity */
+@@ -517,7 +568,7 @@ ENTRY(subyte)
+ 	xorl	%eax,%eax
+ 	movq	PCPU(CURPCB),%rcx		/* restore trashed register */
+ 	movq	%rax,PCB_ONFAULT(%rcx)
+-	ret
++	RETQ
+ END(subyte)
+ 
+ /*
+@@ -529,6 +580,7 @@ END(subyte)
+  *	EFAULT on protection violations. If lencopied is non-zero,
+  *	return the actual length in *lencopied.
+  */
++#if 0
+ ENTRY(copyinstr)
+ 	movq	%rdx,%r8			/* %r8 = maxlen */
+ 	movq	%rcx,%r9			/* %r9 = *len */
+@@ -586,8 +638,9 @@ cpystrflt_x:
+ 	subq	%rdx,%r8
+ 	movq	%r8,(%r9)
+ 1:
+-	ret
++	RETQ
+ END(copyinstr)
++#endif
+ 
+ /*
+  * copystr(from, to, maxlen, int *lencopied) - MP SAFE
+@@ -623,7 +676,7 @@ ENTRY(copystr)
+ 	subq	%rdx,%r8
+ 	movq	%r8,(%rcx)
+ 7:
+-	ret
++	RETQ
+ END(copystr)
+ 
+ /*
+@@ -651,7 +704,11 @@ ENTRY(lgdt)
+ 	pushq	$KCSEL
+ 	pushq	%rax
+ 	MEXITCOUNT
++#if 1
+ 	lretq
++#else
++	RETQ
++#endif
+ END(lgdt)
+ 
+ /*****************************************************************************/
+@@ -669,7 +726,7 @@ ENTRY(setjmp)
+ 	movq	0(%rsp),%rdx			/* get rta */
+ 	movq	%rdx,56(%rdi)			/* save rip */
+ 	xorl	%eax,%eax			/* return(0); */
+-	ret
++	RETQ
+ END(setjmp)
+ 
+ ENTRY(longjmp)
+@@ -684,7 +741,7 @@ ENTRY(longjmp)
+ 	movq	%rdx,0(%rsp)			/* put in return frame */
+ 	xorl	%eax,%eax			/* return(1); */
+ 	incl	%eax
+-	ret
++	RETQ
+ END(longjmp)
+ 
+ /*
+@@ -703,7 +760,7 @@ ENTRY(rdmsr_safe)
+ 	movq	%rax,(%rsi)
+ 	xorq	%rax,%rax
+ 	movq	%rax,PCB_ONFAULT(%r8)
+-	ret
++	RETQ
+ 
+ /*
+  * Support for writing MSRs in the safe manner.
+@@ -720,7 +777,7 @@ ENTRY(wrmsr_safe)
+ 				   hi byte in edx, lo in %eax. */
+ 	xorq	%rax,%rax
+ 	movq	%rax,PCB_ONFAULT(%r8)
+-	ret
++	RETQ
+ 
+ /*
+  * MSR operations fault handler
+@@ -729,4 +786,4 @@ ENTRY(wrmsr_safe)
+ msr_onfault:
+ 	movq	$0,PCB_ONFAULT(%r8)
+ 	movl	$EFAULT,%eax
+-	ret
++	RETQ
+diff --git a/sys/amd64/amd64/sva_support.c b/sys/amd64/amd64/sva_support.c
+new file mode 100644
+index 0000000..ed8ff1d
+--- /dev/null
++++ b/sys/amd64/amd64/sva_support.c
+@@ -0,0 +1,247 @@
++#include <sys/cdefs.h>
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/pcpu.h>
++
++#include <vm/vm.h>
++#include <vm/pmap.h>
++
++#include <machine/vmparam.h>
++#include <machine/pcb.h>
++
++/*
++ * Prototypes for the real functions.
++ */
++extern int real_copyin(const void * __restrict udaddr, void * __restrict kaddr, size_t len) __nonnull(1) __nonnull(2);
++
++extern int real_copyout(const void * __restrict kaddr, void * __restrict udaddr, size_t len) __nonnull(1) __nonnull(2);
++
++extern long	real_fuword(const void *base);
++extern int	real_fubyte(const void *base);
++extern int	real_fuword16(void *base);
++extern int32_t	real_fuword32(const void *base);
++extern int64_t	real_fuword64(const void *base);
++
++extern int real_subyte(void *base, int byte);
++extern int real_suword(void *base, long word);
++extern int real_suword16(void *base, int word);
++extern int real_suword32(void *base, int32_t word);
++extern int real_suword64(void *base, int64_t word);
++
++extern uint32_t real_casuword32(volatile uint32_t *base, uint32_t oldval, uint32_t newval);
++extern u_long	 real_casuword(volatile u_long *p, u_long oldval, u_long newval);
++
++/*
++ * Implementations of the functions that use the SVA-OS intrinsics.
++ */
++int
++copyinstr(const void * __restrict udaddr, void * __restrict kaddr,
++	        size_t len, size_t * __restrict lencopied) {
++  /* Number of bytes copied */
++  uintptr_t copySize;
++
++  /*
++   * Ensure that the copy won't read in kernel-space memory for the string.
++   */
++  if (VM_MAXUSER_ADDRESS <= udaddr)
++    return EFAULT;
++
++  if (len >= (VM_MAXUSER_ADDRESS - (uintptr_t)udaddr))
++    len = (VM_MAXUSER_ADDRESS - (uintptr_t)udaddr);
++
++  /*
++   * Note that we want to use SVA to unwind the stack if we hit a fault.
++   */
++  PCPU_GET(curpcb)->pcb_onfault = 1;
++
++  /*
++   * Perform the copy.
++   */
++  copySize = sva_invokestrncpy (kaddr, udaddr, len);
++
++  /*
++   * Note that we aren't expecting a fault now.
++   */
++  PCPU_GET(curpcb)->pcb_onfault = 0;
++
++  /*
++   * Determine if the string name is too long or if we hit a fault.
++   */
++  if (copySize == -1)
++    return EFAULT;
++
++  if (copySize == len)
++    return ENAMETOOLONG;
++
++  /*
++   * Report the number of bytes copied to the caller.
++   */
++  if (lencopied)
++    *lencopied = copySize + 1;
++  return 0;
++}
++
++int
++copyin(const void * __restrict udaddr,
++       void * __restrict kaddr,
++	    size_t len) {
++  uintptr_t retval;
++  if (sva_invoke (udaddr, kaddr, len, &retval, real_copyin)) {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return EFAULT;
++  } else {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return (int)(retval);
++  }
++}
++
++int
++copyout(const void * __restrict kaddr,
++        void * __restrict udaddr,
++        size_t len) {
++  uintptr_t retval;
++  if (sva_invoke (kaddr, udaddr, len, &retval, real_copyout)) {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return EFAULT;
++  } else {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return (int)(retval);
++  }
++}
++
++int64_t
++fuword64 (const void * addr) {
++  uintptr_t retval;
++  if (sva_invoke (addr, 0, 0, &retval, real_fuword64)) {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return -1;
++  } else {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return (int64_t)(retval);
++  }
++}
++
++int64_t
++fuword (const void * addr) {
++  return fuword64 (addr);
++}
++
++int32_t
++fuword32 (const void * addr) {
++  uintptr_t retval;
++  if (sva_invoke (addr, 0, 0, &retval, real_fuword32)) {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return -1;
++  } else {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return (int32_t)(retval);
++  }
++}
++
++int
++fuword16 (void * addr) {
++  uintptr_t retval;
++  if (sva_invoke (addr, 0, 0, &retval, real_fuword16)) {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return -1;
++  } else {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return (int)(retval);
++  }
++}
++
++int
++fubyte (const void * addr) {
++  uintptr_t retval;
++  if (sva_invoke (addr, 0, 0, &retval, real_fubyte)) {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return -1;
++  } else {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return (int)(retval);
++  }
++}
++
++int
++subyte(void *base, int byte) {
++  uintptr_t retval;
++  if (sva_invoke (base, byte, 0, &retval, real_subyte)) {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return -1;
++  } else {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return (int)(retval);
++  }
++}
++
++int
++suword(void *base, long word) {
++  uintptr_t retval;
++  if (sva_invoke (base, word, 0, &retval, real_suword)) {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return -1;
++  } else {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return (int)(retval);
++  }
++}
++
++int
++suword16(void *base, int word) {
++  uintptr_t retval;
++  if (sva_invoke (base, word, 0, &retval, real_suword16)) {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return -1;
++  } else {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return (int)(retval);
++  }
++}
++
++int
++suword32(void *base, int32_t word) {
++  uintptr_t retval;
++  if (sva_invoke (base, word, 0, &retval, real_suword32)) {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return -1;
++  } else {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return (int)(retval);
++  }
++}
++
++int
++suword64(void *base, int64_t word) {
++  uintptr_t retval;
++  if (sva_invoke (base, word, 0, &retval, real_suword64)) {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return -1;
++  } else {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return (int)(retval);
++  }
++}
++
++uint32_t
++casuword32 (volatile uint32_t *base, uint32_t oldval, uint32_t newval) {
++  uintptr_t retval;
++  if (sva_invoke (base, oldval, newval, &retval, real_casuword32)) {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return -1;
++  } else {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return (int)(retval);
++  }
++}
++
++u_long
++casuword(volatile u_long *p, u_long oldval, u_long newval) {
++  uintptr_t retval;
++  if (sva_invoke (p, oldval, newval, &retval, real_casuword)) {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return -1;
++  } else {
++    PCPU_GET(curpcb)->pcb_onfault = 0;
++    return (int)(retval);
++  }
++}
+diff --git a/sys/amd64/amd64/sys_machdep.c b/sys/amd64/amd64/sys_machdep.c
+index 743a120..519f6ec 100644
+--- a/sys/amd64/amd64/sys_machdep.c
++++ b/sys/amd64/amd64/sys_machdep.c
+@@ -318,6 +318,8 @@ amd64_set_ioperm(td, uap)
+ 	if (uap->start + uap->length > IOPAGES * PAGE_SIZE * NBBY)
+ 		return (EINVAL);
+ 
++  panic ("SVA: No support for I/O Permissions!\n");
++
+ 	/*
+ 	 * XXX
+ 	 * While this is restricted to root, we should probably figure out
+diff --git a/sys/amd64/amd64/trap.c b/sys/amd64/amd64/trap.c
+index f3db837..af0769c 100644
+--- a/sys/amd64/amd64/trap.c
++++ b/sys/amd64/amd64/trap.c
+@@ -123,6 +123,9 @@ extern void syscall(struct trapframe *frame);
+ void dblfault_handler(struct trapframe *frame);
+ 
+ static int trap_pfault(struct trapframe *, int);
++#if 1
++static int trap_pfault_sva (register_t eva, unsigned long code, int usermode, struct trapframe * frame);
++#endif
+ static void trap_fatal(struct trapframe *, vm_offset_t);
+ 
+ #define MAX_TRAP_MSG		33
+@@ -164,28 +167,489 @@ static char *trap_msg[] = {
+ };
+ 
+ #ifdef KDB
+-static int kdb_on_nmi = 1;
+-SYSCTL_INT(_machdep, OID_AUTO, kdb_on_nmi, CTLFLAG_RW,
+-	&kdb_on_nmi, 0, "Go to KDB on NMI");
+-TUNABLE_INT("machdep.kdb_on_nmi", &kdb_on_nmi);
++static int kdb_on_nmi = 1;
++SYSCTL_INT(_machdep, OID_AUTO, kdb_on_nmi, CTLFLAG_RW,
++	&kdb_on_nmi, 0, "Go to KDB on NMI");
++TUNABLE_INT("machdep.kdb_on_nmi", &kdb_on_nmi);
++#endif
++static int panic_on_nmi = 1;
++SYSCTL_INT(_machdep, OID_AUTO, panic_on_nmi, CTLFLAG_RW,
++	&panic_on_nmi, 0, "Panic on NMI");
++TUNABLE_INT("machdep.panic_on_nmi", &panic_on_nmi);
++static int prot_fault_translation = 0;
++SYSCTL_INT(_machdep, OID_AUTO, prot_fault_translation, CTLFLAG_RW,
++	&prot_fault_translation, 0, "Select signal to deliver on protection fault");
++
++/*
++ * Exception, fault, and trap interface to the FreeBSD kernel.
++ * This common code is called from assembly language IDT gate entry
++ * routines that prepare a suitable stack frame, and restore this
++ * frame after the exception has been processed.
++ */
++
++void
++trap(struct trapframe *frame)
++{
++	struct thread *td = curthread;
++	struct proc *p = td->td_proc;
++	int i = 0, ucode = 0, code;
++	u_int type;
++	register_t addr = 0;
++	ksiginfo_t ksi;
++
++	PCPU_INC(cnt.v_trap);
++	type = frame->tf_trapno;
++
++#ifdef SMP
++	/* Handler for NMI IPIs used for stopping CPUs. */
++	if (type == T_NMI) {
++	         if (ipi_nmi_handler() == 0)
++	                   goto out;
++	}
++#endif /* SMP */
++
++#ifdef KDB
++	if (kdb_active) {
++		kdb_reenter();
++		goto out;
++	}
++#endif
++
++#if 1
++  if ((type != T_BPTFLT) && (type != T_NMI))
++    panic ("SVA: trap: %lx: %d\n", frame->tf_rip, type);
++#endif
++	if (type == T_RESERVED) {
++		trap_fatal(frame, 0);
++		goto out;
++	}
++
++#ifdef	HWPMC_HOOKS
++	/*
++	 * CPU PMCs interrupt using an NMI.  If the PMC module is
++	 * active, pass the 'rip' value to the PMC module's interrupt
++	 * handler.  A return value of '1' from the handler means that
++	 * the NMI was handled by it and we can return immediately.
++	 */
++	if (type == T_NMI && pmc_intr &&
++	    (*pmc_intr)(PCPU_GET(cpuid), frame))
++		goto out;
++#endif
++
++	if (type == T_MCHK) {
++		if (!mca_intr())
++			trap_fatal(frame, 0);
++		goto out;
++	}
++
++#ifdef KDTRACE_HOOKS
++	/*
++	 * A trap can occur while DTrace executes a probe. Before
++	 * executing the probe, DTrace blocks re-scheduling and sets
++	 * a flag in it's per-cpu flags to indicate that it doesn't
++	 * want to fault. On returning from the probe, the no-fault
++	 * flag is cleared and finally re-scheduling is enabled.
++	 *
++	 * If the DTrace kernel module has registered a trap handler,
++	 * call it and if it returns non-zero, assume that it has
++	 * handled the trap and modified the trap frame so that this
++	 * function can return normally.
++	 */
++	if (type == T_DTRACE_PROBE || type == T_DTRACE_RET ||
++	    type == T_BPTFLT) {
++		struct reg regs;
++
++		fill_frame_regs(frame, &regs);
++		if (type == T_DTRACE_PROBE &&
++		    dtrace_fasttrap_probe_ptr != NULL &&
++		    dtrace_fasttrap_probe_ptr(&regs) == 0)
++			goto out;
++		else if (type == T_BPTFLT &&
++		    dtrace_pid_probe_ptr != NULL &&
++		    dtrace_pid_probe_ptr(&regs) == 0)
++			goto out;
++		else if (type == T_DTRACE_RET &&
++		    dtrace_return_probe_ptr != NULL &&
++		    dtrace_return_probe_ptr(&regs) == 0)
++			goto out;
++	}
++	if (dtrace_trap_func != NULL && (*dtrace_trap_func)(frame, type))
++		goto out;
++#endif
++
++	if ((frame->tf_rflags & PSL_I) == 0) {
++		/*
++		 * Buggy application or kernel code has disabled
++		 * interrupts and then trapped.  Enabling interrupts
++		 * now is wrong, but it is better than running with
++		 * interrupts disabled until they are accidentally
++		 * enabled later.
++		 */
++		if (ISPL(frame->tf_cs) == SEL_UPL)
++			uprintf(
++			    "pid %ld (%s): trap %d with interrupts disabled\n",
++			    (long)curproc->p_pid, curthread->td_name, type);
++		else if (type != T_NMI && type != T_BPTFLT &&
++		    type != T_TRCTRAP) {
++			/*
++			 * XXX not quite right, since this may be for a
++			 * multiple fault in user mode.
++			 */
++			printf("kernel trap %d with interrupts disabled\n",
++			    type);
++
++			/*
++			 * We shouldn't enable interrupts while holding a
++			 * spin lock.
++			 */
++			if (td->td_md.md_spinlock_count == 0)
++				enable_intr();
++		}
++	}
++
++	code = frame->tf_err;
++	if (type == T_PAGEFLT) {
++		/*
++		 * If we get a page fault while in a critical section, then
++		 * it is most likely a fatal kernel page fault.  The kernel
++		 * is already going to panic trying to get a sleep lock to
++		 * do the VM lookup, so just consider it a fatal trap so the
++		 * kernel can print out a useful trap message and even get
++		 * to the debugger.
++		 *
++		 * If we get a page fault while holding a non-sleepable
++		 * lock, then it is most likely a fatal kernel page fault.
++		 * If WITNESS is enabled, then it's going to whine about
++		 * bogus LORs with various VM locks, so just skip to the
++		 * fatal trap handling directly.
++		 */
++		if (td->td_critnest != 0 ||
++		    WITNESS_CHECK(WARN_SLEEPOK | WARN_GIANTOK, NULL,
++		    "Kernel page fault") != 0)
++			trap_fatal(frame, frame->tf_addr);
++	}
++
++        if (ISPL(frame->tf_cs) == SEL_UPL) {
++		/* user trap */
++
++		td->td_pticks = 0;
++		td->td_frame = frame;
++		addr = frame->tf_rip;
++		if (td->td_ucred != p->p_ucred) 
++			cred_update_thread(td);
++
++		switch (type) {
++		case T_PRIVINFLT:	/* privileged instruction fault */
++			i = SIGILL;
++			ucode = ILL_PRVOPC;
++			break;
++
++		case T_BPTFLT:		/* bpt instruction fault */
++		case T_TRCTRAP:		/* trace trap */
++			enable_intr();
++			frame->tf_rflags &= ~PSL_T;
++			i = SIGTRAP;
++			ucode = (type == T_TRCTRAP ? TRAP_TRACE : TRAP_BRKPT);
++			break;
++
++		case T_ARITHTRAP:	/* arithmetic trap */
++			ucode = fputrap();
++			if (ucode == -1)
++				goto userout;
++			i = SIGFPE;
++			break;
++
++		case T_PROTFLT:		/* general protection fault */
++			i = SIGBUS;
++			ucode = BUS_OBJERR;
++			break;
++		case T_STKFLT:		/* stack fault */
++		case T_SEGNPFLT:	/* segment not present fault */
++			i = SIGBUS;
++			ucode = BUS_ADRERR;
++			break;
++		case T_TSSFLT:		/* invalid TSS fault */
++			i = SIGBUS;
++			ucode = BUS_OBJERR;
++			break;
++		case T_DOUBLEFLT:	/* double fault */
++		default:
++			i = SIGBUS;
++			ucode = BUS_OBJERR;
++			break;
++
++		case T_PAGEFLT:		/* page fault */
++			addr = frame->tf_addr;
++			i = trap_pfault(frame, TRUE);
++			if (i == -1)
++				goto userout;
++			if (i == 0)
++				goto user;
++
++			if (i == SIGSEGV)
++				ucode = SEGV_MAPERR;
++			else {
++				if (prot_fault_translation == 0) {
++					/*
++					 * Autodetect.
++					 * This check also covers the images
++					 * without the ABI-tag ELF note.
++					 */
++					if (SV_CURPROC_ABI() == SV_ABI_FREEBSD
++					    && p->p_osrel >= P_OSREL_SIGSEGV) {
++						i = SIGSEGV;
++						ucode = SEGV_ACCERR;
++					} else {
++						i = SIGBUS;
++						ucode = BUS_PAGE_FAULT;
++					}
++				} else if (prot_fault_translation == 1) {
++					/*
++					 * Always compat mode.
++					 */
++					i = SIGBUS;
++					ucode = BUS_PAGE_FAULT;
++				} else {
++					/*
++					 * Always SIGSEGV mode.
++					 */
++					i = SIGSEGV;
++					ucode = SEGV_ACCERR;
++				}
++			}
++			break;
++
++		case T_DIVIDE:		/* integer divide fault */
++			ucode = FPE_INTDIV;
++			i = SIGFPE;
++			break;
++
++#ifdef DEV_ISA
++		case T_NMI:
++			/* machine/parity/power fail/"kitchen sink" faults */
++			if (isa_nmi(code) == 0) {
++#ifdef KDB
++				/*
++				 * NMI can be hooked up to a pushbutton
++				 * for debugging.
++				 */
++				if (kdb_on_nmi) {
++					printf ("NMI ... going to debugger\n");
++					kdb_trap(type, 0, frame);
++				}
++#endif /* KDB */
++				goto userout;
++			} else if (panic_on_nmi)
++				panic("NMI indicates hardware failure");
++			break;
++#endif /* DEV_ISA */
++
++		case T_OFLOW:		/* integer overflow fault */
++			ucode = FPE_INTOVF;
++			i = SIGFPE;
++			break;
++
++		case T_BOUND:		/* bounds check fault */
++			ucode = FPE_FLTSUB;
++			i = SIGFPE;
++			break;
++
++		case T_DNA:
++			/* transparent fault (due to context switch "late") */
++			KASSERT(PCB_USER_FPU(td->td_pcb),
++			    ("kernel FPU ctx has leaked"));
++			fpudna();
++			goto userout;
++
++		case T_FPOPFLT:		/* FPU operand fetch fault */
++			ucode = ILL_COPROC;
++			i = SIGILL;
++			break;
++
++		case T_XMMFLT:		/* SIMD floating-point exception */
++			ucode = 0; /* XXX */
++			i = SIGFPE;
++			break;
++		}
++	} else {
++		/* kernel trap */
++
++		KASSERT(cold || td->td_ucred != NULL,
++		    ("kernel trap doesn't have ucred"));
++		switch (type) {
++		case T_PAGEFLT:			/* page fault */
++			(void) trap_pfault(frame, FALSE);
++			goto out;
++
++		case T_DNA:
++			KASSERT(!PCB_USER_FPU(td->td_pcb),
++			    ("Unregistered use of FPU in kernel"));
++			fpudna();
++			goto out;
++
++		case T_ARITHTRAP:	/* arithmetic trap */
++		case T_XMMFLT:		/* SIMD floating-point exception */
++		case T_FPOPFLT:		/* FPU operand fetch fault */
++			/*
++			 * XXXKIB for now disable any FPU traps in kernel
++			 * handler registration seems to be overkill
++			 */
++			trap_fatal(frame, 0);
++			goto out;
++
++		case T_STKFLT:		/* stack fault */
++			break;
++
++		case T_PROTFLT:		/* general protection fault */
++		case T_SEGNPFLT:	/* segment not present fault */
++			if (td->td_intr_nesting_level != 0)
++				break;
++
++			/*
++			 * Invalid segment selectors and out of bounds
++			 * %rip's and %rsp's can be set up in user mode.
++			 * This causes a fault in kernel mode when the
++			 * kernel tries to return to user mode.  We want
++			 * to get this fault so that we can fix the
++			 * problem here and not have to check all the
++			 * selectors and pointers when the user changes
++			 * them.
++			 */
++			if (frame->tf_rip == (long)doreti_iret) {
++				frame->tf_rip = (long)doreti_iret_fault;
++				goto out;
++			}
++			if (frame->tf_rip == (long)ld_ds) {
++				frame->tf_rip = (long)ds_load_fault;
++				goto out;
++			}
++			if (frame->tf_rip == (long)ld_es) {
++				frame->tf_rip = (long)es_load_fault;
++				goto out;
++			}
++			if (frame->tf_rip == (long)ld_fs) {
++				frame->tf_rip = (long)fs_load_fault;
++				goto out;
++			}
++			if (frame->tf_rip == (long)ld_gs) {
++				frame->tf_rip = (long)gs_load_fault;
++				goto out;
++			}
++			if (frame->tf_rip == (long)ld_gsbase) {
++				frame->tf_rip = (long)gsbase_load_fault;
++				goto out;
++			}
++			if (frame->tf_rip == (long)ld_fsbase) {
++				frame->tf_rip = (long)fsbase_load_fault;
++				goto out;
++			}
++			if (PCPU_GET(curpcb)->pcb_onfault != NULL) {
++				frame->tf_rip =
++				    (long)PCPU_GET(curpcb)->pcb_onfault;
++				goto out;
++			}
++			break;
++
++		case T_TSSFLT:
++			/*
++			 * PSL_NT can be set in user mode and isn't cleared
++			 * automatically when the kernel is entered.  This
++			 * causes a TSS fault when the kernel attempts to
++			 * `iret' because the TSS link is uninitialized.  We
++			 * want to get this fault so that we can fix the
++			 * problem here and not every time the kernel is
++			 * entered.
++			 */
++			if (frame->tf_rflags & PSL_NT) {
++				frame->tf_rflags &= ~PSL_NT;
++				goto out;
++			}
++			break;
++
++		case T_TRCTRAP:	 /* trace trap */
++			/*
++			 * Ignore debug register trace traps due to
++			 * accesses in the user's address space, which
++			 * can happen under several conditions such as
++			 * if a user sets a watchpoint on a buffer and
++			 * then passes that buffer to a system call.
++			 * We still want to get TRCTRAPS for addresses
++			 * in kernel space because that is useful when
++			 * debugging the kernel.
++			 */
++			if (user_dbreg_trap()) {
++				/*
++				 * Reset breakpoint bits because the
++				 * processor doesn't
++				 */
++				/* XXX check upper bits here */
++				load_dr6(rdr6() & 0xfffffff0);
++				goto out;
++			}
++			/*
++			 * FALLTHROUGH (TRCTRAP kernel mode, kernel address)
++			 */
++		case T_BPTFLT:
++			/*
++			 * If KDB is enabled, let it handle the debugger trap.
++			 * Otherwise, debugger traps "can't happen".
++			 */
++#ifdef KDB
++			if (kdb_trap(type, 0, frame))
++				goto out;
+ #endif
+-static int panic_on_nmi = 1;
+-SYSCTL_INT(_machdep, OID_AUTO, panic_on_nmi, CTLFLAG_RW,
+-	&panic_on_nmi, 0, "Panic on NMI");
+-TUNABLE_INT("machdep.panic_on_nmi", &panic_on_nmi);
+-static int prot_fault_translation = 0;
+-SYSCTL_INT(_machdep, OID_AUTO, prot_fault_translation, CTLFLAG_RW,
+-	&prot_fault_translation, 0, "Select signal to deliver on protection fault");
++			break;
+ 
+-/*
+- * Exception, fault, and trap interface to the FreeBSD kernel.
+- * This common code is called from assembly language IDT gate entry
+- * routines that prepare a suitable stack frame, and restore this
+- * frame after the exception has been processed.
+- */
++#ifdef DEV_ISA
++		case T_NMI:
++			/* machine/parity/power fail/"kitchen sink" faults */
++			if (isa_nmi(code) == 0) {
++#ifdef KDB
++				/*
++				 * NMI can be hooked up to a pushbutton
++				 * for debugging.
++				 */
++				if (kdb_on_nmi) {
++					printf ("NMI ... going to debugger\n");
++					kdb_trap(type, 0, frame);
++				}
++#endif /* KDB */
++				goto out;
++			} else if (panic_on_nmi == 0)
++				goto out;
++			/* FALLTHROUGH */
++#endif /* DEV_ISA */
++		}
++
++		trap_fatal(frame, 0);
++		goto out;
++	}
++
++	/* Translate fault for emulators (e.g. Linux) */
++	if (*p->p_sysent->sv_transtrap)
++		i = (*p->p_sysent->sv_transtrap)(i, type);
++
++	ksiginfo_init_trap(&ksi);
++	ksi.ksi_signo = i;
++	ksi.ksi_code = ucode;
++	ksi.ksi_trapno = type;
++	ksi.ksi_addr = (void *)addr;
++	trapsignal(td, &ksi);
++
++user:
++	userret(td, frame);
++	mtx_assert(&Giant, MA_NOTOWNED);
++	KASSERT(PCB_USER_FPU(td->td_pcb),
++	    ("Return from trap with kernel FPU ctx leaked"));
++userout:
++out:
++	return;
++}
+ 
++#if 1
++void fr_sva_trap(unsigned trapno, void * trapAddr);
+ void
+-trap(struct trapframe *frame)
++fr_sva_trap(unsigned trapno, void * trapAddr)
+ {
+ 	struct thread *td = curthread;
+ 	struct proc *p = td->td_proc;
+@@ -193,9 +657,105 @@ trap(struct trapframe *frame)
+ 	u_int type;
+ 	register_t addr = 0;
+ 	ksiginfo_t ksi;
++#if 1
++	struct trapframe localframe;
++	struct trapframe * frame = &localframe;
++
++  /*
++   * Enable interrupts.
++   */
++  enable_intr();
++
++	/*
++	 * Convert the SVA interrupt context to a FreeBSD trapframe.
++	 */
++	extern void sva_trapframe (struct trapframe * tf);
++	sva_trapframe (frame);
++  localframe.tf_addr = trapAddr;
++  type = localframe.tf_trapno;
++
++  /*
++   * Translate the SVA trap number into a FreeBSD trap number.
++   */
++  switch (type) {
++    case IDT_DE:
++      type = T_DIVIDE;
++      break;
++
++    case IDT_DB:
++      type = T_RESERVED;
++      break;
++
++    case IDT_NMI:
++      type = T_NMI;
++      break;
++
++    case IDT_BP:
++      type = T_BPTFLT;
++      break;
++
++    case IDT_OF:
++      type = T_OFLOW;
++      break;
++
++    case IDT_BR:
++      type = T_BOUND;
++      break;
++
++    case IDT_UD:
++      type = T_PRIVINFLT;
++      break;
++
++    case IDT_NM:
++      type = T_DNA;
++      break;
++
++    case IDT_FPUGP:
++      type = T_FPOPFLT;
++      break;
++
++    case IDT_TS:
++      type = T_TSSFLT;
++      break;
++
++    case IDT_NP:
++      type = T_SEGNPFLT;
++      break;
++
++    case IDT_SS:
++      type = T_STKFLT;
++      break;
++
++    case IDT_AC:
++      type = T_ALIGNFLT;
++      break;
++
++    case IDT_MC:
++      type = T_MCHK;
++      break;
++
++    case IDT_XF:
++      type = T_XMMFLT;
++      break;
++
++    case IDT_PF:
++      type = T_PAGEFLT;
++      break;
++
++    case IDT_GP:
++      type = T_PROTFLT;
++      break;
++
++    default:
++      panic ("SVA: fr_sva_trap: Did not translate trap type: %x!\n", type);
++      break;
++  }
++#endif
+ 
+ 	PCPU_INC(cnt.v_trap);
++#if 0
+ 	type = frame->tf_trapno;
++#endif
+ 
+ #ifdef SMP
+ 	/* Handler for NMI IPIs used for stopping CPUs. */
+@@ -279,17 +839,23 @@ trap(struct trapframe *frame)
+ 		 * enabled later.
+ 		 */
+ 		if (ISPL(frame->tf_cs) == SEL_UPL)
++#if 1
+ 			uprintf(
+ 			    "pid %ld (%s): trap %d with interrupts disabled\n",
+ 			    (long)curproc->p_pid, curthread->td_name, type);
++#else
++      ;
++#endif
+ 		else if (type != T_NMI && type != T_BPTFLT &&
+ 		    type != T_TRCTRAP) {
+ 			/*
+ 			 * XXX not quite right, since this may be for a
+ 			 * multiple fault in user mode.
+ 			 */
++#if 1
+ 			printf("kernel trap %d with interrupts disabled\n",
+ 			    type);
++#endif
+ 
+ 			/*
+ 			 * We shouldn't enable interrupts while holding a
+@@ -373,7 +939,11 @@ trap(struct trapframe *frame)
+ 
+ 		case T_PAGEFLT:		/* page fault */
+ 			addr = frame->tf_addr;
++#if 0
+ 			i = trap_pfault(frame, TRUE);
++#else
++			i = trap_pfault_sva(addr, frame->tf_err, TRUE, frame);
++#endif
+ 			if (i == -1)
+ 				goto userout;
+ 			if (i == 0)
+@@ -451,6 +1021,10 @@ trap(struct trapframe *frame)
+ 			/* transparent fault (due to context switch "late") */
+ 			KASSERT(PCB_USER_FPU(td->td_pcb),
+ 			    ("kernel FPU ctx has leaked"));
++#if 1
++      sva_print_icontext("FPU");
++      panic ("SVA: No FPU support yet!\n");
++#endif
+ 			fpudna();
+ 			goto userout;
+ 
+@@ -471,7 +1045,11 @@ trap(struct trapframe *frame)
+ 		    ("kernel trap doesn't have ucred"));
+ 		switch (type) {
+ 		case T_PAGEFLT:			/* page fault */
++#if 0
+ 			(void) trap_pfault(frame, FALSE);
++#else
++			(void) trap_pfault_sva(frame->tf_addr, frame->tf_err, FALSE, frame);
++#endif
+ 			goto out;
+ 
+ 		case T_DNA:
+@@ -636,8 +1214,17 @@ user:
+ 	    ("Return from trap with kernel FPU ctx leaked"));
+ userout:
+ out:
++#if 1
++  /*
++   * Run asynchronous stuff.
++   */
++  if (!(sva_was_privileged()))
++    if (curthread->td_flags & (TDF_ASTPENDING | TDF_NEEDRESCHED))
++      ast (frame);
++#endif
+ 	return;
+ }
++#endif
+ 
+ static int
+ trap_pfault(frame, usermode)
+@@ -739,6 +1326,146 @@ nogo:
+ 	return((rv == KERN_PROTECTION_FAILURE) ? SIGBUS : SIGSEGV);
+ }
+ 
++#if 1
++/*
++ * Function: trap_pfault_sva()
++ *
++ * Descrption:
++ *  This is a replacement for trap_pfault() that uses SVA intrinsics.
++ *
++ * Inputs:
++ *	eva      : The effective virtual address responsible for the page fault.
++ *	code     : The amd64 error code providing information about the fault.
++ *	usermode : A flag indicating whether the fault occured in user mode.
++ *	frame    : A fake trapframe used solely for trap_fatal() calls.
++ */
++static int
++trap_pfault_sva (register_t eva, unsigned long code, int usermode, struct trapframe * frame)
++{
++	vm_offset_t va;
++	struct vmspace *vm = NULL;
++	vm_map_t map;
++	int rv = 0;
++	vm_prot_t ftype;
++	struct thread *td = curthread;
++	struct proc *p = td->td_proc;
++
++	va = trunc_page(eva);
++#if 1
++  /*
++   * If the fault is for a ghost memory address, let the SVA VM take care of
++   * it.
++   */
++  if ((0xffffff0000000000u <= va) && (va < 0xffffff8000000000u)) {
++    extern void sva_ghost_fault (uintptr_t);
++    sva_ghost_fault(va);
++    return 0;
++  }
++#endif
++	if (va >= VM_MIN_KERNEL_ADDRESS) {
++		/*
++		 * Don't allow user-mode faults in kernel address space.
++		 */
++		if (usermode)
++			goto nogo;
++
++		map = kernel_map;
++	} else {
++		/*
++		 * This is a fault on non-kernel virtual memory.
++		 * vm is initialized above to NULL. If curproc is NULL
++		 * or curproc->p_vmspace is NULL the fault is fatal.
++		 */
++		if (p != NULL)
++			vm = p->p_vmspace;
++
++		if (vm == NULL)
++			goto nogo;
++
++		map = &vm->vm_map;
++
++		/*
++		 * When accessing a usermode address, kernel must be
++		 * ready to accept the page fault, and provide a
++		 * handling routine.  Since accessing the address
++		 * without the handler is a bug, do not try to handle
++		 * it normally, and panic immediately.
++		 */
++		if (!usermode && (td->td_intr_nesting_level != 0 ||
++		    PCPU_GET(curpcb)->pcb_onfault == NULL)) {
++			trap_fatal(frame, eva);
++			return (-1);
++		}
++	}
++
++	/*
++	 * PGEX_I is defined only if the execute disable bit capability is
++	 * supported and enabled.
++	 */
++#if 0
++	if (frame->tf_err & PGEX_W)
++		ftype = VM_PROT_WRITE;
++	else if ((frame->tf_err & PGEX_I) && pg_nx != 0)
++		ftype = VM_PROT_EXECUTE;
++	else
++		ftype = VM_PROT_READ;
++#else
++	if (code & PGEX_W)
++		ftype = VM_PROT_WRITE;
++	else if ((code & PGEX_I) && pg_nx != 0)
++		ftype = VM_PROT_EXECUTE;
++	else
++		ftype = VM_PROT_READ;
++#endif
++
++	if (map != kernel_map) {
++		/*
++		 * Keep swapout from messing with us during this
++		 *	critical time.
++		 */
++		PROC_LOCK(p);
++		++p->p_lock;
++		PROC_UNLOCK(p);
++
++		/* Fault in the user page: */
++		rv = vm_fault(map, va, ftype, VM_FAULT_NORMAL);
++
++		PROC_LOCK(p);
++		--p->p_lock;
++		PROC_UNLOCK(p);
++	} else {
++		/*
++		 * Don't have to worry about process locking or stacks in the
++		 * kernel.
++		 */
++		rv = vm_fault(map, va, ftype, VM_FAULT_NORMAL);
++	}
++	if (rv == KERN_SUCCESS)
++		return (0);
++nogo:
++	if (!usermode) {
++		if (td->td_intr_nesting_level == 0 &&
++		    PCPU_GET(curpcb)->pcb_onfault != NULL) {
++#if 0
++			frame->tf_rip = (long)PCPU_GET(curpcb)->pcb_onfault;
++#else
++      if (PCPU_GET(curpcb)->pcb_onfault == 1) {
++        sva_iunwind();
++      } else {
++        panic ("SVA: Attempt to set RIP in Interrupt Context!\n");
++      }
++#endif
++			return (0);
++		}
++		trap_fatal(frame, eva);
++		return (-1);
++	}
++
++	return((rv == KERN_PROTECTION_FAILURE) ? SIGBUS : SIGSEGV);
++}
++
++#endif
++
+ static void
+ trap_fatal(frame, eva)
+ 	struct trapframe *frame;
+@@ -911,6 +1638,83 @@ amd64_syscall(struct thread *td, int traced)
+ 	int error;
+ 	ksiginfo_t ksi;
+ 
++#if 1
++  /*
++   * SVA will not pass the thread pointer.
++   */
++  td = curthread;
++#endif
++#ifdef DIAGNOSTIC
++	if (ISPL(td->td_frame->tf_cs) != SEL_UPL) {
++		panic("syscall");
++		/* NOT REACHED */
++	}
++#endif
++	error = syscallenter(td, &sa);
++
++	/*
++	 * Traced syscall.
++	 */
++	if (__predict_false(traced)) {
++		td->td_frame->tf_rflags &= ~PSL_T;
++		ksiginfo_init_trap(&ksi);
++		ksi.ksi_signo = SIGTRAP;
++		ksi.ksi_code = TRAP_TRACE;
++		ksi.ksi_addr = (void *)td->td_frame->tf_rip;
++		trapsignal(td, &ksi);
++	}
++
++	KASSERT(PCB_USER_FPU(td->td_pcb),
++	    ("System call %s returing with kernel FPU ctx leaked",
++	     syscallname(td->td_proc, sa.code)));
++	KASSERT(td->td_pcb->pcb_save == &td->td_pcb->pcb_user_save,
++	    ("System call %s returning with mangled pcb_save",
++	     syscallname(td->td_proc, sa.code)));
++
++	syscallret(td, error, &sa);
++}
++
++#if 1
++/*
++ *	syscall -	system call request C handler
++ *
++ *	A system call is essentially treated as a trap.
++ */
++void
++sva_syscall(struct thread *td, int traced)
++{
++	struct syscall_args sa;
++	int error;
++	ksiginfo_t ksi;
++
++#if 1
++  /*
++   * Enable interrupts.
++   */
++  enable_intr();
++
++  /*
++   * SVA will not pass the thread pointer nor will it indicate whether tracing
++   * is enabled.
++   */
++  td = curthread;
++  traced = 0;
++
++  /*
++   * Install a trap frame into the thread structure.
++   */
++	struct trapframe localframe;
++  td->td_frame = &localframe;
++
++	/*
++	 * Convert the SVA interrupt context to a FreeBSD trapframe.
++	 */
++	extern void sva_syscall_trapframe (struct trapframe * tf);
++	sva_syscall_trapframe (&localframe);
++#if 0
++  traced = localframe.tf_rflags & PSL_T;
++#endif
++#endif
+ #ifdef DIAGNOSTIC
+ 	if (ISPL(td->td_frame->tf_cs) != SEL_UPL) {
+ 		panic("syscall");
+@@ -939,4 +1743,11 @@ amd64_syscall(struct thread *td, int traced)
+ 	     syscallname(td->td_proc, sa.code)));
+ 
+ 	syscallret(td, error, &sa);
++
++#if 1
++  /* SVA: The SVA assembly code does not run the AST */
++  if (curthread->td_flags & (TDF_ASTPENDING | TDF_NEEDRESCHED))
++    ast (&localframe);
++#endif
+ }
++#endif
+diff --git a/sys/amd64/amd64/vm_machdep.c b/sys/amd64/amd64/vm_machdep.c
+index c0be720..10107ff 100644
+--- a/sys/amd64/amd64/vm_machdep.c
++++ b/sys/amd64/amd64/vm_machdep.c
+@@ -83,6 +83,10 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/amd64/amd64/vm_machdep.c 223758 2011-07-04
+ 
+ #include <x86/isa/isa.h>
+ 
++#if 1
++#include <sva/interrupt.h>
++#endif
++
+ static void	cpu_reset_real(void);
+ #ifdef SMP
+ static void	cpu_reset_proxy(void);
+@@ -90,6 +94,22 @@ static u_int	cpu_reset_proxyid;
+ static volatile u_int	cpu_reset_proxy_active;
+ #endif
+ 
++#if 1
++void
++kernel_thread_trampoline (struct thread * td)
++{
++  extern void fork_exit(void (*callout)(void *, struct trapframe *),
++                        void *arg,
++                        struct trapframe *frame);
++
++  /*
++   * Call the specified function.
++   */
++  fork_exit (td->callout, td->callarg, 0);
++  return;
++}
++#endif
++
+ /*
+  * Finish a fork operation, with process p2 nearly set up.
+  * Copy and update the pcb, set up the stack so that the child
+@@ -216,6 +236,27 @@ cpu_fork(td1, p2, td2, flags)
+ 		mdp2->md_ldt = NULL;
+ 	mtx_unlock(&dt_lock);
+ 
++#if 1
++	/*
++	 * Compute the length of the stack.
++	 */
++	uintptr_t stacklen = td2->td_kstack_pages * PAGE_SIZE -
++	                     sizeof (struct pcb) -
++	                     sizeof (struct trapframe);
++
++  /*
++   * SVA: Initialize the new thread state.
++   */
++  td2->sva = 1;
++  td2->callout = fork_return;
++  td2->callarg = td2;
++  td2->svaID = sva_init_stack (td2->td_kstack,
++	                             stacklen,
++	                             kernel_thread_trampoline,
++	                             td2,
++	                             0,
++                               0);
++#endif
+ 	/*
+ 	 * Now, cpu_switch() can schedule the new process.
+ 	 * pcb_rsp is loaded pointing to the cpu_switch() stack frame
+@@ -245,6 +286,10 @@ cpu_set_fork_handler(td, func, arg)
+ 	 */
+ 	td->td_pcb->pcb_r12 = (long) func;	/* function */
+ 	td->td_pcb->pcb_rbx = (long) arg;	/* first arg */
++#if 1
++  td->callout = func;
++  td->callarg = arg;
++#endif
+ }
+ 
+ void
+@@ -259,6 +304,13 @@ cpu_exit(struct thread *td)
+ 		user_ldt_free(td);
+ 	else
+ 		mtx_unlock(&dt_lock);
++#if 1
++  /* SVA:
++   *  Destroy the integer state to release resources and mark that the thread
++   *  can never be put on to the processor again.
++   */
++  sva_release_stack (td->svaID);
++#endif
+ }
+ 
+ void
+@@ -327,12 +379,15 @@ cpu_thread_free(struct thread *td)
+ void
+ cpu_set_syscall_retval(struct thread *td, int error)
+ {
+-
+ 	switch (error) {
+ 	case 0:
++#if 0
+ 		td->td_frame->tf_rax = td->td_retval[0];
+ 		td->td_frame->tf_rdx = td->td_retval[1];
+ 		td->td_frame->tf_rflags &= ~PSL_C;
++#else
++    sva_icontext_setretval (td->td_retval[1], td->td_retval[0], 0);
++#endif
+ 		break;
+ 
+ 	case ERESTART:
+@@ -345,8 +400,13 @@ cpu_set_syscall_retval(struct thread *td, int error)
+ 		 * %r10 restore is only required for freebsd/amd64 processes,
+ 		 * but shall be innocent for any ia32 ABI.
+ 		 */
++#if 0
+ 		td->td_frame->tf_rip -= td->td_frame->tf_err;
+ 		td->td_frame->tf_r10 = td->td_frame->tf_rcx;
++    sva_icontext_restart(td->td_frame->tf_r10, td->td_frame->tf_rip);
++#else
++    sva_icontext_restart(0, 0);
++#endif
+ 		break;
+ 
+ 	case EJUSTRETURN:
+@@ -359,8 +419,12 @@ cpu_set_syscall_retval(struct thread *td, int error)
+ 			else
+ 				error = td->td_proc->p_sysent->sv_errtbl[error];
+ 		}
++#if 0
+ 		td->td_frame->tf_rax = error;
+ 		td->td_frame->tf_rflags |= PSL_C;
++#else
++    sva_icontext_setretval (0, error, 1);
++#endif
+ 		break;
+ 	}
+ }
+@@ -424,7 +488,108 @@ cpu_set_upcall(struct thread *td, struct thread *td0)
+ 	/* Setup to release spin count in fork_exit(). */
+ 	td->td_md.md_spinlock_count = 1;
+ 	td->td_md.md_saved_flags = PSL_KERNEL | PSL_I;
++#if 1
++  /*
++   * SVA: Initialize the new thread state.
++   */
++  uintptr_t stacklen = td->td_kstack_pages * PAGE_SIZE -
++	                     sizeof (struct pcb) -
++	                     sizeof (struct trapframe);
++  td->sva = 1;
++  td->callout = fork_return;
++  td->callarg = td;
++  td->svaID = sva_init_stack (td->td_kstack,
++	                            stacklen,
++	                            kernel_thread_trampoline,
++                              td,
++                              0,
++	                            0);
++#endif
++}
++
++#if 1
++/*
++ * Initialize machine state (pcb and trap frame) for a new thread about to
++ * upcall. Put enough state in the new thread's PCB to get it to go back 
++ * userret(), where we can intercept it again to set the return (upcall)
++ * Address and stack, along with those from upcals that are from other sources
++ * such as those generated in thread_userret() itself.
++ */
++void
++cpu_create_upcall(struct thread *td,
++                  struct thread *td0,
++                  void (*func)(void *),
++                  void *arg)
++{
++	struct pcb *pcb2;
++
++	/* Point the pcb to the top of the stack. */
++	pcb2 = td->td_pcb;
++
++	/*
++	 * Copy the upcall pcb.  This loads kernel regs.
++	 * Those not loaded individually below get their default
++	 * values here.
++	 */
++	bcopy(td0->td_pcb, pcb2, sizeof(*pcb2));
++	clear_pcb_flags(pcb2, PCB_FPUINITDONE | PCB_USERFPUINITDONE);
++	pcb2->pcb_save = &pcb2->pcb_user_save;
++	set_pcb_flags(pcb2, PCB_FULL_IRET);
++
++	/*
++	 * Create a new fresh stack for the new thread.
++	 */
++	bcopy(td0->td_frame, td->td_frame, sizeof(struct trapframe));
++
++	/* If the current thread has the trap bit set (i.e. a debugger had
++	 * single stepped the process to the system call), we need to clear
++	 * the trap flag from the new frame. Otherwise, the new thread will
++	 * receive a (likely unexpected) SIGTRAP when it executes the first
++	 * instruction after returning to userland.
++	 */
++	td->td_frame->tf_rflags &= ~PSL_T;
++
++	/*
++	 * Set registers for trampoline to user mode.  Leave space for the
++	 * return address on stack.  These are the kernel mode register values.
++	 */
++	pcb2->pcb_r12 = (register_t)fork_return;	    /* trampoline arg */
++	pcb2->pcb_rbp = 0;
++	pcb2->pcb_rsp = (register_t)td->td_frame - sizeof(void *);	/* trampoline arg */
++	pcb2->pcb_rbx = (register_t)td;			    /* trampoline arg */
++	pcb2->pcb_rip = (register_t)fork_trampoline;
++	/*
++	 * If we didn't copy the pcb, we'd need to do the following registers:
++	 * pcb2->pcb_cr3:	cloned above.
++	 * pcb2->pcb_dr*:	cloned above.
++	 * pcb2->pcb_savefpu:	cloned above.
++	 * pcb2->pcb_onfault:	cloned above (always NULL here?).
++	 * pcb2->pcb_[fg]sbase: cloned above
++	 */
++
++	/* Setup to release spin count in fork_exit(). */
++	td->td_md.md_spinlock_count = 1;
++	td->td_md.md_saved_flags = PSL_KERNEL | PSL_I;
++#if 1
++  /*
++   * SVA: Initialize the new thread state.
++   */
++  uintptr_t stacklen = td->td_kstack_pages * PAGE_SIZE -
++	                     sizeof (struct pcb) -
++	                     sizeof (struct trapframe);
++  td->sva = 1;
++  td->callout = func;
++  td->callarg = arg;
++  td->svaID = sva_init_stack (td->td_kstack,
++	                            stacklen,
++	                            kernel_thread_trampoline,
++                              td,
++                              0,
++	                            0);
++#endif
+ }
++#endif
++
+ 
+ /*
+  * Set that machine state for performing an upcall that has to
+diff --git a/sys/amd64/conf/SVA b/sys/amd64/conf/SVA
+new file mode 100644
+index 0000000..aeb2399
+--- /dev/null
++++ b/sys/amd64/conf/SVA
+@@ -0,0 +1,352 @@
++#
++# GENERIC -- Generic kernel configuration file for FreeBSD/amd64
++#
++# For more information on this file, please read the config(5) manual page,
++# and/or the handbook section on Kernel Configuration Files:
++#
++#    http://www.FreeBSD.org/doc/en_US.ISO8859-1/books/handbook/kernelconfig-config.html
++#
++# The handbook is also available locally in /usr/share/doc/handbook
++# if you've installed the doc distribution, otherwise always see the
++# FreeBSD World Wide Web server (http://www.FreeBSD.org/) for the
++# latest information.
++#
++# An exhaustive list of options and more detailed explanations of the
++# device lines is also present in the ../../conf/NOTES and NOTES files.
++# If you are in doubt as to the purpose or necessity of a line, check first
++# in NOTES.
++#
++# $FreeBSD: release/9.0.0/sys/amd64/conf/GENERIC 227305 2011-11-07 13:40:54Z marius $
++
++cpu		HAMMER
++ident		GENERIC
++
++#makeoptions	DEBUG=-g		# Build kernel with gdb(1) debug symbols
++
++#******************
++# SVA Related Flags
++#******************
++options     SVA_MMU
++
++options 	SCHED_ULE		# ULE scheduler
++#options   SCHED_4BSD
++options 	PREEMPTION		# Enable kernel thread preemption
++options 	INET			# InterNETworking
++options 	INET6			# IPv6 communications protocols
++options 	SCTP			# Stream Control Transmission Protocol
++options 	FFS			# Berkeley Fast Filesystem
++options 	SOFTUPDATES		# Enable FFS soft updates support
++options 	UFS_ACL			# Support for access control lists
++options 	UFS_DIRHASH		# Improve performance on big directories
++options 	UFS_GJOURNAL		# Enable gjournal-based UFS journaling
++options 	MD_ROOT			# MD is a potential root device
++options 	NFSCL			# New Network Filesystem Client
++options 	NFSD			# New Network Filesystem Server
++options 	NFSLOCKD		# Network Lock Manager
++options 	NFS_ROOT		# NFS usable as /, requires NFSCL
++options 	MSDOSFS			# MSDOS Filesystem
++options 	CD9660			# ISO 9660 Filesystem
++options 	PROCFS			# Process filesystem (requires PSEUDOFS)
++options 	PSEUDOFS		# Pseudo-filesystem framework
++options 	GEOM_PART_GPT		# GUID Partition Tables.
++options 	GEOM_LABEL		# Provides labelization
++options 	COMPAT_FREEBSD32	# Compatible with i386 binaries
++options 	COMPAT_FREEBSD4		# Compatible with FreeBSD4
++options 	COMPAT_FREEBSD5		# Compatible with FreeBSD5
++options 	COMPAT_FREEBSD6		# Compatible with FreeBSD6
++options 	COMPAT_FREEBSD7		# Compatible with FreeBSD7
++options 	SCSI_DELAY=5000		# Delay (in ms) before probing SCSI
++options 	KTRACE			# ktrace(1) support
++options 	STACK			# stack(9) support
++options 	SYSVSHM			# SYSV-style shared memory
++options 	SYSVMSG			# SYSV-style message queues
++options 	SYSVSEM			# SYSV-style semaphores
++options 	_KPOSIX_PRIORITY_SCHEDULING # POSIX P1003_1B real-time extensions
++options 	PRINTF_BUFR_SIZE=128	# Prevent printf output being interspersed.
++options 	KBD_INSTALL_CDEV	# install a CDEV entry in /dev
++options 	HWPMC_HOOKS		# Necessary kernel hooks for hwpmc(4)
++options 	AUDIT			# Security event auditing
++options 	MAC			# TrustedBSD MAC Framework
++#options 	KDTRACE_FRAME		# Ensure frames are compiled in
++#options 	KDTRACE_HOOKS		# Kernel DTrace hooks
++options 	INCLUDE_CONFIG_FILE     # Include this file in kernel
++options 	KDB			# Kernel debugger related code
++#options 	KDB_TRACE		# Print a stack trace for a panic
++options		DDB
++options		BREAK_TO_DEBUGGER # Break signal on console goes into debugger
++options		ALT_BREAK_TO_DEBUGGER # Break signal on console goes into debugger
++
++# JTC: lock debugging stuff
++#options WITNESS
++#options WITNESS_KDB
++#options WITNESS_SKIPSPIN
++
++# Make an SMP-capable kernel by default
++#options 	SMP			# Symmetric MultiProcessor Kernel
++
++# CPU frequency control
++#device		cpufreq
++
++# Bus support.
++device		acpi
++device		pci
++
++# Floppy drives
++device		fdc
++
++# ATA controllers
++device		ahci		# AHCI-compatible SATA controllers
++device		ata		# Legacy ATA/SATA controllers
++options 	ATA_CAM		# Handle legacy controllers with CAM
++options 	ATA_STATIC_ID	# Static device numbering
++device		mvs		# Marvell 88SX50XX/88SX60XX/88SX70XX/SoC SATA
++device		siis		# SiliconImage SiI3124/SiI3132/SiI3531 SATA
++
++# SCSI Controllers
++device		ahc		# AHA2940 and onboard AIC7xxx devices
++options 	AHC_REG_PRETTY_PRINT	# Print register bitfields in debug
++					# output.  Adds ~128k to driver.
++device		ahd		# AHA39320/29320 and onboard AIC79xx devices
++options 	AHD_REG_PRETTY_PRINT	# Print register bitfields in debug
++					# output.  Adds ~215k to driver.
++device		esp		# AMD Am53C974 (Tekram DC-390(T))
++device		hptiop		# Highpoint RocketRaid 3xxx series
++device		isp		# Qlogic family
++#device		ispfw		# Firmware for QLogic HBAs- normally a module
++device		mpt		# LSI-Logic MPT-Fusion
++device		mps		# LSI-Logic MPT-Fusion 2
++#device		ncr		# NCR/Symbios Logic
++device		sym		# NCR/Symbios Logic (newer chipsets + those of `ncr')
++device		trm		# Tekram DC395U/UW/F DC315U adapters
++
++device		adv		# Advansys SCSI adapters
++device		adw		# Advansys wide SCSI adapters
++device		aic		# Adaptec 15[012]x SCSI adapters, AIC-6[23]60.
++device		bt		# Buslogic/Mylex MultiMaster SCSI adapters
++
++# ATA/SCSI peripherals
++device		scbus		# SCSI bus (required for ATA/SCSI)
++device		ch		# SCSI media changers
++device		da		# Direct Access (disks)
++device		sa		# Sequential Access (tape etc)
++device		cd		# CD
++device		pass		# Passthrough device (direct ATA/SCSI access)
++device		ses		# SCSI Environmental Services (and SAF-TE)
++
++# RAID controllers interfaced to the SCSI subsystem
++#device		amr		# AMI MegaRAID
++#device		arcmsr		# Areca SATA II RAID
++#XXX it is not 64-bit clean, -scottl
++#device		asr		# DPT SmartRAID V, VI and Adaptec SCSI RAID
++#device		ciss		# Compaq Smart RAID 5*
++#device		dpt		# DPT Smartcache III, IV - See NOTES for options
++#device		hptmv		# Highpoint RocketRAID 182x
++#device		hptrr		# Highpoint RocketRAID 17xx, 22xx, 23xx, 25xx
++#device		iir		# Intel Integrated RAID
++#device		ips		# IBM (Adaptec) ServeRAID
++#device		mly		# Mylex AcceleRAID/eXtremeRAID
++#device		twa		# 3ware 9000 series PATA/SATA RAID
++
++# RAID controllers
++#device		aac		# Adaptec FSA RAID
++#device		aacp		# SCSI passthrough for aac (requires CAM)
++#device		ida		# Compaq Smart RAID
++#device		mfi		# LSI MegaRAID SAS
++#device		mlx		# Mylex DAC960 family
++#XXX pointer/int warnings
++#device		pst		# Promise Supertrak SX6000
++#device		twe		# 3ware ATA RAID
++#device		tws		# LSI 3ware 9750 SATA+SAS 6Gb/s RAID controller
++
++# atkbdc0 controls both the keyboard and the PS/2 mouse
++device		atkbdc		# AT keyboard controller
++device		atkbd		# AT keyboard
++device		psm		# PS/2 mouse
++
++device		kbdmux		# keyboard multiplexer
++
++device		vga		# VGA video card driver
++
++device		splash		# Splash screen and screen saver support
++
++# syscons is the default console driver, resembling an SCO console
++device		sc
++options 	SC_PIXEL_MODE	# add support for the raster text mode
++
++device		agp		# support several AGP chipsets
++
++# PCCARD (PCMCIA) support
++# PCMCIA and cardbus bridge support
++#device		cbb		# cardbus (yenta) bridge
++#device		pccard		# PC Card (16-bit) bus
++#device		cardbus		# CardBus (32-bit) bus
++
++# Serial (COM) ports
++device		uart		# Generic UART driver
++
++# Parallel port
++#device		ppc
++#device		ppbus		# Parallel port bus (required)
++#device		lpt		# Printer
++#device		plip		# TCP/IP over parallel
++#device		ppi		# Parallel port interface device
++#device		vpo		# Requires scbus and da
++
++device		puc		# Multi I/O cards and multi-channel UARTs
++
++# PCI Ethernet NICs.
++device		bxe		# Broadcom BCM57710/BCM57711/BCM57711E 10Gb Ethernet
++device		de		# DEC/Intel DC21x4x (``Tulip'')
++device		em		# Intel PRO/1000 Gigabit Ethernet Family
++device		igb		# Intel PRO/1000 PCIE Server Gigabit Family
++device		ixgbe		# Intel PRO/10GbE PCIE Ethernet Family
++device		le		# AMD Am7900 LANCE and Am79C9xx PCnet
++device		ti		# Alteon Networks Tigon I/II gigabit Ethernet
++device		txp		# 3Com 3cR990 (``Typhoon'')
++device		vx		# 3Com 3c590, 3c595 (``Vortex'')
++
++# PCI Ethernet NICs that use the common MII bus controller code.
++# NOTE: Be sure to keep the 'device miibus' line in order to use these NICs!
++#device		miibus		# MII bus support
++#device		ae		# Attansic/Atheros L2 FastEthernet
++#device		age		# Attansic/Atheros L1 Gigabit Ethernet
++#device		alc		# Atheros AR8131/AR8132 Ethernet
++#device		ale		# Atheros AR8121/AR8113/AR8114 Ethernet
++#device		bce		# Broadcom BCM5706/BCM5708 Gigabit Ethernet
++#device		bfe		# Broadcom BCM440x 10/100 Ethernet
++#device		bge		# Broadcom BCM570xx Gigabit Ethernet
++#device		dc		# DEC/Intel 21143 and various workalikes
++#device		et		# Agere ET1310 10/100/Gigabit Ethernet
++#device		fxp		# Intel EtherExpress PRO/100B (82557, 82558)
++#device		jme		# JMicron JMC250 Gigabit/JMC260 Fast Ethernet
++#device		lge		# Level 1 LXT1001 gigabit Ethernet
++#device		msk		# Marvell/SysKonnect Yukon II Gigabit Ethernet
++#device		nfe		# nVidia nForce MCP on-board Ethernet
++#device		nge		# NatSemi DP83820 gigabit Ethernet
++#device		nve		# nVidia nForce MCP on-board Ethernet Networking
++#device		pcn		# AMD Am79C97x PCI 10/100 (precedence over 'le')
++#device		re		# RealTek 8139C+/8169/8169S/8110S
++#device		rl		# RealTek 8129/8139
++#device		sf		# Adaptec AIC-6915 (``Starfire'')
++#device		sge		# Silicon Integrated Systems SiS190/191
++#device		sis		# Silicon Integrated Systems SiS 900/SiS 7016
++#device		sk		# SysKonnect SK-984x & SK-982x gigabit Ethernet
++#device		ste		# Sundance ST201 (D-Link DFE-550TX)
++#device		stge		# Sundance/Tamarack TC9021 gigabit Ethernet
++#device		tl		# Texas Instruments ThunderLAN
++#device		tx		# SMC EtherPower II (83c170 ``EPIC'')
++#device		vge		# VIA VT612x gigabit Ethernet
++#device		vr		# VIA Rhine, Rhine II
++#device		wb		# Winbond W89C840F
++#device		xl		# 3Com 3c90x (``Boomerang'', ``Cyclone'')
++
++# ISA Ethernet NICs.  pccard NICs included.
++#device		cs		# Crystal Semiconductor CS89x0 NIC
++# 'device ed' requires 'device miibus'
++device		ed		# NE[12]000, SMC Ultra, 3c503, DS8390 cards
++#device		ex		# Intel EtherExpress Pro/10 and Pro/10+
++#device		ep		# Etherlink III based cards
++#device		fe		# Fujitsu MB8696x based cards
++#device		sn		# SMC's 9000 series of Ethernet chips
++#device		xe		# Xircom pccard Ethernet
++
++# Wireless NIC cards
++#device		wlan		# 802.11 support
++#options 	IEEE80211_DEBUG	# enable debug msgs
++#options 	IEEE80211_AMPDU_AGE # age frames in AMPDU reorder q's
++#options 	IEEE80211_SUPPORT_MESH	# enable 802.11s draft support
++#device		wlan_wep	# 802.11 WEP support
++#device		wlan_ccmp	# 802.11 CCMP support
++#device		wlan_tkip	# 802.11 TKIP support
++#device		wlan_amrr	# AMRR transmit rate control algorithm
++#device		an		# Aironet 4500/4800 802.11 wireless NICs.
++#device		ath		# Atheros NIC's
++#device		ath_pci		# Atheros pci/cardbus glue
++#device		ath_hal		# pci/cardbus chip support
++#options 	AH_SUPPORT_AR5416	# enable AR5416 tx/rx descriptors
++#device		ath_rate_sample	# SampleRate tx rate control for ath
++#device		bwi		# Broadcom BCM430x/BCM431x wireless NICs.
++#device		bwn		# Broadcom BCM43xx wireless NICs.
++#device		ipw		# Intel 2100 wireless NICs.
++#device		iwi		# Intel 2200BG/2225BG/2915ABG wireless NICs.
++#device		iwn		# Intel 4965/1000/5000/6000 wireless NICs.
++#device		malo		# Marvell Libertas wireless NICs.
++#device		mwl		# Marvell 88W8363 802.11n wireless NICs.
++#device		ral		# Ralink Technology RT2500 wireless NICs.
++#device		wi		# WaveLAN/Intersil/Symbol 802.11 wireless NICs.
++#device		wpi		# Intel 3945ABG wireless NICs.
++
++# Pseudo devices.
++device		loop		# Network loopback
++device		random		# Entropy device
++device		ether		# Ethernet support
++device		vlan		# 802.1Q VLAN support
++device		tun		# Packet tunnel.
++device		pty		# BSD-style compatibility pseudo ttys
++device		md		# Memory "disks"
++device		gif		# IPv6 and IPv4 tunneling
++device		faith		# IPv6-to-IPv4 relaying (translation)
++device		firmware	# firmware assist module
++
++# The `bpf' device enables the Berkeley Packet Filter.
++# Be aware of the administrative consequences of enabling this!
++# Note that 'bpf' is required for DHCP.
++device		bpf		# Berkeley packet filter
++
++# USB support
++options 	USB_DEBUG	# enable debug msgs
++device		uhci		# UHCI PCI->USB interface
++device		ohci		# OHCI PCI->USB interface
++device		ehci		# EHCI PCI->USB interface (USB 2.0)
++device		xhci		# XHCI PCI->USB interface (USB 3.0)
++device		usb		# USB Bus (required)
++#device		udbp		# USB Double Bulk Pipe devices (needs netgraph)
++device		uhid		# "Human Interface Devices"
++device		ukbd		# Keyboard
++#device		ulpt		# Printer
++device		umass		# Disks/Mass storage - Requires scbus and da
++device		ums		# Mouse
++#device		urio		# Diamond Rio 500 MP3 player
++# USB Serial devices
++#device		u3g		# USB-based 3G modems (Option, Huawei, Sierra)
++#device		uark		# Technologies ARK3116 based serial adapters
++#device		ubsa		# Belkin F5U103 and compatible serial adapters
++#device		uftdi		# For FTDI usb serial adapters
++#device		uipaq		# Some WinCE based devices
++#device		uplcom		# Prolific PL-2303 serial adapters
++#device		uslcom		# SI Labs CP2101/CP2102 serial adapters
++#device		uvisor		# Visor and Palm devices
++#device		uvscom		# USB serial support for DDI pocket's PHS
++# USB Ethernet, requires miibus
++#device		aue		# ADMtek USB Ethernet
++#device		axe		# ASIX Electronics USB Ethernet
++#device		cdce		# Generic USB over Ethernet
++#device		cue		# CATC USB Ethernet
++#device		kue		# Kawasaki LSI USB Ethernet
++#device		rue		# RealTek RTL8150 USB Ethernet
++#device		udav		# Davicom DM9601E USB
++# USB Wireless
++#device		rum		# Ralink Technology RT2501USB wireless NICs
++#device		run		# Ralink Technology RT2700/RT2800/RT3000 NICs.
++#device		uath		# Atheros AR5523 wireless NICs
++#device		upgt		# Conexant/Intersil PrismGT wireless NICs.
++#device		ural		# Ralink Technology RT2500USB wireless NICs
++#device		urtw		# Realtek RTL8187B/L wireless NICs
++#device		zyd		# ZyDAS zd1211/zd1211b wireless NICs
++
++# FireWire support
++#device		firewire	# FireWire bus code
++# sbp(4) works for some systems but causes boot failure on others
++#device		sbp		# SCSI over FireWire (Requires scbus and da)
++#device		fwe		# Ethernet over FireWire (non-standard!)
++#device		fwip		# IP over FireWire (RFC 2734,3146)
++#device		dcons		# Dumb console driver
++#device		dcons_crom	# Configuration ROM for dcons
++
++# Sound support
++#device		sound		# Generic sound driver (required)
++#device		snd_es137x	# Ensoniq AudioPCI ES137x
++#device		snd_hda		# Intel High Definition Audio
++#device		snd_ich		# Intel, NVidia and other ICH AC'97 Audio
++#device		snd_uaudio	# USB Audio
++#device		snd_via8233	# VIA VT8233x Audio
+diff --git a/sys/amd64/conf/SVAMAC b/sys/amd64/conf/SVAMAC
+new file mode 100644
+index 0000000..a20e7e5
+--- /dev/null
++++ b/sys/amd64/conf/SVAMAC
+@@ -0,0 +1,342 @@
++#
++# GENERIC -- Generic kernel configuration file for FreeBSD/amd64
++#
++# For more information on this file, please read the config(5) manual page,
++# and/or the handbook section on Kernel Configuration Files:
++#
++#    http://www.FreeBSD.org/doc/en_US.ISO8859-1/books/handbook/kernelconfig-config.html
++#
++# The handbook is also available locally in /usr/share/doc/handbook
++# if you've installed the doc distribution, otherwise always see the
++# FreeBSD World Wide Web server (http://www.FreeBSD.org/) for the
++# latest information.
++#
++# An exhaustive list of options and more detailed explanations of the
++# device lines is also present in the ../../conf/NOTES and NOTES files.
++# If you are in doubt as to the purpose or necessity of a line, check first
++# in NOTES.
++#
++# $FreeBSD: release/9.0.0/sys/amd64/conf/GENERIC 227305 2011-11-07 13:40:54Z marius $
++
++cpu		HAMMER
++ident		SVAMAC
++
++makeoptions	DEBUG=-g		# Build kernel with gdb(1) debug symbols
++
++#options 	SCHED_ULE		# ULE scheduler
++options   SCHED_4BSD
++options 	PREEMPTION		# Enable kernel thread preemption
++options 	INET			# InterNETworking
++options 	INET6			# IPv6 communications protocols
++options 	SCTP			# Stream Control Transmission Protocol
++options 	FFS			# Berkeley Fast Filesystem
++options 	SOFTUPDATES		# Enable FFS soft updates support
++options 	UFS_ACL			# Support for access control lists
++options 	UFS_DIRHASH		# Improve performance on big directories
++options 	UFS_GJOURNAL		# Enable gjournal-based UFS journaling
++options 	MD_ROOT			# MD is a potential root device
++options 	NFSCL			# New Network Filesystem Client
++options 	NFSD			# New Network Filesystem Server
++options 	NFSLOCKD		# Network Lock Manager
++options 	NFS_ROOT		# NFS usable as /, requires NFSCL
++options 	MSDOSFS			# MSDOS Filesystem
++options 	CD9660			# ISO 9660 Filesystem
++options 	PROCFS			# Process filesystem (requires PSEUDOFS)
++options 	PSEUDOFS		# Pseudo-filesystem framework
++options 	GEOM_PART_GPT		# GUID Partition Tables.
++options 	GEOM_LABEL		# Provides labelization
++options 	COMPAT_FREEBSD32	# Compatible with i386 binaries
++options 	COMPAT_FREEBSD4		# Compatible with FreeBSD4
++options 	COMPAT_FREEBSD5		# Compatible with FreeBSD5
++options 	COMPAT_FREEBSD6		# Compatible with FreeBSD6
++options 	COMPAT_FREEBSD7		# Compatible with FreeBSD7
++options 	SCSI_DELAY=5000		# Delay (in ms) before probing SCSI
++options 	KTRACE			# ktrace(1) support
++options 	STACK			# stack(9) support
++options 	SYSVSHM			# SYSV-style shared memory
++options 	SYSVMSG			# SYSV-style message queues
++options 	SYSVSEM			# SYSV-style semaphores
++options 	_KPOSIX_PRIORITY_SCHEDULING # POSIX P1003_1B real-time extensions
++options 	PRINTF_BUFR_SIZE=128	# Prevent printf output being interspersed.
++options 	KBD_INSTALL_CDEV	# install a CDEV entry in /dev
++options 	HWPMC_HOOKS		# Necessary kernel hooks for hwpmc(4)
++options 	AUDIT			# Security event auditing
++options 	MAC			# TrustedBSD MAC Framework
++#options 	KDTRACE_FRAME		# Ensure frames are compiled in
++#options 	KDTRACE_HOOKS		# Kernel DTrace hooks
++options 	INCLUDE_CONFIG_FILE     # Include this file in kernel
++options 	KDB			# Kernel debugger related code
++options 	KDB_TRACE		# Print a stack trace for a panic
++options		DDB
++options		BREAK_TO_DEBUGGER # Break signal on console goes into debugger
++options		ALT_BREAK_TO_DEBUGGER # Break signal on console goes into debugger
++
++# Make an SMP-capable kernel by default
++#options 	SMP			# Symmetric MultiProcessor Kernel
++
++# CPU frequency control
++device		cpufreq
++
++# Bus support.
++device		acpi
++device		pci
++
++# Floppy drives
++device		fdc
++
++# ATA controllers
++device		ahci		# AHCI-compatible SATA controllers
++device		ata		# Legacy ATA/SATA controllers
++options 	ATA_CAM		# Handle legacy controllers with CAM
++options 	ATA_STATIC_ID	# Static device numbering
++device		mvs		# Marvell 88SX50XX/88SX60XX/88SX70XX/SoC SATA
++device		siis		# SiliconImage SiI3124/SiI3132/SiI3531 SATA
++
++# SCSI Controllers
++device		ahc		# AHA2940 and onboard AIC7xxx devices
++options 	AHC_REG_PRETTY_PRINT	# Print register bitfields in debug
++					# output.  Adds ~128k to driver.
++device		ahd		# AHA39320/29320 and onboard AIC79xx devices
++options 	AHD_REG_PRETTY_PRINT	# Print register bitfields in debug
++					# output.  Adds ~215k to driver.
++device		esp		# AMD Am53C974 (Tekram DC-390(T))
++device		hptiop		# Highpoint RocketRaid 3xxx series
++device		isp		# Qlogic family
++#device		ispfw		# Firmware for QLogic HBAs- normally a module
++device		mpt		# LSI-Logic MPT-Fusion
++device		mps		# LSI-Logic MPT-Fusion 2
++#device		ncr		# NCR/Symbios Logic
++device		sym		# NCR/Symbios Logic (newer chipsets + those of `ncr')
++device		trm		# Tekram DC395U/UW/F DC315U adapters
++
++device		adv		# Advansys SCSI adapters
++device		adw		# Advansys wide SCSI adapters
++device		aic		# Adaptec 15[012]x SCSI adapters, AIC-6[23]60.
++device		bt		# Buslogic/Mylex MultiMaster SCSI adapters
++
++# ATA/SCSI peripherals
++device		scbus		# SCSI bus (required for ATA/SCSI)
++device		ch		# SCSI media changers
++device		da		# Direct Access (disks)
++device		sa		# Sequential Access (tape etc)
++device		cd		# CD
++device		pass		# Passthrough device (direct ATA/SCSI access)
++device		ses		# SCSI Environmental Services (and SAF-TE)
++
++# RAID controllers interfaced to the SCSI subsystem
++device		amr		# AMI MegaRAID
++device		arcmsr		# Areca SATA II RAID
++#XXX it is not 64-bit clean, -scottl
++#device		asr		# DPT SmartRAID V, VI and Adaptec SCSI RAID
++device		ciss		# Compaq Smart RAID 5*
++device		dpt		# DPT Smartcache III, IV - See NOTES for options
++device		hptmv		# Highpoint RocketRAID 182x
++device		hptrr		# Highpoint RocketRAID 17xx, 22xx, 23xx, 25xx
++device		iir		# Intel Integrated RAID
++device		ips		# IBM (Adaptec) ServeRAID
++device		mly		# Mylex AcceleRAID/eXtremeRAID
++device		twa		# 3ware 9000 series PATA/SATA RAID
++
++# RAID controllers
++device		aac		# Adaptec FSA RAID
++device		aacp		# SCSI passthrough for aac (requires CAM)
++device		ida		# Compaq Smart RAID
++device		mfi		# LSI MegaRAID SAS
++device		mlx		# Mylex DAC960 family
++#XXX pointer/int warnings
++#device		pst		# Promise Supertrak SX6000
++device		twe		# 3ware ATA RAID
++device		tws		# LSI 3ware 9750 SATA+SAS 6Gb/s RAID controller
++
++# atkbdc0 controls both the keyboard and the PS/2 mouse
++device		atkbdc		# AT keyboard controller
++device		atkbd		# AT keyboard
++device		psm		# PS/2 mouse
++
++device		kbdmux		# keyboard multiplexer
++
++device		vga		# VGA video card driver
++
++device		splash		# Splash screen and screen saver support
++
++# syscons is the default console driver, resembling an SCO console
++device		sc
++options 	SC_PIXEL_MODE	# add support for the raster text mode
++
++device		agp		# support several AGP chipsets
++
++# PCCARD (PCMCIA) support
++# PCMCIA and cardbus bridge support
++device		cbb		# cardbus (yenta) bridge
++device		pccard		# PC Card (16-bit) bus
++device		cardbus		# CardBus (32-bit) bus
++
++# Serial (COM) ports
++device		uart		# Generic UART driver
++
++# Parallel port
++device		ppc
++device		ppbus		# Parallel port bus (required)
++device		lpt		# Printer
++device		plip		# TCP/IP over parallel
++device		ppi		# Parallel port interface device
++#device		vpo		# Requires scbus and da
++
++device		puc		# Multi I/O cards and multi-channel UARTs
++
++# PCI Ethernet NICs.
++device		bxe		# Broadcom BCM57710/BCM57711/BCM57711E 10Gb Ethernet
++device		de		# DEC/Intel DC21x4x (``Tulip'')
++device		em		# Intel PRO/1000 Gigabit Ethernet Family
++device		igb		# Intel PRO/1000 PCIE Server Gigabit Family
++device		ixgbe		# Intel PRO/10GbE PCIE Ethernet Family
++device		le		# AMD Am7900 LANCE and Am79C9xx PCnet
++device		ti		# Alteon Networks Tigon I/II gigabit Ethernet
++device		txp		# 3Com 3cR990 (``Typhoon'')
++device		vx		# 3Com 3c590, 3c595 (``Vortex'')
++
++# PCI Ethernet NICs that use the common MII bus controller code.
++# NOTE: Be sure to keep the 'device miibus' line in order to use these NICs!
++device		miibus		# MII bus support
++device		ae		# Attansic/Atheros L2 FastEthernet
++device		age		# Attansic/Atheros L1 Gigabit Ethernet
++device		alc		# Atheros AR8131/AR8132 Ethernet
++device		ale		# Atheros AR8121/AR8113/AR8114 Ethernet
++device		bce		# Broadcom BCM5706/BCM5708 Gigabit Ethernet
++device		bfe		# Broadcom BCM440x 10/100 Ethernet
++device		bge		# Broadcom BCM570xx Gigabit Ethernet
++device		dc		# DEC/Intel 21143 and various workalikes
++device		et		# Agere ET1310 10/100/Gigabit Ethernet
++device		fxp		# Intel EtherExpress PRO/100B (82557, 82558)
++device		jme		# JMicron JMC250 Gigabit/JMC260 Fast Ethernet
++device		lge		# Level 1 LXT1001 gigabit Ethernet
++device		msk		# Marvell/SysKonnect Yukon II Gigabit Ethernet
++device		nfe		# nVidia nForce MCP on-board Ethernet
++device		nge		# NatSemi DP83820 gigabit Ethernet
++#device		nve		# nVidia nForce MCP on-board Ethernet Networking
++device		pcn		# AMD Am79C97x PCI 10/100 (precedence over 'le')
++device		re		# RealTek 8139C+/8169/8169S/8110S
++device		rl		# RealTek 8129/8139
++device		sf		# Adaptec AIC-6915 (``Starfire'')
++device		sge		# Silicon Integrated Systems SiS190/191
++device		sis		# Silicon Integrated Systems SiS 900/SiS 7016
++device		sk		# SysKonnect SK-984x & SK-982x gigabit Ethernet
++device		ste		# Sundance ST201 (D-Link DFE-550TX)
++device		stge		# Sundance/Tamarack TC9021 gigabit Ethernet
++device		tl		# Texas Instruments ThunderLAN
++device		tx		# SMC EtherPower II (83c170 ``EPIC'')
++device		vge		# VIA VT612x gigabit Ethernet
++device		vr		# VIA Rhine, Rhine II
++device		wb		# Winbond W89C840F
++device		xl		# 3Com 3c90x (``Boomerang'', ``Cyclone'')
++
++# ISA Ethernet NICs.  pccard NICs included.
++device		cs		# Crystal Semiconductor CS89x0 NIC
++# 'device ed' requires 'device miibus'
++device		ed		# NE[12]000, SMC Ultra, 3c503, DS8390 cards
++device		ex		# Intel EtherExpress Pro/10 and Pro/10+
++device		ep		# Etherlink III based cards
++device		fe		# Fujitsu MB8696x based cards
++device		sn		# SMC's 9000 series of Ethernet chips
++device		xe		# Xircom pccard Ethernet
++
++# Wireless NIC cards
++device		wlan		# 802.11 support
++options 	IEEE80211_DEBUG	# enable debug msgs
++options 	IEEE80211_AMPDU_AGE # age frames in AMPDU reorder q's
++options 	IEEE80211_SUPPORT_MESH	# enable 802.11s draft support
++device		wlan_wep	# 802.11 WEP support
++device		wlan_ccmp	# 802.11 CCMP support
++device		wlan_tkip	# 802.11 TKIP support
++device		wlan_amrr	# AMRR transmit rate control algorithm
++device		an		# Aironet 4500/4800 802.11 wireless NICs.
++device		ath		# Atheros NIC's
++device		ath_pci		# Atheros pci/cardbus glue
++device		ath_hal		# pci/cardbus chip support
++options 	AH_SUPPORT_AR5416	# enable AR5416 tx/rx descriptors
++device		ath_rate_sample	# SampleRate tx rate control for ath
++#device		bwi		# Broadcom BCM430x/BCM431x wireless NICs.
++#device		bwn		# Broadcom BCM43xx wireless NICs.
++device		ipw		# Intel 2100 wireless NICs.
++device		iwi		# Intel 2200BG/2225BG/2915ABG wireless NICs.
++device		iwn		# Intel 4965/1000/5000/6000 wireless NICs.
++device		malo		# Marvell Libertas wireless NICs.
++device		mwl		# Marvell 88W8363 802.11n wireless NICs.
++device		ral		# Ralink Technology RT2500 wireless NICs.
++device		wi		# WaveLAN/Intersil/Symbol 802.11 wireless NICs.
++device		wpi		# Intel 3945ABG wireless NICs.
++
++# Pseudo devices.
++device		loop		# Network loopback
++device		random		# Entropy device
++device		ether		# Ethernet support
++device		vlan		# 802.1Q VLAN support
++device		tun		# Packet tunnel.
++device		pty		# BSD-style compatibility pseudo ttys
++device		md		# Memory "disks"
++device		gif		# IPv6 and IPv4 tunneling
++device		faith		# IPv6-to-IPv4 relaying (translation)
++device		firmware	# firmware assist module
++
++# The `bpf' device enables the Berkeley Packet Filter.
++# Be aware of the administrative consequences of enabling this!
++# Note that 'bpf' is required for DHCP.
++device		bpf		# Berkeley packet filter
++
++# USB support
++options 	USB_DEBUG	# enable debug msgs
++device		uhci		# UHCI PCI->USB interface
++device		ohci		# OHCI PCI->USB interface
++device		ehci		# EHCI PCI->USB interface (USB 2.0)
++device		xhci		# XHCI PCI->USB interface (USB 3.0)
++device		usb		# USB Bus (required)
++#device		udbp		# USB Double Bulk Pipe devices (needs netgraph)
++device		uhid		# "Human Interface Devices"
++device		ukbd		# Keyboard
++device		ulpt		# Printer
++device		umass		# Disks/Mass storage - Requires scbus and da
++device		ums		# Mouse
++device		urio		# Diamond Rio 500 MP3 player
++# USB Serial devices
++device		u3g		# USB-based 3G modems (Option, Huawei, Sierra)
++device		uark		# Technologies ARK3116 based serial adapters
++device		ubsa		# Belkin F5U103 and compatible serial adapters
++device		uftdi		# For FTDI usb serial adapters
++device		uipaq		# Some WinCE based devices
++device		uplcom		# Prolific PL-2303 serial adapters
++device		uslcom		# SI Labs CP2101/CP2102 serial adapters
++device		uvisor		# Visor and Palm devices
++device		uvscom		# USB serial support for DDI pocket's PHS
++# USB Ethernet, requires miibus
++device		aue		# ADMtek USB Ethernet
++device		axe		# ASIX Electronics USB Ethernet
++device		cdce		# Generic USB over Ethernet
++device		cue		# CATC USB Ethernet
++device		kue		# Kawasaki LSI USB Ethernet
++device		rue		# RealTek RTL8150 USB Ethernet
++device		udav		# Davicom DM9601E USB
++# USB Wireless
++device		rum		# Ralink Technology RT2501USB wireless NICs
++device		run		# Ralink Technology RT2700/RT2800/RT3000 NICs.
++device		uath		# Atheros AR5523 wireless NICs
++device		upgt		# Conexant/Intersil PrismGT wireless NICs.
++device		ural		# Ralink Technology RT2500USB wireless NICs
++device		urtw		# Realtek RTL8187B/L wireless NICs
++device		zyd		# ZyDAS zd1211/zd1211b wireless NICs
++
++# FireWire support
++device		firewire	# FireWire bus code
++# sbp(4) works for some systems but causes boot failure on others
++#device		sbp		# SCSI over FireWire (Requires scbus and da)
++device		fwe		# Ethernet over FireWire (non-standard!)
++device		fwip		# IP over FireWire (RFC 2734,3146)
++device		dcons		# Dumb console driver
++device		dcons_crom	# Configuration ROM for dcons
++
++# Sound support
++device		sound		# Generic sound driver (required)
++device		snd_es137x	# Ensoniq AudioPCI ES137x
++device		snd_hda		# Intel High Definition Audio
++device		snd_ich		# Intel, NVidia and other ICH AC'97 Audio
++device		snd_uaudio	# USB Audio
++device		snd_via8233	# VIA VT8233x Audio
+diff --git a/sys/amd64/ia32/ia32_syscall.c b/sys/amd64/ia32/ia32_syscall.c
+index 0e27f04..1a46058 100644
+--- a/sys/amd64/ia32/ia32_syscall.c
++++ b/sys/amd64/ia32/ia32_syscall.c
+@@ -209,8 +209,11 @@ ia32_syscall_disable(void *dummy)
+  	setidt(IDT_SYSCALL, &IDTVEC(rsvd), SDT_SYSIGT, SEL_KPL, 0);
+ }
+ 
++#if 0
++/* For SVA, we don't support 32-bit applications */
+ SYSINIT(ia32_syscall, SI_SUB_EXEC, SI_ORDER_ANY, ia32_syscall_enable, NULL);
+ SYSUNINIT(ia32_syscall, SI_SUB_EXEC, SI_ORDER_ANY, ia32_syscall_disable, NULL);
++#endif
+ 
+ #ifdef COMPAT_43
+ int
+diff --git a/sys/amd64/include/apicvar.h b/sys/amd64/include/apicvar.h
+index 58b6228..40f705a 100644
+--- a/sys/amd64/include/apicvar.h
++++ b/sys/amd64/include/apicvar.h
+@@ -216,7 +216,11 @@ int	lapic_ipi_wait(int delay);
+ void	lapic_handle_cmc(void);
+ void	lapic_handle_error(void);
+ void	lapic_handle_intr(int vector, struct trapframe *frame);
++#if 0
+ void	lapic_handle_timer(struct trapframe *frame);
++#else
++void	lapic_handle_timer(int type);
++#endif
+ void	lapic_reenable_pmc(void);
+ void	lapic_set_logical_id(u_int apic_id, u_int cluster, u_int cluster_id);
+ int	lapic_set_lvt_mask(u_int apic_id, u_int lvt, u_char masked);
+diff --git a/sys/amd64/include/asm.h b/sys/amd64/include/asm.h
+index c0e6de1..17f07d0 100644
+--- a/sys/amd64/include/asm.h
++++ b/sys/amd64/include/asm.h
+@@ -46,6 +46,10 @@
+ #define	PIC_GOT(x)	x
+ #endif
+ 
++#if 1
++#include <sva/cfi.h>
++#endif
++
+ /*
+  * CNAME and HIDENAME manage the relationship between symbol names in C
+  * and the equivalent assembly language names.  CNAME is given a name as
+@@ -58,8 +62,13 @@
+ 
+ #define _START_ENTRY	.text; .p2align 4,0x90
+ 
++#if 0
+ #define _ENTRY(x)	_START_ENTRY; \
+ 			.globl CNAME(x); .type CNAME(x),@function; CNAME(x):
++#else
++#define _ENTRY(x)	_START_ENTRY; \
++			.globl CNAME(x); .type CNAME(x),@function; CNAME(x): STARTFUNC
++#endif
+ 
+ #ifdef PROF
+ #define	ALTENTRY(x)	_ENTRY(x); \
+diff --git a/sys/amd64/include/asmacros.h b/sys/amd64/include/asmacros.h
+index 3dc8a40..4b97269 100644
+--- a/sys/amd64/include/asmacros.h
++++ b/sys/amd64/include/asmacros.h
+@@ -34,6 +34,10 @@
+ 
+ #include <sys/cdefs.h>
+ 
++#if 1
++#include <sva/cfi.h>
++#endif
++
+ /* XXX too much duplication in various asm*.h's. */
+ 
+ /*
+@@ -52,9 +56,19 @@
+ #endif
+ #define SUPERALIGN_TEXT	.p2align 4,0x90	/* 16-byte alignment, nop filled */
+ 
++#if 0
+ #define GEN_ENTRY(name)		ALIGN_TEXT; .globl CNAME(name); \
+ 				.type CNAME(name),@function; CNAME(name):
++#else
++#define GEN_ENTRY(name)		ALIGN_TEXT; .globl CNAME(name); \
++				.type CNAME(name),@function; CNAME(name): STARTFUNC
++#define GEN_ENTRY32(name)		ALIGN_TEXT; .globl CNAME(name); \
++				.type CNAME(name),@function; CNAME(name):
++#endif
+ #define NON_GPROF_ENTRY(name)	GEN_ENTRY(name)
++#if 1
++#define NON_GPROF_ENTRY32(name)	GEN_ENTRY32(name)
++#endif
+ #define NON_GPROF_RET		.byte 0xc3	/* opcode for `ret' */
+ 
+ #define	END(name)		.size name, . - name
+diff --git a/sys/amd64/include/cpufunc.h b/sys/amd64/include/cpufunc.h
+index 5523666..d482d69 100644
+--- a/sys/amd64/include/cpufunc.h
++++ b/sys/amd64/include/cpufunc.h
+@@ -39,6 +39,10 @@
+ #ifndef _MACHINE_CPUFUNC_H_
+ #define	_MACHINE_CPUFUNC_H_
+ 
++#if 1
++#include "sva/interrupt.h"
++#endif
++
+ #ifndef _SYS_CDEFS_H_
+ #error this file needs sys/cdefs.h as a prerequisite
+ #endif
+@@ -109,7 +113,11 @@ clflush(u_long addr)
+ static __inline void
+ disable_intr(void)
+ {
++#if 0
+ 	__asm __volatile("cli" : : : "memory");
++#else
++  sva_load_lif (0);
++#endif
+ }
+ 
+ static __inline void
+@@ -131,7 +139,11 @@ cpuid_count(u_int ax, u_int cx, u_int *p)
+ static __inline void
+ enable_intr(void)
+ {
++#if 0
+ 	__asm __volatile("sti");
++#else
++  sva_load_lif (1);
++#endif
+ }
+ 
+ #ifdef _KERNEL
+@@ -382,7 +394,13 @@ static __inline void
+ load_cr3(u_long data)
+ {
+ 
++#if 0
+ 	__asm __volatile("movq %0,%%cr3" : : "r" (data) : "memory");
++#else
++  /* SVA: Use the intrinsic */
++  extern void sva_mm_load_pgtable (void * p);
++  sva_mm_load_pgtable ((void *)data);
++#endif
+ }
+ 
+ static __inline u_long
+diff --git a/sys/amd64/include/pmap.h b/sys/amd64/include/pmap.h
+index 174d493..8586de1 100644
+--- a/sys/amd64/include/pmap.h
++++ b/sys/amd64/include/pmap.h
+@@ -221,8 +221,7 @@ pte_load_store(pt_entry_t *ptep, pt_entry_t pte)
+ static __inline void
+ pte_store(pt_entry_t *ptep, pt_entry_t pte)
+ {
+-
+-	*ptep = pte;
++    *ptep = pte;
+ }
+ 
+ #define	pte_clear(ptep)		pte_store((ptep), (pt_entry_t)0ULL)
+diff --git a/sys/amd64/linux32/linux32_locore.s b/sys/amd64/linux32/linux32_locore.s
+index af8024a..d90b830 100644
+--- a/sys/amd64/linux32/linux32_locore.s
++++ b/sys/amd64/linux32/linux32_locore.s
+@@ -8,7 +8,7 @@
+ .text
+ .code32
+ 
+-NON_GPROF_ENTRY(linux_sigcode)
++NON_GPROF_ENTRY32(linux_sigcode)
+ 	call	*LINUX_SIGF_HANDLER(%esp)
+ 	leal	LINUX_SIGF_SC(%esp),%ebx	/* linux scp */
+ 	movl	%esp, %ebx			/* pass sigframe */
+diff --git a/sys/conf/NOTES b/sys/conf/NOTES
+index 5c8fa2b..d678697 100644
+--- a/sys/conf/NOTES
++++ b/sys/conf/NOTES
+@@ -79,7 +79,8 @@ maxusers	10
+ #
+ # MODULES_OVERRIDE can be used to limit modules built to a specific list.
+ #
+-makeoptions	CONF_CFLAGS=-fno-builtin  #Don't allow use of memcmp, etc.
++#makeoptions	CONF_CFLAGS=-fno-builtin  #Don't allow use of memcmp, etc.
++makeoptions	CONF_CFLAGS=-fno-builtin  -I/usr/home/criswell/src/sva/SVA/include #Don't allow use of memcmp, etc.
+ #makeoptions	DEBUG=-g		#Build kernel with gdb(1) debug symbols
+ #makeoptions	KERNEL=foo		#Build kernel "foo" and install "/foo"
+ # Only build ext2fs module plus those parts of the sound system I need.
+diff --git a/sys/conf/files b/sys/conf/files
+index 0fcd5bf..1cbda5e 100644
+--- a/sys/conf/files
++++ b/sys/conf/files
+@@ -2349,6 +2349,7 @@ kern/kern_sema.c		standard
+ kern/kern_shutdown.c		standard
+ kern/kern_sig.c			standard
+ kern/kern_switch.c		standard
++kern/kern_sva.c		standard
+ kern/kern_sx.c			standard
+ kern/kern_synch.c		standard
+ kern/kern_syscalls.c		standard
+diff --git a/sys/conf/files.amd64 b/sys/conf/files.amd64
+index 5d0db27..9ae2daf 100644
+--- a/sys/conf/files.amd64
++++ b/sys/conf/files.amd64
+@@ -123,6 +123,7 @@ amd64/amd64/prof_machdep.c	optional	profiling-routine
+ amd64/amd64/sigtramp.S		standard
+ amd64/amd64/stack_machdep.c	optional	ddb | stack
+ amd64/amd64/support.S		standard
++amd64/amd64/sva_support.c		standard
+ amd64/amd64/sys_machdep.c	standard
+ amd64/amd64/trap.c		standard
+ amd64/amd64/uio_machdep.c	standard
+diff --git a/sys/conf/kern.mk b/sys/conf/kern.mk
+index b6e3060..1a404a4 100644
+--- a/sys/conf/kern.mk
++++ b/sys/conf/kern.mk
+@@ -82,6 +82,8 @@ INLINE_LIMIT?=	15000
+ CFLAGS+=	-mno-sse
+ .else
+ CFLAGS+=	-mno-aes -mno-avx
++# For clang and SVA, turn on CFI and SFI
++CFLAGS+=	-mllvm -add-sfi -mllvm -enable-sfi-loadchecks -Xclang -backend-option -Xclang -x86-add-cfi
+ .endif
+ CFLAGS+=	-mcmodel=kernel -mno-red-zone -mno-mmx -msoft-float \
+ 		-fno-asynchronous-unwind-tables
+@@ -122,10 +124,10 @@ CFLAGS+=	-ffreestanding
+ #
+ # GCC SSP support
+ #
+-.if ${MK_SSP} != "no" && ${MACHINE_CPUARCH} != "ia64" && \
+-    ${MACHINE_CPUARCH} != "arm" && ${MACHINE_CPUARCH} != "mips"
+-CFLAGS+=	-fstack-protector
+-.endif
++#.if ${MK_SSP} != "no" && ${MACHINE_CPUARCH} != "ia64" && \
++#    ${MACHINE_CPUARCH} != "arm" && ${MACHINE_CPUARCH} != "mips"
++#CFLAGS+=	-fstack-protector
++#.endif
+ 
+ #
+ # Enable CTF conversation on request
+diff --git a/sys/conf/kern.post.mk b/sys/conf/kern.post.mk
+index f2752f8..38e690c 100644
+--- a/sys/conf/kern.post.mk
++++ b/sys/conf/kern.post.mk
+@@ -90,10 +90,10 @@ gdbinit:
+ .endif
+ .endif
+ 
+-${FULLKERNEL}: ${SYSTEM_DEP} vers.o
++${FULLKERNEL}: ${SYSTEM_DEP} vers.o $S/../../../SVA/lib/libsva.a
+ 	@rm -f ${.TARGET}
+-	@echo linking ${.TARGET}
+-	${SYSTEM_LD}
++	@echo linking SVA ${.TARGET}
++	${SYSTEM_LD} -L$S/../../../SVA/lib -lsva
+ 	@${SYSTEM_CTFMERGE}
+ .if !defined(DEBUG)
+ 	${OBJCOPY} --strip-debug ${.TARGET}
+diff --git a/sys/conf/ldscript.amd64 b/sys/conf/ldscript.amd64
+index ce020d2..5e85b4e 100644
+--- a/sys/conf/ldscript.amd64
++++ b/sys/conf/ldscript.amd64
+@@ -8,6 +8,7 @@ SECTIONS
+   /* Read-only sections, merged into text segment: */
+   kernphys = CONSTANT (MAXPAGESIZE);
+   . = kernbase + kernphys + SIZEOF_HEADERS;
++
+   .interp         : { *(.interp) }
+   .hash           : { *(.hash) }
+   .gnu.hash       : { *(.gnu.hash) }
+@@ -67,11 +68,22 @@ SECTIONS
+   PROVIDE (__etext = .);
+   PROVIDE (_etext = .);
+   PROVIDE (etext = .);
++
++  /* Create the SVA data section */
++  _svastart = ALIGN(0x1000);
++  .svamem ALIGN(0x1000) : {
++    SVAPTPages = .;
++    . = . + 4194304;
++    *(svamem)
++    _svaend = .;
++  }
++
+   .rodata         : { *(.rodata .rodata.* .gnu.linkonce.r.*) }
+   .rodata1        : { *(.rodata1) }
+   .eh_frame_hdr : { *(.eh_frame_hdr) }
+   .eh_frame       : ONLY_IF_RO { KEEP (*(.eh_frame)) }
+   .gcc_except_table   : ONLY_IF_RO { *(.gcc_except_table .gcc_except_table.*) }
++
+   /* Adjust the address for the data segment.  We want to adjust up to
+      the same address within the page on the next page up.  */
+   . = ALIGN (CONSTANT (MAXPAGESIZE)) - ((CONSTANT (MAXPAGESIZE) - .) & (CONSTANT (MAXPAGESIZE) - 1)); . = DATA_SEGMENT_ALIGN (CONSTANT (MAXPAGESIZE), CONSTANT (COMMONPAGESIZE));
+@@ -140,12 +152,14 @@ SECTIONS
+   .got            : { *(.got) }
+   . = DATA_SEGMENT_RELRO_END (24, .);
+   .got.plt        : { *(.got.plt) }
++
+   .data           :
+   {
+     *(.data .data.* .gnu.linkonce.d.*)
+     KEEP (*(.gnu.linkonce.d.*personality*))
+     SORT(CONSTRUCTORS)
+   }
++
+   .data1          : { *(.data1) }
+   _edata = .; PROVIDE (edata = .);
+   __bss_start = .;
+diff --git a/sys/conf/options b/sys/conf/options
+index 46495ac..d55c831 100644
+--- a/sys/conf/options
++++ b/sys/conf/options
+@@ -30,6 +30,9 @@
+ # If filename is missing, the default is
+ # opt_<name-of-option-in-lower-case>.h
+ 
++# SVA options
++SVA_MMU         opt_sva_mmu.h
++
+ AAC_DEBUG		opt_aac.h
+ AHC_ALLOW_MEMIO		opt_aic7xxx.h
+ AHC_TMODE_ENABLE	opt_aic7xxx.h
+diff --git a/sys/dev/aic7xxx/aicasm/Makefile b/sys/dev/aic7xxx/aicasm/Makefile
+index babd5b6..8e5670c 100644
+--- a/sys/dev/aic7xxx/aicasm/Makefile
++++ b/sys/dev/aic7xxx/aicasm/Makefile
+@@ -40,3 +40,4 @@ LFLAGS+= -d
+ .endif
+ 
+ .include <bsd.prog.mk>
++CC=gcc
+diff --git a/sys/kern/kern_fork.c b/sys/kern/kern_fork.c
+index c5476b3..6981dfe 100644
+--- a/sys/kern/kern_fork.c
++++ b/sys/kern/kern_fork.c
+@@ -1049,6 +1049,13 @@ fork_return(struct thread *td, struct trapframe *frame)
+ 
+ 	userret(td, frame);
+ 
++#if 1
++  /* For SVA, we have to set the return value here */
++  td->td_retval[0] = 0;
++  td->td_retval[1] = 0;
++  td->td_proc->p_sysent->sv_set_syscall_retval (td, 0);
++#endif
++
+ #ifdef KTRACE
+ 	if (KTRPOINT(td, KTR_SYSRET))
+ 		ktrsysret(SYS_fork, 0, 0);
+diff --git a/sys/kern/kern_kthread.c b/sys/kern/kern_kthread.c
+index 1578a66..66ba8bb 100644
+--- a/sys/kern/kern_kthread.c
++++ b/sys/kern/kern_kthread.c
+@@ -278,9 +278,18 @@ kthread_add(void (*func)(void *), void *arg, struct proc *p,
+ 	/* XXX optimise this probably? */
+ 	/* On x86 (and probably the others too) it is way too full of junk */
+ 	/* Needs a better name */
++#if 0
+ 	cpu_set_upcall(newtd, oldtd);
+ 	/* put the designated function(arg) as the resume context */
+ 	cpu_set_fork_handler(newtd, func, arg);
++#else
++  /* SVA: Make this one operation on interrupted state */
++  extern void cpu_create_upcall(struct thread *td,
++                  struct thread *td0,
++                  void (*func)(void *),
++                  void *arg);
++  cpu_create_upcall (newtd, oldtd, func, arg);
++#endif
+ 
+ 	newtd->td_pflags |= TDP_KTHREAD;
+ 	newtd->td_ucred = crhold(p->p_ucred);
+diff --git a/sys/kern/kern_sva.c b/sys/kern/kern_sva.c
+new file mode 100644
+index 0000000..05b63a5
+--- /dev/null
++++ b/sys/kern/kern_sva.c
+@@ -0,0 +1,147 @@
++/*===- kern_sva.c - SVA Kernel Callbacks =-----------------------------------===
++ * 
++ *                        Secure Virtual Architecture
++ *
++ * This file was developed by the LLVM research group and is distributed under
++ * the University of Illinois Open Source License. See LICENSE.TXT for details.
++ * 
++ *===----------------------------------------------------------------------===
++ *
++ * This file implements functions that the kernel needs to provide to SVA.
++ *
++ *===----------------------------------------------------------------------===
++ */
++
++#include <sys/malloc.h>
++#include <sys/types.h>
++#include <sys/proc.h>
++
++#include <sys/cdefs.h>
++#include <vm/vm.h>
++#include <vm/vm_param.h>
++#include <vm/vm_kern.h>
++#include <vm/vm_page.h>
++#include <vm/vm_map.h>
++#include <vm/vm_object.h>
++#include <vm/vm_extern.h>
++#include <vm/vm_pageout.h>
++#include <vm/vm_reserv.h>
++#include <vm/pmap.h>
++#include <vm/uma.h>
++
++#include <sys/pcpu.h>
++#include <machine/frame.h>
++
++/* Function prototypes */
++uintptr_t provideSVAMemory (uintptr_t size);
++void releaseSVAMemory (uintptr_t p, uintptr_t size);
++
++/*
++ * Function: provideSVAMemory()
++ *
++ * Description:
++ *  Allocate memory and pass it to SVA to use.
++ *
++ * Inputs:
++ *  The amount of memory to give SVA in bytes.
++ *
++ * Return value:
++ *  The first physical address of the memory that SVA can use.
++ */
++uintptr_t
++provideSVAMemory (uintptr_t size)
++{
++  /* Structure to get a page */
++  vm_page_t bufferPage;
++
++  /* Virtual address of memory to be returned. */
++  unsigned char * p;
++
++  /*
++   * Check to see if a single page will do.  If not, then panic.
++   */
++  if (size > 4096u)
++    panic ("SVA: providesSVAMemory: Too much memory requested: %ld\n", size);
++
++  /*
++   * Request a page from the page manager.
++   */
++	bufferPage = vm_page_alloc (NULL, 0, VM_ALLOC_NORMAL | VM_ALLOC_NOOBJ);
++
++  /*
++   * Unmap the page from the 1 TB direct map.
++   */
++	p = (void *) PHYS_TO_DMAP(VM_PAGE_TO_PHYS(bufferPage));
++  pmap_remove (&(curproc->p_vmspace->vm_pmap),
++               (vm_offset_t) p,
++               (vm_offset_t) p + 4096);
++
++  /*
++   * Convert the page into a physical address and return it.
++   */
++	return VM_PAGE_TO_PHYS(bufferPage);
++}
++
++/*
++ * Function: releaseSVAMemory()
++ *
++ * Description:
++ *  SVA calls this function when it no longer needs a piece of memory.
++ *
++ * Inputs:
++ *  paddr - The first physical address of the memory to release back to the OS.
++ *  size  - The length of the memory in bytes to release.
++ *
++ */
++void
++releaseSVAMemory (uintptr_t paddr, uintptr_t size)
++{
++  /* Paging structure for the memory */
++  vm_page_t page;
++
++  /*
++   * Convert the physical address into a vm_page_t.
++   */
++  page = vm_phys_paddr_to_vm_page (paddr);
++
++  /*
++   * Figure out where in the virtual address space it should go.
++   */
++	unsigned char * p = (void *) PHYS_TO_DMAP(VM_PAGE_TO_PHYS(page));
++
++  /*
++   * Remap the page back into the direct 1 TB map.
++   */
++  pmap_enter (&(curproc->p_vmspace->vm_pmap),
++               (vm_offset_t) p,
++               0,
++               page,
++               VM_PROT_READ | VM_PROT_WRITE,
++               0);
++
++  /*
++   * Now free the page.
++   */
++  vm_page_free (page);
++  return;
++}
++
++/*
++ * Function: testSVAMemory()
++ *
++ * Description:
++ *  Try to access secure memory.
++ */
++void
++testSVAMemory (unsigned char * p) {
++  /*
++   * Testing time: Attempt to access the secure memory.
++   */
++  printf ("Kernel: Spying on you!  Secret is: \n");
++  for (int index = 0; index < 5; ++index) {
++    printf ("%c", p[index]);
++  }
++  printf ("\n");
++  return;
++}
++
+diff --git a/sys/kern/sched_4bsd.c b/sys/kern/sched_4bsd.c
+index 06d55cd..ba6f7bf 100644
+--- a/sys/kern/sched_4bsd.c
++++ b/sys/kern/sched_4bsd.c
+@@ -68,6 +68,11 @@ int				dtrace_vtime_active;
+ dtrace_vtime_switch_func_t	dtrace_vtime_switch_func;
+ #endif
+ 
++#if 1
++#include "sva/state.h"
++extern void cpu_switch_sva (struct thread *, struct thread *, struct mtx *);
++#endif
++
+ /*
+  * INVERSE_ESTCPU_WEIGHT is only suitable for statclock() frequencies in
+  * the range 100-256 Hz (approximately).
+@@ -998,7 +1003,11 @@ sched_switch(struct thread *td, struct thread *newtd, int flags)
+ 			(*dtrace_vtime_switch_func)(newtd);
+ #endif
+ 
++#if 0
+ 		cpu_switch(td, newtd, tmtx != NULL ? tmtx : td->td_lock);
++#else
++		cpu_switch_sva (td, newtd, tmtx != NULL ? tmtx : td->td_lock);
++#endif
+ 		lock_profile_obtain_lock_success(&sched_lock.lock_object,
+ 		    0, 0, __FILE__, __LINE__);
+ 		/*
+@@ -1579,7 +1588,11 @@ sched_throw(struct thread *td)
+ 	KASSERT(curthread->td_md.md_spinlock_count == 1, ("invalid count"));
+ 	PCPU_SET(switchtime, cpu_ticks());
+ 	PCPU_SET(switchticks, ticks);
++#if 0
+ 	cpu_throw(td, choosethread());	/* doesn't return */
++#else
++  cpu_throw_sva (td, choosethread(), td->td_lock);
++#endif
+ }
+ 
+ void
+diff --git a/sys/kern/sched_ule.c b/sys/kern/sched_ule.c
+index f5db70e..052eb77 100644
+--- a/sys/kern/sched_ule.c
++++ b/sys/kern/sched_ule.c
+@@ -76,6 +76,10 @@ dtrace_vtime_switch_func_t	dtrace_vtime_switch_func;
+ #include <machine/cpu.h>
+ #include <machine/smp.h>
+ 
++#if 1
++#include "sva/state.h"
++#endif
++
+ #if defined(__sparc64__)
+ #error "This architecture is not currently compatible with ULE"
+ #endif
+@@ -1845,7 +1849,16 @@ sched_switch(struct thread *td, struct thread *newtd, int flags)
+ 			(*dtrace_vtime_switch_func)(newtd);
+ #endif
+ 
++#if 0
+ 		cpu_switch(td, newtd, mtx);
++#else
++    extern void cpu_switch_sva (struct thread *, struct thread *, struct mtx *);
++    /*
++     * I'm currently testing on the 4BSD scheduler because it appears to have
++     * a simpler locking discipline.
++     */
++		cpu_switch_sva (td, newtd, mtx);
++#endif
+ 		/*
+ 		 * We may return from cpu_switch on a different cpu.  However,
+ 		 * we always return with td_lock pointing to the current cpu's
+@@ -2591,7 +2604,11 @@ sched_throw(struct thread *td)
+ 	TDQ_LOCKPTR(tdq)->mtx_lock = (uintptr_t)newtd;
+ 	PCPU_SET(switchtime, cpu_ticks());
+ 	PCPU_SET(switchticks, ticks);
++#if 0
+ 	cpu_throw(td, newtd);		/* doesn't return */
++#else
++	cpu_throw_sva(td, newtd, td->td_lock);		/* doesn't return */
++#endif
+ }
+ 
+ /*
+diff --git a/sys/kern/subr_pcpu.c b/sys/kern/subr_pcpu.c
+index 2b3d59c..8e3529d 100644
+--- a/sys/kern/subr_pcpu.c
++++ b/sys/kern/subr_pcpu.c
+@@ -61,6 +61,10 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/kern/subr_pcpu.c 224218 2011-07-19 14:57:5
+ #include <sys/sx.h>
+ #include <ddb/ddb.h>
+ 
++#if 1
++#include <sva/interrupt.h>
++#endif
++
+ MALLOC_DEFINE(M_PCPU, "Per-cpu", "Per-cpu resource accouting.");
+ 
+ struct dpcpu_free {
+@@ -82,7 +86,6 @@ struct cpuhead cpuhead = STAILQ_HEAD_INITIALIZER(cpuhead);
+ void
+ pcpu_init(struct pcpu *pcpu, int cpuid, size_t size)
+ {
+-
+ 	bzero(pcpu, size);
+ 	KASSERT(cpuid >= 0 && cpuid < MAXCPU,
+ 	    ("pcpu_init: invalid cpuid %d", cpuid));
+diff --git a/sys/kern/subr_trap.c b/sys/kern/subr_trap.c
+index fd848db..65a2317 100644
+--- a/sys/kern/subr_trap.c
++++ b/sys/kern/subr_trap.c
+@@ -123,11 +123,20 @@ userret(struct thread *td, struct trapframe *frame)
+ 	if (td->td_pflags & TDP_GEOM)
+ 		g_waitidle();
+ 
++#if 0
+ 	/*
+ 	 * Charge system time if profiling.
+ 	 */
+ 	if (p->p_flag & P_PROFIL)
+ 		addupc_task(td, TRAPF_PC(frame), td->td_pticks * psratio);
++#else
++  /*
++   * SVA: We don't do time profiling, and that is the only use of the frame
++   * in this function
++   */
++	if (p->p_flag & P_PROFIL)
++    panic ("SVA: userret: SVA does not support profiling!\n");
++#endif
+ 	/*
+ 	 * Let the scheduler adjust our priority etc.
+ 	 */
+@@ -159,6 +168,14 @@ ast(struct trapframe *framep)
+ 	int flags;
+ 	int sig;
+ 
++#if 1
++  /*
++   * SVA: Re-enable interrupts since the assembly dispatch code does not do
++   * this anymore for us.
++   */
++  enable_intr();
++#endif
++
+ 	td = curthread;
+ 	p = td->td_proc;
+ 
+diff --git a/sys/sys/pcpu.h b/sys/sys/pcpu.h
+index 84bc95c..dbf60f6 100644
+--- a/sys/sys/pcpu.h
++++ b/sys/sys/pcpu.h
+@@ -191,6 +191,7 @@ struct pcpu {
+ 	 * if only to make kernel debugging easier.
+ 	 */
+ 	PCPU_MD_FIELDS;
++  void * svaIContext;
+ } __aligned(CACHE_LINE_SIZE);
+ 
+ #ifdef _KERNEL
+diff --git a/sys/sys/proc.h b/sys/sys/proc.h
+index adfa07e..ee3702e 100644
+--- a/sys/sys/proc.h
++++ b/sys/sys/proc.h
+@@ -65,6 +65,10 @@
+ #include <sys/ucred.h>
+ #include <machine/proc.h>		/* Machine-dependent proc substruct. */
+ 
++#if 1
++#include <sva/state.h>
++#endif
++
+ /*
+  * One structure allocated per session.
+  *
+@@ -309,6 +313,15 @@ struct thread {
+ 	struct vnet	*td_vnet;	/* (k) Effective vnet. */
+ 	const char	*td_vnet_lpush;	/* (k) Debugging vnet push / pop. */
+ 	struct trapframe *td_intr_frame;/* (k) Frame of the current irq */
++#if 1
++  /* The thread that swapped out so this thread could swap on */
++  struct thread * prev;
++  struct mtx * mtx;
++  uintptr_t svaID;   /* Thread ID for SVA Thread */
++  unsigned char sva; /* Flag whether SVA saved state on context switch */
++  void (*callout)(void *, struct trapframe *); /* Thread startup function */
++  void * callarg; /* Thread startup argument */
++#endif
+ };
+ 
+ struct mtx *thread_lock_block(struct thread *);
+diff --git a/sys/vm/vm_glue.c b/sys/vm/vm_glue.c
+index c7d43c7..8bbc1ab 100644
+--- a/sys/vm/vm_glue.c
++++ b/sys/vm/vm_glue.c
+@@ -363,6 +363,16 @@ vm_thread_new(struct thread *td, int pages)
+ 	struct kstack_cache_entry *ks_ce;
+ 	int i;
+ 
++#if 1
++  /* Initialize the SVA specific fields */
++  td->svaID = 0;
++  td->mtx = 0;
++  td->sva = 0;
++  td->prev = 0;
++  td->callout = 0;
++  td->callarg = 0;
++#endif
++
+ 	/* Bounds check */
+ 	if (pages <= 1)
+ 		pages = KSTACK_PAGES;
+diff --git a/sys/x86/x86/local_apic.c b/sys/x86/x86/local_apic.c
+index 2eb1fe1..8cf54bf 100644
+--- a/sys/x86/x86/local_apic.c
++++ b/sys/x86/x86/local_apic.c
+@@ -133,6 +133,7 @@ static struct lvt lvts[LVT_MAX + 1] = {
+ 	{ 1, 1, 1, 1, APIC_LVT_DM_FIXED, APIC_CMC_INT },	/* CMCI */
+ };
+ 
++#if 0
+ static inthand_t *ioint_handlers[] = {
+ 	NULL,			/* 0 - 31 */
+ 	IDTVEC(apic_isr1),	/* 32 - 63 */
+@@ -143,6 +144,26 @@ static inthand_t *ioint_handlers[] = {
+ 	IDTVEC(apic_isr6),	/* 192 - 223 */
+ 	IDTVEC(apic_isr7),	/* 224 - 255 */
+ };
++#else
++void apic_isr_sva1 (unsigned int vector);
++void apic_isr_sva2 (unsigned int vector);
++void apic_isr_sva3 (unsigned int vector);
++void apic_isr_sva4 (unsigned int vector);
++void apic_isr_sva5 (unsigned int vector);
++void apic_isr_sva6 (unsigned int vector);
++void apic_isr_sva7 (unsigned int vector);
++static inthand_t *ioint_handlers[] = {
++	NULL,			/* 0 - 31 */
++	apic_isr_sva1,	/* 32 - 63 */
++	apic_isr_sva2,	/* 64 - 95 */
++	apic_isr_sva3,	/* 96 - 127 */
++	apic_isr_sva4,	/* 128 - 159 */
++	apic_isr_sva5,	/* 160 - 191 */
++	apic_isr_sva6,	/* 192 - 223 */
++	apic_isr_sva7,	/* 224 - 255 */
++};
++
++#endif
+ 
+ 
+ static u_int32_t lapic_timer_divisors[] = {
+@@ -225,8 +246,13 @@ lapic_init(vm_paddr_t addr)
+ 	    ("local APIC not aligned on a page boundary"));
+ 	lapic = pmap_mapdev(addr, sizeof(lapic_t));
+ 	lapic_paddr = addr;
++#if 0
+ 	setidt(APIC_SPURIOUS_INT, IDTVEC(spuriousint), SDT_APIC, SEL_KPL,
+ 	    GSEL_APIC);
++#else
++  extern void spurious_handler (unsigned intNum);
++	sva_register_interrupt(APIC_SPURIOUS_INT, spurious_handler);
++#endif
+ 
+ 	/* Perform basic initialization of the BSP's local APIC. */
+ 	lapic_enable();
+@@ -234,16 +260,28 @@ lapic_init(vm_paddr_t addr)
+ 	/* Set BSP's per-CPU local APIC ID. */
+ 	PCPU_SET(apic_id, lapic_id());
+ 
++#if 0
+ 	/* Local APIC timer interrupt. */
+ 	setidt(APIC_TIMER_INT, IDTVEC(timerint), SDT_APIC, SEL_KPL, GSEL_APIC);
++#else
++	sva_register_interrupt(APIC_TIMER_INT, lapic_handle_timer);
++#endif
+ 
+ 	/* Local APIC error interrupt. */
++#if 0
+ 	setidt(APIC_ERROR_INT, IDTVEC(errorint), SDT_APIC, SEL_KPL, GSEL_APIC);
++#else
++	sva_register_interrupt(APIC_ERROR_INT, lapic_handle_error);
++#endif
+ 
+ 	/* XXX: Thermal interrupt */
+ 
+ 	/* Local APIC CMCI. */
++#if 0
+ 	setidt(APIC_CMC_INT, IDTVEC(cmcint), SDT_APICT, SEL_KPL, GSEL_APIC);
++#else
++	sva_register_interrupt(APIC_CMC_INT, lapic_handle_cmc);
++#endif
+ 
+ 	if ((resource_int_value("apic", 0, "clock", &i) != 0 || i != 0)) {
+ 		arat = 0;
+@@ -780,12 +818,116 @@ lapic_handle_intr(int vector, struct trapframe *frame)
+ 	intr_execute_handlers(isrc, frame);
+ }
+ 
++#if 1
++/* SVA: Create C versions of the apic_isr functions */
++void
++lapic_handle_intr_sva(int vector)
++{
++	struct intsrc *isrc;
++  struct trapframe frame;
++
++	extern void sva_trapframe (struct trapframe * tf);
++  sva_trapframe (&frame);
++	isrc = intr_lookup_source(apic_idt_to_irq(PCPU_GET(apic_id),
++	    vector));
++	intr_execute_handlers(isrc, &frame);
++#if 1
++  /*
++   * SVA: TODO: Enabling this causes a stack fault with interrupts disabled.
++   *
++   * Run asynchronous stuff.
++   */
++  if (!(sva_was_privileged()))
++    if (curthread->td_flags & (TDF_ASTPENDING | TDF_NEEDRESCHED))
++      ast (&frame);
++#endif
++}
++
++void
++apic_isr_sva1 (unsigned int vector) {
++  unsigned int offset;
++  __asm__ __volatile__ ("bsrl %1, %0\n" : "=r" (offset) : "m" (lapic->isr1));
++  if (offset) {
++    lapic_handle_intr_sva (offset+(32*1));
++  }
++}
++
++void
++apic_isr_sva2 (unsigned int vector) {
++  unsigned int offset;
++  __asm__ __volatile__ ("bsrl %1, %0\n" : "=r" (offset) : "m" (lapic->isr2));
++  if (offset) {
++    lapic_handle_intr_sva (offset+(32*2));
++  }
++}
++
++void
++apic_isr_sva3 (unsigned int vector) {
++  unsigned int offset;
++  __asm__ __volatile__ ("bsrl %1, %0\n" : "=r" (offset) : "m" (lapic->isr3));
++  if (offset) {
++    lapic_handle_intr_sva (offset+(32*3));
++  }
++}
++
++void
++apic_isr_sva4 (unsigned int vector) {
++  unsigned int offset;
++  __asm__ __volatile__ ("bsrl %1, %0\n" : "=r" (offset) : "m" (lapic->isr4));
++  if (offset) {
++    lapic_handle_intr_sva (offset+(32*4));
++  }
++}
++
++void
++apic_isr_sva5 (unsigned int vector) {
++  unsigned int offset;
++  __asm__ __volatile__ ("bsrl %1, %0\n" : "=r" (offset) : "m" (lapic->isr5));
++  if (offset) {
++    lapic_handle_intr_sva (offset+(32*5));
++  }
++}
++
++void
++apic_isr_sva6 (unsigned int vector) {
++  unsigned int offset;
++  __asm__ __volatile__ ("bsrl %1, %0\n" : "=r" (offset) : "m" (lapic->isr6));
++  if (offset) {
++    lapic_handle_intr_sva (offset+(32*6));
++  }
++}
++
++void
++apic_isr_sva7 (unsigned int vector) {
++  unsigned int offset;
++  __asm__ __volatile__ ("bsrl %1, %0\n" : "=r" (offset) : "m" (lapic->isr7));
++  if (offset) {
++    lapic_handle_intr_sva (offset+(32*7));
++  }
++}
++#endif
++
++#if 0
+ void
+ lapic_handle_timer(struct trapframe *frame)
++#else
++void
++lapic_handle_timer(int type)
++#endif
+ {
+ 	struct lapic *la;
+ 	struct trapframe *oldframe;
+ 	struct thread *td;
++#if 1
++  struct trapframe newframe;
++  struct trapframe * frame = &newframe;
++
++	/*
++	 * Convert the SVA interrupt context to a FreeBSD trapframe.
++	 */
++	extern void sva_trapframe (struct trapframe * tf);
++	sva_trapframe (frame);
++#endif
+ 
+ 	/* Send EOI first thing. */
+ 	lapic_eoi();
+@@ -802,8 +944,19 @@ lapic_handle_timer(struct trapframe *frame)
+ 	 * and unlike other schedulers it actually schedules threads to
+ 	 * those CPUs.
+ 	 */
++#if 0
+ 	if (CPU_ISSET(PCPU_GET(cpuid), &hlt_cpus_mask))
+ 		return;
++#else
++	if (CPU_ISSET(PCPU_GET(cpuid), &hlt_cpus_mask)) {
++		/*
++		 * Convert trap frame changes back into the SVA interrupt context.
++		 */
++    if (curthread->td_flags & (TDF_ASTPENDING | TDF_NEEDRESCHED))
++      ast (frame);
++		return;
++	}
++#endif
+ #endif
+ 
+ 	/* Look up our local APIC structure for the tick counters. */
+@@ -820,6 +973,11 @@ lapic_handle_timer(struct trapframe *frame)
+ 		td->td_intr_nesting_level--;
+ 	}
+ 	critical_exit();
++#if 1
++  if (!(sva_was_privileged()))
++    if (curthread->td_flags & (TDF_ASTPENDING | TDF_NEEDRESCHED))
++      ast (frame);
++#endif
+ }
+ 
+ static void
+@@ -1028,8 +1186,12 @@ apic_enable_vector(u_int apic_id, u_int vector)
+ 	KASSERT(vector != IDT_DTRACE_RET,
+ 	    ("Attempt to overwrite DTrace entry"));
+ #endif
++#if 0
+ 	setidt(vector, ioint_handlers[vector / 32], SDT_APIC, SEL_KPL,
+ 	    GSEL_APIC);
++#else
++	sva_register_interrupt(vector, ioint_handlers[vector / 32]);
++#endif
+ }
+ 
+ void
