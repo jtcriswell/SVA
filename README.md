@@ -31,7 +31,7 @@ llvm:
   The source code for the modified version of LLVM used for compiling the
   SVA-OS run-time library and the FreeBSD kernel.
 
-freebsd9_patch_r15130:
+freebsd9_patch:
   A patch that will modify the FreeBSD 9.0 kernel source code to work on SVA.
 
 autoconf:
@@ -77,7 +77,7 @@ o Apply the SVA patch to the FreeBSD source code
 
   - cd usr/src
 
-  - patch -p0 < ../../freebsd9_patch_r15130
+  - patch -p1 < ../../freebsd9_patch
 
 o Build the kernel, setting INSTKERNNAME to the name of the kernel
 
@@ -107,5 +107,6 @@ Running the SVA FreeBSD Kernel
 ------------------------------
 The SVA FreeBSD kernel only runs in single-user mode at present.  When booting,
 exit to the boot loader prompt (option 2 by default in the FreeBSD boot
-loader) and use "boot <kernelname> -s" to boot in single user mode.
+loader) and use "boot <kernelname> -s" to boot in single user mode.  The name
+in the examples above is svaKernel.
 
