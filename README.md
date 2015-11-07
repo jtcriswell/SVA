@@ -96,8 +96,11 @@ four lines in make.conf to avoid reconfiguring the kernel and to prevent the
 kernel from being rebuilt from scratch:
 
 NO_KERNELCLEAN=true
+
 NO_KERNELCONFIG=true
+
 NO_KERNELDEPEND=true
+
 NO_KERNELOBJ=true
 
 Note that the FreeBSD Makefiles do not detect when the SVA Clang compiler
