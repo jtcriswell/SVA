@@ -237,6 +237,12 @@ pt_update_is_valid (page_entry_t *page_entry, page_entry_t newVal) {
   unsigned char retValue = 2;
 
   /*
+   * If MMU checks are disabled, allow the page table entry to be modified.
+   */
+  if (disableMMUChecks)
+    return retValue;
+
+  /*
    * Determine if the page table pointer is within the direct map.  If not,
    * then it's an error.
    *
@@ -1339,7 +1345,7 @@ sva_mm_load_pgtable (void * pg) {
   /*
    * Check that the new page table is an L4 page table page.
    */
-  if ((mmuIsInitialized) && (getPageDescPtr(pg)->type != PG_L4)) {
+  if ((mmuIsInitialized) && (!disableMMUChecks) && (getPageDescPtr(pg)->type != PG_L4)) {
     panic ("SVA: Loading non-L4 page into CR3: %lx %x\n", pg, getPageDescPtr (pg)->type);
   }
 
@@ -2397,7 +2403,7 @@ sva_update_l1_mapping(pte_t * pteptr, page_entry_t val) {
    * then report an error.
    */
   page_desc_t * ptDesc = getPageDescPtr (getPhysicalAddr (pteptr));
-  if (ptDesc->type != PG_L1) {
+  if ((ptDesc->type != PG_L1) && (!disableMMUChecks)) {
     panic ("SVA: MMU: update_l1 not an L1: %lx %lx: %lx\n", pteptr, val, ptDesc->type);
   }
 
@@ -2430,7 +2436,7 @@ sva_update_l2_mapping(pde_t * pdePtr, page_entry_t val) {
    * then report an error.
    */
   page_desc_t * ptDesc = getPageDescPtr (getPhysicalAddr (pdePtr));
-  if (ptDesc->type != PG_L2) {
+  if ((ptDesc->type != PG_L2) && (!disableMMUChecks)) {
     printf ("SVA: MMU: update_l2 not an L2: %lx %lx: type=%lx count=%lx\n", pdePtr, val, ptDesc->type, ptDesc->count);
   }
 
@@ -2458,7 +2464,7 @@ void sva_update_l3_mapping(pdpte_t * pdptePtr, page_entry_t val) {
    * then report an error.
    */
   page_desc_t * ptDesc = getPageDescPtr (getPhysicalAddr (pdptePtr));
-  if (ptDesc->type != PG_L3) {
+  if ((ptDesc->type != PG_L3) && (!disableMMUChecks)) {
     panic ("SVA: MMU: update_l3 not an L3: %lx %lx: %lx\n", pdptePtr, val, ptDesc->type);
   }
 
@@ -2483,7 +2489,7 @@ void sva_update_l4_mapping (pml4e_t * pml4ePtr, page_entry_t val) {
    * then report an error.
    */
   page_desc_t * ptDesc = getPageDescPtr (getPhysicalAddr (pml4ePtr));
-  if (ptDesc->type != PG_L4) {
+  if ((ptDesc->type != PG_L4) && (!disableMMUChecks)) {
     panic ("SVA: MMU: update_l4 not an L4: %lx %lx: %lx\n", pml4ePtr, val, ptDesc->type);
   }
 

@@ -21,6 +21,9 @@
 /* Let the configure script determine if we enable Virtual Ghost */
 #undef VG
 
+/* Let the configure script determine if we enable SVA MMU Checks */
+#undef CHECKMMU
+
 /* Determine whether the virtual ghost features are enabled */
 #ifdef VG
 static const unsigned char vg = 1;
@@ -30,6 +33,13 @@ static const unsigned char vg = 0;
 
 /* Configure whether to use the hack that keeps page tables writeable */
 static unsigned char keepPTWriteableHack = 1;
+
+/* Enable/Disable MMU checks */
+#ifdef CHECKMMU
+static unsigned char disableMMUChecks = 0;
+#else
+static unsigned char disableMMUChecks = 1;
+#endif
 
 /* Total number of processors supported by this SVA Execution Engine */
 static const unsigned int numProcessors=2;

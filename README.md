@@ -40,7 +40,8 @@ autoconf:
 How to Compile SVA:
 -------------------
 
-Given that $SRC_ROOT is the location of the SVA source code, do the following:
+Given that $SRC_ROOT is the absolute pathname to the SVA source code, do the
+following:
 
 o Run the configure script in the source tree to create make.conf.  If you want
   to enable the Virtual Ghost features, add the --enable-vg option.
@@ -95,8 +96,11 @@ four lines in make.conf to avoid reconfiguring the kernel and to prevent the
 kernel from being rebuilt from scratch:
 
 NO_KERNELCLEAN=true
+
 NO_KERNELCONFIG=true
+
 NO_KERNELDEPEND=true
+
 NO_KERNELOBJ=true
 
 Note that the FreeBSD Makefiles do not detect when the SVA Clang compiler
