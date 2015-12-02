@@ -176,6 +176,8 @@ sva_ipush_function5 (void (*newf)(uintptr_t, uintptr_t, uintptr_t),
                      uintptr_t p3,
                      uintptr_t p4,
                      uintptr_t p5) {
+
+  printf("This is the sva_ipush_function5...\n");
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -256,7 +258,17 @@ sva_ipush_function5 (void (*newf)(uintptr_t, uintptr_t, uintptr_t),
    * Mark the interrupt context as valid; if an sva_ialloca previously
    * invalidated it, an sva_ipush_function() makes it valid again.
    */
+#if 0
   ep->valid = 1;
+#endif
+  /*
+   * Instead of assigning 1 to ep->valid for marking the the interrupt
+   * context as valid, we turn the LSB of valid on (set the LSB)
+   */
+  ep->valid = (ep->valid) | (1u);
+#if 1
+  printf("LSB of ep->valid is turned on, ep->valid = %d\n", ep->valid);
+#endif
 
   /*
    * Re-enable interrupts.
@@ -683,6 +695,8 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
  */
 void *
 sva_ialloca (uintptr_t size, uintptr_t alignment, void * initp) {
+ 
+  printf("This is the sva_ialloca\n");
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -732,7 +746,16 @@ sva_ialloca (uintptr_t size, uintptr_t alignment, void * initp) {
      * back on to the processor until an sva_ipush_function() pushes a new stack
      * frame on to the stack.
      */
+#if 0    
     icontextp->valid = 0;
+#endif
+    /*
+     * Instead of assigning 0 to icontextp->valid for marking the interrupt          * context as invalid, we turn the LSB of valid off (clear the LSB). 
+     */
+    icontextp->valid = (icontextp->valid) & (~1u);
+#if 1
+    printf("LSB of icontextp->valid is turned off, icontextp->valid = %d\n",icontextp->valid);
+#endif
 
     /*
      * Perform the alloca.
@@ -1279,8 +1302,17 @@ sva_init_stack (unsigned char * start_stackp,
   icontextp->rax = 0;
 
   /* Mark the interrupt context as valid */
+#if 0 
   icontextp->valid = 1;
-
+#endif
+  /*
+   * Instead of assigning 1 to icontext->valid for marking the interrupt
+   * context as valid, we turn the LSB on (set the LSB).
+   */
+  icontextp->valid = (icontextp->valid) | (1u);
+#if 1
+  printf("LSB of icontextp->valid is turned on, icontextp->valid = %d\n",icontextp->valid);
+#endif
   /*
    * Re-enable interrupts.
    */
