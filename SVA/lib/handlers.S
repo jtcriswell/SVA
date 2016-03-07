@@ -243,7 +243,7 @@ Trap:
   movq %gs:0x260, %rbp
   movq %rsp, CPU_NEWIC(%rbp)
 
-#if 0
+#if 0 
   /* Verify the Interrupt Context */
   callq assertGoodIC
   RETTARGET
@@ -520,8 +520,18 @@ SVAsyscall:
   pushq $0
 
   /* Flag the interrupt context as valid */
+  /* Syscall number of fork() is 2*/
+  
   movq $1, IC_VALID(%rsp)
+  cmpq $2, IC_RAX(%rsp)
+  je 1f
+  jmp 2f
 
+1:
+  movq $3, IC_VALID(%rsp)
+
+2:
+  
   /* Save FP state in the Interrupt Context */
   clts
   callq saveICFPState
@@ -534,13 +544,13 @@ SVAsyscall:
    */
   movq %gs:0x260, %rbp
   movq %rsp, CPU_NEWIC(%rbp)
-
+  
   /*
    * Modify the value in the Task State Segment (TSS) so that the next trap
    * or interrupt on this processor saves state into the next interrupt
    * context.
    */
-#if 1
+#if 1 
   movq CPU_TSSP(%rbp), %rbx
   movq %rsp, TSS_IST3(%rbx)
 
@@ -629,13 +639,19 @@ sc_ret:
    */
   movq $0, %rdi
   cmpq $1, IC_VALID(%rsp)
-  jne invalidIC
+  jne 3f
+  jmp 4f
+
+3:
+  cmpq $3, IC_VALID(%rsp)
+  jne invalidIC 
 
   /*
    * Pop off the most recent interrupt context.  This requires modifying
    * the newCurrentIC field of the CPUState as well as modifying the IST
    * in the TSS.
    */
+4:
   addq $IC_SIZE, CPU_NEWIC(%rbp)
   movq CPU_TSSP(%rbp), %rbx
   addq $IC_SIZE, TSS_IST3(%rbx)
