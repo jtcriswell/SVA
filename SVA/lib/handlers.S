@@ -640,18 +640,25 @@ sc_ret:
   movq $0, %rdi
   cmpq $1, IC_VALID(%rsp)
   jne 3f
-  jmp 4f
+  jmp 5f 
 
 3:
   cmpq $3, IC_VALID(%rsp)
-  jne invalidIC 
+  jne 4f
+  jmp 5f
+
+
+4:
+  cmpq $7, IC_VALID(%rsp)
+  jne invalidIC
+
 
   /*
    * Pop off the most recent interrupt context.  This requires modifying
    * the newCurrentIC field of the CPUState as well as modifying the IST
    * in the TSS.
    */
-4:
+5:
   addq $IC_SIZE, CPU_NEWIC(%rbp)
   movq CPU_TSSP(%rbp), %rbx
   addq $IC_SIZE, TSS_IST3(%rbx)

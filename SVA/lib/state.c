@@ -23,7 +23,6 @@
 #include <sva/mmu.h>
 #include "sva/mmu_intrinsics.h"
 #include <sva/x86.h>
-
 /*****************************************************************************
  * Internal Utility Functions
  ****************************************************************************/
@@ -177,6 +176,7 @@ sva_ipush_function5 (void (*newf)(uintptr_t, uintptr_t, uintptr_t),
                      uintptr_t p4,
                      uintptr_t p5) {
 
+  printf("## This is sva_ipush_function5() ##\n");
  /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -696,7 +696,7 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
 void *
 sva_ialloca (uintptr_t size, uintptr_t alignment, void * initp) {
  
-
+  printf("## This is sva_ialloca() ##\n");
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -823,6 +823,8 @@ sva_ialloca (uintptr_t size, uintptr_t alignment, void * initp) {
  */
 void
 sva_load_icontext (void) {
+ 
+  printf("## This is sva_load_icontext() ##\n");
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -880,6 +882,7 @@ sva_load_icontext (void) {
  */
 unsigned char
 sva_save_icontext (void) {
+  printf("## This is sva_save_icontext() ##\n");
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -953,6 +956,7 @@ svaDummy (void) {
  */
 void
 sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintptr_t arg) {
+  printf("## This is sva_reinit_icontext ##\n");
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -1083,6 +1087,7 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
  */
 void
 sva_release_stack (uintptr_t id) {
+  printf("## This is sva_release_stack() ##\n");
   /* Get a pointer to the saved state (the ID is the pointer) */
   struct SVAThread * newThread = (struct SVAThread *)(id);
   sva_integer_state_t * new =  newThread ? &(newThread->integerState) : 0;
@@ -1141,9 +1146,11 @@ sva_init_stack (unsigned char * start_stackp,
                 uintptr_t arg1,
                 uintptr_t arg2,
                 uintptr_t arg3) {
+  int firstThreadFlag = 0;
+  
+  printf("## This is sva_init_stack() ##\n");
   /* Working memory pointer */
   sva_icontext_t * icontextp;
-
   /* Working integer state */
   sva_integer_state_t * integerp;
 
@@ -1172,7 +1179,7 @@ sva_init_stack (unsigned char * start_stackp,
    * Disable interrupts.
    */
   rflags = sva_enter_critical();
-
+  
   /*
    * Find the last byte on the stack.
    */
@@ -1209,12 +1216,19 @@ sva_init_stack (unsigned char * start_stackp,
    * Get access to the old thread.
    */
   struct SVAThread * oldThread = cpup->currentThread;
+  printf("oldThread id = %d\n",oldThread -> rid);
+  if(oldThread[0].used == 0)
+    firstThreadFlag = 1;
+  printf("oldThread[0].used = %d\n",oldThread[0].used);
+  printf("firstThreadFlag = %d\n",firstThreadFlag); 
 
   /*
    * Allocate a new SVA thread.
    */
   extern struct SVAThread * findNextFreeThread (void);
   struct SVAThread * newThread = findNextFreeThread();
+  printf("newThread id = %d\n",newThread -> rid);
+
 
   /*
    * Verify that the memory has the proper access.
@@ -1294,7 +1308,7 @@ sva_init_stack (unsigned char * start_stackp,
    */
   icontextp = integerp->currentIC = newThread->interruptContexts + maxIC - 1;
   *icontextp = *(cpup->newCurrentIC);
-
+  printf("Before set the return value to zero, check rax, rax = 0x%lx\n",icontextp->rax);
   /*
    * Set the return value to zero.
    *
@@ -1303,6 +1317,7 @@ sva_init_stack (unsigned char * start_stackp,
    */
   icontextp->rax = 0;
 
+  printf("icontextp->valid = %d", icontextp->valid);
   /* Mark the interrupt context as valid */
 #if 0
   icontextp->valid = 1;
@@ -1312,8 +1327,20 @@ sva_init_stack (unsigned char * start_stackp,
    * Instead of assigning 1 to icontextp->valid for marking the interrupt
    * context as valid, we turn the LSB on (set the LSB).
    */
-  icontextp->valid = (icontextp->valid) | (1u);
-#if 0 
+  
+  if(firstThreadFlag)
+  {
+    icontextp->valid = 7;
+  } 
+  else if(icontextp->valid == 7)
+  {
+    icontextp->valid = 7; 
+  }
+  else
+  {
+    icontextp ->valid = 1;
+  }
+#if 1 
   printf("LSB of icontextp->valid is turned on, icontextp->valid = %d\n",icontextp->valid);
 #endif
 

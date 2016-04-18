@@ -118,7 +118,8 @@ findNextFreeThread (void) {
        * Remember which thread is the one we've grabbed.
        */
       struct SVAThread * newThread = Threads + index;
-
+      printf("in findNextFreeThread(), Thread index:  %d\n",index);   
+   
       /*
        * Do some basic initialization of the thread.
        */

@@ -61,6 +61,9 @@ assertGoodIC (void) {
     sva_print_icontext ("assertGoodIC");
     panic ("SVA: assertGoodIC: Bad IC: %lx\n", p->valid);
   }
+
+    sva_print_icontext("assertGoodIC");
+    panic ("SVA:asserGoodIC: no problem,inside syscall,%rax = %d \n",p->rax);
   return;
 }
 
