@@ -1219,8 +1219,6 @@ sva_init_stack (unsigned char * start_stackp,
   printf("oldThread id = %d\n",oldThread -> rid);
   if(oldThread[0].used == 0)
     firstThreadFlag = 1;
-  printf("oldThread[0].used = %d\n",oldThread[0].used);
-  printf("firstThreadFlag = %d\n",firstThreadFlag); 
 
   /*
    * Allocate a new SVA thread.
@@ -1328,17 +1326,19 @@ sva_init_stack (unsigned char * start_stackp,
    * context as valid, we turn the LSB on (set the LSB).
    */
   
-  if(firstThreadFlag)
+  if((icontextp->valid & 0x00000004) == 0x00000004)
   {
-    icontextp->valid = 7;
+    printf("initial thread bit is set, I should mark the fork bit\n");
+    icontextp->valid |= 0x00000002;
+    icontextp->valid |= 0x00000001;
   } 
-  else if(icontextp->valid == 7)
+  else if((icontextp->valid & 0x00000002) == 0x00000002)
   {
-    icontextp->valid = 7; 
+    icontextp->valid |= 0x00000001; 
   }
   else
   {
-    icontextp ->valid = 1;
+    icontextp ->valid |= 0x00000001;
   }
 #if 1 
   printf("LSB of icontextp->valid is turned on, icontextp->valid = %d\n",icontextp->valid);
