@@ -23,7 +23,6 @@
 #include <sva/mmu.h>
 #include "sva/mmu_intrinsics.h"
 #include <sva/x86.h>
-
 /*****************************************************************************
  * Internal Utility Functions
  ****************************************************************************/
@@ -177,8 +176,7 @@ sva_ipush_function5 (void (*newf)(uintptr_t, uintptr_t, uintptr_t),
                      uintptr_t p4,
                      uintptr_t p5) {
 
-  printf("This is the sva_ipush_function5...\n");
-  /* Old interrupt flags */
+ /* Old interrupt flags */
   uintptr_t rflags;
 
   /*
@@ -266,7 +264,7 @@ sva_ipush_function5 (void (*newf)(uintptr_t, uintptr_t, uintptr_t),
    * context as valid, we turn the LSB of valid on (set the LSB)
    */
   ep->valid = (ep->valid) | (1u);
-#if 1
+#if 0 
   printf("LSB of ep->valid is turned on, ep->valid = %d\n", ep->valid);
 #endif
 
@@ -696,7 +694,6 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
 void *
 sva_ialloca (uintptr_t size, uintptr_t alignment, void * initp) {
  
-  printf("This is the sva_ialloca\n");
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -753,7 +750,8 @@ sva_ialloca (uintptr_t size, uintptr_t alignment, void * initp) {
      * Instead of assigning 0 to icontextp->valid for marking the interrupt          * context as invalid, we turn the LSB of valid off (clear the LSB). 
      */
     icontextp->valid = (icontextp->valid) & (~1u);
-#if 1
+
+#if 0 
     printf("LSB of icontextp->valid is turned off, icontextp->valid = %d\n",icontextp->valid);
 #endif
 
@@ -821,6 +819,7 @@ sva_ialloca (uintptr_t size, uintptr_t alignment, void * initp) {
  */
 void
 sva_load_icontext (void) {
+ 
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -1139,9 +1138,9 @@ sva_init_stack (unsigned char * start_stackp,
                 uintptr_t arg1,
                 uintptr_t arg2,
                 uintptr_t arg3) {
+  
   /* Working memory pointer */
   sva_icontext_t * icontextp;
-
   /* Working integer state */
   sva_integer_state_t * integerp;
 
@@ -1170,7 +1169,7 @@ sva_init_stack (unsigned char * start_stackp,
    * Disable interrupts.
    */
   rflags = sva_enter_critical();
-
+  
   /*
    * Find the last byte on the stack.
    */
@@ -1213,6 +1212,7 @@ sva_init_stack (unsigned char * start_stackp,
    */
   extern struct SVAThread * findNextFreeThread (void);
   struct SVAThread * newThread = findNextFreeThread();
+
 
   /*
    * Verify that the memory has the proper access.
@@ -1292,7 +1292,9 @@ sva_init_stack (unsigned char * start_stackp,
    */
   icontextp = integerp->currentIC = newThread->interruptContexts + maxIC - 1;
   *icontextp = *(cpup->newCurrentIC);
-
+#if 0
+  printf("Before set the return value to zero, check rax, rax = 0x%lx\n",icontextp->rax);
+#endif  
   /*
    * Set the return value to zero.
    *
@@ -1300,19 +1302,37 @@ sva_init_stack (unsigned char * start_stackp,
    *        this.
    */
   icontextp->rax = 0;
-
+#if 0
+  printf("icontextp->valid = %d", icontextp->valid);
   /* Mark the interrupt context as valid */
-#if 0 
   icontextp->valid = 1;
 #endif
+
   /*
-   * Instead of assigning 1 to icontext->valid for marking the interrupt
-   * context as valid, we turn the LSB on (set the LSB).
+   * If initial thread bit is set, we should always set its fork bit on,
+   * else if the fork bit is set, we mark the inpterrupt context valid bit.
    */
-  icontextp->valid = (icontextp->valid) | (1u);
-#if 1
+  
+  if((icontextp->valid & 0x00000004) == 0x00000004)
+  {
+    /* initial thread bit is set, I should mark the fork bit */
+    icontextp->valid |= 0x00000002;
+    icontextp->valid |= 0x00000001;
+  } 
+  else if((icontextp->valid & 0x00000002) == 0x00000002)
+  {
+    /* fork bit is set */
+    icontextp->valid |= 0x00000001; 
+  }
+  else
+  {
+    printf("Fork bit is not set, so I can not set the LSB on, shoudl restrict duplication!\n");
+    icontextp ->valid |= 0x00000001;
+  }
+#if 0 
   printf("LSB of icontextp->valid is turned on, icontextp->valid = %d\n",icontextp->valid);
 #endif
+
   /*
    * Re-enable interrupts.
    */

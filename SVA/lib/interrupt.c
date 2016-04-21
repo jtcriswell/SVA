@@ -112,13 +112,24 @@ randomNumber (void) {
  */
 struct SVAThread *
 findNextFreeThread (void) {
-  for (unsigned int index = 0; index < 4096; ++index) {
+  for (unsigned int index = 1; index < 4096; ++index) {
+    /* 
+     * If the initial thread is used, then the linear search start from index 1
+     * to make sure the initial thread is not reused after freeing, because the
+     * fork bit is always set on for the initial thread.
+     */
+    if(Threads[0].used == 0)
+    /*
+     * If the initial thread is not used, then change the index to 0
+     * Normally this situation occurs during the booting sequence
+     */
+      index = 0;
     if (__sync_bool_compare_and_swap (&(Threads[index].used), 0, 1)) {
       /*
        * Remember which thread is the one we've grabbed.
        */
       struct SVAThread * newThread = Threads + index;
-
+  
       /*
        * Do some basic initialization of the thread.
        */
@@ -128,6 +139,13 @@ findNextFreeThread (void) {
       newThread->secmemSize = 0;
       newThread->numPushTargets = 0;
       newThread->secmemPML4e = 0;
+      if(index == 0){
+        for(int i=0; i<maxIC; i++)
+        {
+          /* Mark the initial thread bit during the initialization */
+          newThread->interruptContexts[i].valid = 0x00000004;
+        }
+      }
 
       /* 
        * This function currently sets the thread secret with a default
