@@ -956,7 +956,6 @@ svaDummy (void) {
  */
 void
 sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintptr_t arg) {
-  printf("testgit");
   printf("## This is sva_reinit_icontext ##\n");
   /* Old interrupt flags */
   uintptr_t rflags;
