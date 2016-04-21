@@ -112,14 +112,15 @@ randomNumber (void) {
  */
 struct SVAThread *
 findNextFreeThread (void) {
-  for (unsigned int index = 0; index < 4096; ++index) {
+  for (unsigned int index = 1; index < 4096; ++index) {
+    if(Threads[0].used == 0)
+      index = 0;
     if (__sync_bool_compare_and_swap (&(Threads[index].used), 0, 1)) {
       /*
        * Remember which thread is the one we've grabbed.
        */
       struct SVAThread * newThread = Threads + index;
-      printf("in findNextFreeThread(), Thread index:  %d\n",index);   
-   
+  
       /*
        * Do some basic initialization of the thread.
        */
@@ -129,6 +130,13 @@ findNextFreeThread (void) {
       newThread->secmemSize = 0;
       newThread->numPushTargets = 0;
       newThread->secmemPML4e = 0;
+      if(index == 0){
+        for(int i=0; i<maxIC; i++)
+        {
+          printf("assigning newThread->IC->valid to 0x00000004, maxIC = %d\n",maxIC);
+          newThread->interruptContexts[i].valid = 0x00000004;
+        }
+      }
 
       /* 
        * This function currently sets the thread secret with a default
