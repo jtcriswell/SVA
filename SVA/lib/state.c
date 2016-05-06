@@ -1148,7 +1148,6 @@ sva_init_stack (unsigned char * start_stackp,
                 uintptr_t arg3) {
   int firstThreadFlag = 0;
   
-  printf("## This is sva_init_stack() ##\n");
   /* Working memory pointer */
   sva_icontext_t * icontextp;
   /* Working integer state */
