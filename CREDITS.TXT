@@ -26,3 +26,6 @@ N: Andrew Lenharth
 W: http://www.lenharth.org/~andrewl/
 D: Improvements and optimizations for original SVA prototype
 
+N: Tianqin Zhao
+D: Enhancement for SVA-OS interrupt, trap, and system call dispatch code.
+
