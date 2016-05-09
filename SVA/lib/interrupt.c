@@ -217,6 +217,12 @@ sva_getCPUState (tss_t * tssp) {
      */
     getCPUState()->fp_used = 0;
 
+
+    /* SG start */
+    getCPUState()->is_running_syscall = 0;
+    getCPUState()->prevFPThread = 0;
+    /* SG end */
+
     /*
      * Initialize a dummy interrupt context so that it looks like we
      * started the processor by taking a trap or system call.  The dummy

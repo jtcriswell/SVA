@@ -294,6 +294,7 @@ Trap:
   xorq %rcx, %rcx
 
   finit
+/*
   pxor %mm0,  %mm0
   pxor %mm1,  %mm1
   pxor %mm2,  %mm2
@@ -319,6 +320,7 @@ Trap:
   pxor %xmm13, %xmm13
   pxor %xmm14, %xmm14
   pxor %xmm15, %xmm15
+*/
 #endif
 
   /*

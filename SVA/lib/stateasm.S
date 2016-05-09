@@ -207,9 +207,6 @@ load_integer:
    * sva_swap_integer() and verify that it is correct.
    */
   movq IC_RIP(%rdi), %rcx
-  cmpl  $CHECKLABEL, (%rcx)
-  je 1f
-  int $3
 
 1:
   /* Restore the %rdi register */

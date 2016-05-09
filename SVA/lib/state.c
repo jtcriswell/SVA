@@ -66,6 +66,12 @@ save_fp (sva_fp_state_t * buffer) {
 
 sva_fp_state_t *
 saveICFPState (void) {
+  /*SG start */
+  /* Return without saving */
+  getCPUState()->is_running_syscall = 1;
+  return 0;
+  /*SG end */
+
   /* Get the current SVA thread */
   struct SVAThread * thread = getCPUState()->currentThread;
 
@@ -81,6 +87,12 @@ saveICFPState (void) {
 
 void
 loadICFPState (void) {
+  /* SG start */
+  /* Return without restoring */
+  getCPUState()->is_running_syscall = 0;
+  return;
+  /* SG end */
+
   /* Get the current SVA thread */
   struct SVAThread * thread = getCPUState()->currentThread;
 
@@ -516,7 +528,10 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
   /*
    * Save the floating point state.
    */
-  save_fp (&(old->fpstate));
+  /* SG start */
+  /* I commented the following line */
+  //save_fp (&(old->fpstate));
+  /* SG end */
 
   /*
    * Save the current integer state.  Note that returning from sva_integer()
@@ -646,7 +661,9 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
     /*
      * Load the floating point state.
      */
-    load_fp (&(new->fpstate));
+    /* SG start */
+    /* I commented the following line */
+   // load_fp (&(new->fpstate));
 
     /*
      * Load the rest of the integer state.
@@ -1004,7 +1021,10 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
    * Clear out saved FP state.
    */
   threadp->ICFPIndex = 1;
-  bzero (threadp->ICFP, sizeof (sva_fp_state_t));
+  /* SG start */
+  /* I commented the following line */
+  //bzero (threadp->ICFP, sizeof (sva_fp_state_t));
+  /* SG end */
 
   /*
    * Clear out any function call targets.
@@ -1163,10 +1183,10 @@ sva_init_stack (unsigned char * start_stackp,
   /*
    * Verify that the function is a kernel function.
    */
-  uintptr_t f = (uintptr_t)(func);
-  if ((f <= SECMEMEND) || (*((unsigned int *)(f)) != CHECKLABEL)) {
-    panic ("sva_init_stack: Invalid function %p\n", func);
-  }
+//  uintptr_t f = (uintptr_t)(func);
+//  if ((f <= SECMEMEND) || (*((unsigned int *)(f)) != CHECKLABEL)) {
+//    panic ("sva_init_stack: Invalid function %p\n", func);
+//  }
 
   /* Pointer to the current CPU State */
   struct CPUState * cpup = getCPUState();
@@ -1220,10 +1240,12 @@ sva_init_stack (unsigned char * start_stackp,
   /*
    * Copy over the last saved interrupted FP state.
    */
-  if (oldThread->ICFPIndex) {
-    *(newThread->ICFP) = *(oldThread->ICFP + oldThread->ICFPIndex - 1);
-    newThread->ICFPIndex = 1;
-  }
+  /* SG start */
+  /* I commented the following lines */
+ // if (oldThread->ICFPIndex) {
+ //   *(newThread->ICFP) = *(oldThread->ICFP + oldThread->ICFPIndex - 1);
+ //   newThread->ICFPIndex = 1;
+ // }
 
   /*
    * Allocate the call frame for the call to the system call.

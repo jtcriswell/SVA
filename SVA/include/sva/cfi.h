@@ -24,34 +24,15 @@
 #define CHECKLABEL 0x48c98948
 
 /* Macro for call */
-#define CALLQ(x) callq x ; \
-                 movq %rcx,%rcx ; \
-                 movq %rdx,%rdx ; \
-                 nop ; \
-                 nop ;
+#define CALLQ(x) callq x ;
 
 /* Macro for start of function */
-#define STARTFUNC movq %rcx,%rcx ; \
-                  movq %rdx,%rdx ; \
-                  nop ; \
-                  nop ;
+#define STARTFUNC ;
 
-#define RETTARGET movq %rcx,%rcx ; \
-                  movq %rdx,%rdx ; \
-                  nop ; \
-                  nop ;
+#define RETTARGET ;
 
 /* Macro for return */
-#define RETQ  movq  (%rsp), %rcx ; \
-              movl  $0xffffff80, %edx ; \
-              shlq   $32, %rdx ; \
-              orq   %rdx, %rcx ; \
-              addq  $8, %rsp ; \
-              cmpl  $CHECKLABEL, (%rcx) ; \
-              jne 23f ; \
-              jmpq  *%rcx ; \
-              xchg %bx, %bx ; \
-              23: movq $0xfea, %rax;
+#define RETQ  retq ;
 
 #endif
               /* addq  $0x8, %rcx ; \ */

@@ -92,6 +92,44 @@
 extern int printf(const char *, ...);
 extern void panic(const char *, ...);
 
+/* SG start */
+/* 
+ * Function: load_fp()
+ *
+ * Description:
+ *  This function loads floating point state back on to the processor.
+ */
+static inline void
+load_fp (sva_fp_state_t * buffer) {
+  /*
+   * Save the state of the floating point unit.
+   */
+  if (buffer->present)
+    __asm__ __volatile__ ("fxrstor %0" : "=m" (buffer->words));
+  return;
+}
+
+/*
+ * Function: save_fp()
+ *
+ * Description:
+ *  Save the processor's current floating point state into the specified 
+ *  buffer.
+ *
+ *  Inputs:
+ *   buffer - A pointer to the buffer in which to save the data.
+ */
+ static inline void
+ save_fp (sva_fp_state_t * buffer){
+   __asm__ __volatile__ ("fxsave %0" : "=m" (buffer->words) :: "memory");
+   buffer->present = 1;
+ }
+
+/* SG end */
+
+
+
+
 void register_x86_interrupt (int number, void *interrupt, unsigned char priv);
 void register_x86_trap (int number, void *trap);
 static void fptrap (void);
@@ -245,10 +283,31 @@ fptrap (void) {
   const unsigned int ts = 0x00000008;
   unsigned int cr0;
 
+  /* SG start */
+  struct SVAThread * previousFPThread = getCPUState()->prevFPThread;
+  if(previousFPThread){
+  	sva_integer_state_t * prev = &(previousFPThread->integerState);
+	save_fp (&(prev->fpstate));
+  }
+
+  if(getCPUState()->is_running_syscall)
+  {
+	  panic ("SVA: fptrap while running a system call!");
+  }
+  /* SG end */
+
   /*
    * Flag that the floating point unit has now been used.
    */
   getCPUState()->fp_used = 1;
+
+  /* SG start */
+  /* Get a pointer to the saved state (the ID is the pointer) */
+  struct SVAThread * runningThread = getCPUState()->currentThread;
+  sva_integer_state_t * intstate = &(runningThread->integerState);
+  load_fp (&(intstate->fpstate));
+  getCPUState()->prevFPThread = runningThread;
+  /* SG end */
 
   /*
    * Turn off the TS bit in CR0; this allows the FPU to proceed with floating
