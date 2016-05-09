@@ -176,7 +176,6 @@ sva_ipush_function5 (void (*newf)(uintptr_t, uintptr_t, uintptr_t),
                      uintptr_t p4,
                      uintptr_t p5) {
 
-  printf("## This is sva_ipush_function5() ##\n");
  /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -696,7 +695,6 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
 void *
 sva_ialloca (uintptr_t size, uintptr_t alignment, void * initp) {
  
-  printf("## This is sva_ialloca() ##\n");
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -824,7 +822,6 @@ sva_ialloca (uintptr_t size, uintptr_t alignment, void * initp) {
 void
 sva_load_icontext (void) {
  
-  printf("## This is sva_load_icontext() ##\n");
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -882,7 +879,6 @@ sva_load_icontext (void) {
  */
 unsigned char
 sva_save_icontext (void) {
-  printf("## This is sva_save_icontext() ##\n");
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -956,7 +952,6 @@ svaDummy (void) {
  */
 void
 sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintptr_t arg) {
-  printf("## This is sva_reinit_icontext ##\n");
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -1087,7 +1082,6 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
  */
 void
 sva_release_stack (uintptr_t id) {
-  printf("## This is sva_release_stack() ##\n");
   /* Get a pointer to the saved state (the ID is the pointer) */
   struct SVAThread * newThread = (struct SVAThread *)(id);
   sva_integer_state_t * new =  newThread ? &(newThread->integerState) : 0;
@@ -1215,16 +1209,12 @@ sva_init_stack (unsigned char * start_stackp,
    * Get access to the old thread.
    */
   struct SVAThread * oldThread = cpup->currentThread;
-  printf("oldThread id = %d\n",oldThread -> rid);
-  if(oldThread[0].used == 0)
-    firstThreadFlag = 1;
 
   /*
    * Allocate a new SVA thread.
    */
   extern struct SVAThread * findNextFreeThread (void);
   struct SVAThread * newThread = findNextFreeThread();
-  printf("newThread id = %d\n",newThread -> rid);
 
 
   /*
@@ -1305,7 +1295,9 @@ sva_init_stack (unsigned char * start_stackp,
    */
   icontextp = integerp->currentIC = newThread->interruptContexts + maxIC - 1;
   *icontextp = *(cpup->newCurrentIC);
+#if 0
   printf("Before set the return value to zero, check rax, rax = 0x%lx\n",icontextp->rax);
+#endif  
   /*
    * Set the return value to zero.
    *
@@ -1313,33 +1305,34 @@ sva_init_stack (unsigned char * start_stackp,
    *        this.
    */
   icontextp->rax = 0;
-
+#if 0
   printf("icontextp->valid = %d", icontextp->valid);
   /* Mark the interrupt context as valid */
-#if 0
   icontextp->valid = 1;
 #endif
 
   /*
-   * Instead of assigning 1 to icontextp->valid for marking the interrupt
-   * context as valid, we turn the LSB on (set the LSB).
+   * If initial thread bit is set, we should always set its fork bit on,
+   * else if the fork bit is set, we mark the inpterrupt context valid bit.
    */
   
   if((icontextp->valid & 0x00000004) == 0x00000004)
   {
-    printf("initial thread bit is set, I should mark the fork bit\n");
+    /* initial thread bit is set, I should mark the fork bit */
     icontextp->valid |= 0x00000002;
     icontextp->valid |= 0x00000001;
   } 
   else if((icontextp->valid & 0x00000002) == 0x00000002)
   {
+    /* fork bit is set */
     icontextp->valid |= 0x00000001; 
   }
   else
   {
+    printf("Fork bit is not set, so I can not set the LSB on, shoudl restrict duplication!\n");
     icontextp ->valid |= 0x00000001;
   }
-#if 1 
+#if 0 
   printf("LSB of icontextp->valid is turned on, icontextp->valid = %d\n",icontextp->valid);
 #endif
 
