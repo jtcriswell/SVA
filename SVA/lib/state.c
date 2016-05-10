@@ -1326,7 +1326,7 @@ sva_init_stack (unsigned char * start_stackp,
   }
   else
   {
-    printf("Fork bit is not set, so I can not set the LSB on, shoudl restrict duplication!\n");
+    printf("Catch you! Fork bit is not set, SVA can not set the icontext valid bit on!\n");
     icontextp ->valid |= 0x00000001;
   }
 #if 0 
