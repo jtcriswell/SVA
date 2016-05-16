@@ -1109,6 +1109,13 @@ sva_release_stack (uintptr_t id) {
    * Mark the thread as available for reuse.
    */
   newThread->used = 0;
+
+  /* SG start */
+  extern void ftstack_push(struct SVAThread *thread);
+  ftstack_push(newThread);
+  /* SG end */
+
+
   return;
 }
 

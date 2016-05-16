@@ -31,6 +31,78 @@
 
 extern void * interrupt_table[256];
 
+/* SG start */
+#define THREAD_SIZE 10000
+#define spin_lock(l)  while (__sync_lock_test_and_set((l), 1))
+#define spin_unlock(l) __sync_lock_release((l))
+#define init_lock(l) *(l) = 0
+#define NULL  0
+
+/* Pre-allocate a large number of SVA Threads */
+static struct SVAThread realThreads[4096] __attribute__ ((aligned (16)))
+__attribute__ ((section ("svamem")));
+
+struct SVAThread *Threads = realThreads;
+
+typedef volatile int lock_t;
+
+struct FT_stack{
+  struct SVAThread *threads[THREAD_SIZE];
+  int top;
+  int initialized;
+  lock_t lock;
+};
+
+static struct FT_stack fthreads __attribute__ ((aligned (16))) __attribute__ ((section ("svamem"))) = {
+  .top = -1,
+  .lock = 0,
+  .initialized = 0,
+};
+
+void ftstack_push(struct SVAThread *thread){
+  spin_lock(&fthreads.lock);
+
+  fthreads.top++;
+  fthreads.threads[fthreads.top] = thread;
+
+  spin_unlock(&fthreads.lock);
+}
+
+struct SVAThread *ftstack_pop(void) {
+
+  struct SVAThread *result = NULL;
+
+  spin_lock(&fthreads.lock);
+
+  if(!fthreads.initialized) {
+
+    for (unsigned index = 0; index < 4096; ++index) {
+      Threads[index].used = 0;
+      fthreads.top++;
+      fthreads.threads[fthreads.top] = &Threads[index];
+    }
+
+    fthreads.initialized = 1;
+  }
+
+  if(fthreads.top == -1) {
+    spin_unlock(&fthreads.lock);
+    panic("");
+    return NULL;
+  }
+  
+  result = fthreads.threads[fthreads.top];
+  fthreads.top--;
+
+  spin_unlock(&fthreads.lock);
+
+  return result;
+}
+/* SG end */
+
+
+
+
 /*
  * Default LLVA interrupt, exception, and system call handlers.
  */
@@ -77,16 +149,12 @@ static struct CPUState realCPUState[numProcessors] __attribute__((aligned(16)))
 __attribute__ ((section ("svamem")));
 struct CPUState * CPUState = realCPUState;
 
-/* Pre-allocate a large number of SVA Threads */
-static struct SVAThread realThreads[4096] __attribute__ ((aligned (16)))
-__attribute__ ((section ("svamem")));
-struct SVAThread * Threads = realThreads;
 
 void
 init_threads(void) {
-  for (unsigned index = 0; index < 4096; ++index) {
-    Threads[index].used = 0;
-  }
+  //panic ("in init threads\n");
+
+  //panic ("after init threads\n");
   return;
 }
 
@@ -112,12 +180,23 @@ randomNumber (void) {
  */
 struct SVAThread *
 findNextFreeThread (void) {
-  for (unsigned int index = 0; index < 4096; ++index) {
-    if (__sync_bool_compare_and_swap (&(Threads[index].used), 0, 1)) {
+  /* SG start*/
+  /* SG added next two lines */
+  // struct SVAThread *nThread = ftstack_pop();
+
+  /* SG Commented next two lines */
+  // for (unsigned int index = 0; index < 4096; ++index) {
+    
+  //   if (__sync_bool_compare_and_swap (&(newThread->used), 0, 1)) {
       /*
        * Remember which thread is the one we've grabbed.
        */
-      struct SVAThread * newThread = Threads + index;
+       /* SG commented next line */
+      struct SVAThread *newThread = ftstack_pop();
+      // if(nThread == NULL){
+      //   panic ("inside the if\n");
+      //   return 0;
+      // }
 
       /*
        * Do some basic initialization of the thread.
@@ -170,9 +249,11 @@ findNextFreeThread (void) {
         newThread->rid = randomNumber();
       }
       return newThread;
-    }
-  }
+      /* SG commented next two lines */
+  //   }
+  // }
 
+    /* SG commented next two lines */
   panic ("SVA: findNextFreeThread: Exhausted SVA Threads!\n");
   return 0;
 }
