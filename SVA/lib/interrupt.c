@@ -31,7 +31,9 @@
 
 extern void * interrupt_table[256];
 
-/* SG start */
+/* Definitions of functions and variables related to the stack 
+   that is used for finding the next free thread.
+*/
 #define THREAD_SIZE 10000
 #define spin_lock(l)  while (__sync_lock_test_and_set((l), 1))
 #define spin_unlock(l) __sync_lock_release((l))
@@ -46,6 +48,7 @@ struct SVAThread *Threads = realThreads;
 
 typedef volatile int lock_t;
 
+/* Stack for storing the free treads */
 struct FT_stack{
   struct SVAThread *threads[THREAD_SIZE];
   int top;
@@ -53,12 +56,14 @@ struct FT_stack{
   lock_t lock;
 };
 
+/* Initialization of the stack */
 static struct FT_stack fthreads __attribute__ ((aligned (16))) __attribute__ ((section ("svamem"))) = {
   .top = -1,
   .lock = 0,
   .initialized = 0,
 };
 
+/* Push function for the stack. The action has to be protected by a spinlock. */
 void ftstack_push(struct SVAThread *thread){
   spin_lock(&fthreads.lock);
 
@@ -68,6 +73,7 @@ void ftstack_push(struct SVAThread *thread){
   spin_unlock(&fthreads.lock);
 }
 
+/* Pop function for the stack. */
 struct SVAThread *ftstack_pop(void) {
 
   struct SVAThread *result = NULL;
@@ -98,7 +104,6 @@ struct SVAThread *ftstack_pop(void) {
 
   return result;
 }
-/* SG end */
 
 
 
@@ -152,9 +157,6 @@ struct CPUState * CPUState = realCPUState;
 
 void
 init_threads(void) {
-  //panic ("in init threads\n");
-
-  //panic ("after init threads\n");
   return;
 }
 
@@ -180,24 +182,11 @@ randomNumber (void) {
  */
 struct SVAThread *
 findNextFreeThread (void) {
-  /* SG start*/
-  /* SG added next two lines */
-  // struct SVAThread *nThread = ftstack_pop();
 
-  /* SG Commented next two lines */
-  // for (unsigned int index = 0; index < 4096; ++index) {
-    
-  //   if (__sync_bool_compare_and_swap (&(newThread->used), 0, 1)) {
       /*
-       * Remember which thread is the one we've grabbed.
+       * Find the next free thread.
        */
-       /* SG commented next line */
       struct SVAThread *newThread = ftstack_pop();
-      // if(nThread == NULL){
-      //   panic ("inside the if\n");
-      //   return 0;
-      // }
-
       /*
        * Do some basic initialization of the thread.
        */
@@ -249,11 +238,7 @@ findNextFreeThread (void) {
         newThread->rid = randomNumber();
       }
       return newThread;
-      /* SG commented next two lines */
-  //   }
-  // }
-
-    /* SG commented next two lines */
+      
   panic ("SVA: findNextFreeThread: Exhausted SVA Threads!\n");
   return 0;
 }
