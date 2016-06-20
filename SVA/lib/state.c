@@ -66,11 +66,10 @@ save_fp (sva_fp_state_t * buffer) {
 
 sva_fp_state_t *
 saveICFPState (void) {
-  /*SG start */
-  /* Return without saving */
+  /* Return without saving the floating point state */
+  /* Mark that the system is executing a system call */
   getCPUState()->is_running_syscall = 1;
   return 0;
-  /*SG end */
 
   /* Get the current SVA thread */
   struct SVAThread * thread = getCPUState()->currentThread;
@@ -87,11 +86,10 @@ saveICFPState (void) {
 
 void
 loadICFPState (void) {
-  /* SG start */
-  /* Return without restoring */
+  /* Return without restoring the floating point state */
+  /* Mark that we finished executing a system call */
   getCPUState()->is_running_syscall = 0;
   return;
-  /* SG end */
 
   /* Get the current SVA thread */
   struct SVAThread * thread = getCPUState()->currentThread;
@@ -528,10 +526,8 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
   /*
    * Save the floating point state.
    */
-  /* SG start */
-  /* I commented the following line */
+  /* I commented the following line. No need to do this after the floating point optimization */
   //save_fp (&(old->fpstate));
-  /* SG end */
 
   /*
    * Save the current integer state.  Note that returning from sva_integer()
@@ -661,9 +657,8 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
     /*
      * Load the floating point state.
      */
-    /* SG start */
-    /* I commented the following line */
-   // load_fp (&(new->fpstate));
+    /* No need to do this after the floating point optimization. */
+    // load_fp (&(new->fpstate));
 
     /*
      * Load the rest of the integer state.
@@ -1021,10 +1016,8 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
    * Clear out saved FP state.
    */
   threadp->ICFPIndex = 1;
-  /* SG start */
-  /* I commented the following line */
+  /* Commented the following to speed up. Part of the floating point optimization. */
   //bzero (threadp->ICFP, sizeof (sva_fp_state_t));
-  /* SG end */
 
   /*
    * Clear out any function call targets.
@@ -1247,12 +1240,11 @@ sva_init_stack (unsigned char * start_stackp,
   /*
    * Copy over the last saved interrupted FP state.
    */
-  /* SG start */
-  /* I commented the following lines */
- // if (oldThread->ICFPIndex) {
- //   *(newThread->ICFP) = *(oldThread->ICFP + oldThread->ICFPIndex - 1);
- //   newThread->ICFPIndex = 1;
- // }
+   /* No need to do the following after the floating point optimization.*/
+   // if (oldThread->ICFPIndex) {
+   //   *(newThread->ICFP) = *(oldThread->ICFP + oldThread->ICFPIndex - 1);
+   //   newThread->ICFPIndex = 1;
+   // }
 
   /*
    * Allocate the call frame for the call to the system call.

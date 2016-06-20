@@ -296,13 +296,11 @@ struct CPUState {
   /* Flags whether the floating point unit has been used */
   unsigned char fp_used;
 
-  /* SG start */
   /* Pointer to the thread that was the last one to use the Floating Point Unit */
   struct SVAThread * prevFPThread;  
 
+  /* "Boolean" variable that shows whether SVA is executing a system call or not */
   unsigned short is_running_syscall;
-
-  /* SG end */
 
 };
 

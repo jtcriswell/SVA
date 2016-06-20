@@ -92,7 +92,6 @@
 extern int printf(const char *, ...);
 extern void panic(const char *, ...);
 
-/* SG start */
 /* 
  * Function: load_fp()
  *
@@ -124,9 +123,6 @@ load_fp (sva_fp_state_t * buffer) {
    __asm__ __volatile__ ("fxsave %0" : "=m" (buffer->words) :: "memory");
    buffer->present = 1;
  }
-
-/* SG end */
-
 
 
 
@@ -283,31 +279,35 @@ fptrap (void) {
   const unsigned int ts = 0x00000008;
   unsigned int cr0;
 
-  /* SG start */
+  /* This is the implementation of saving the floating point state lazily.
+     Since we're in an fptrap, we need to save the floating point state of the 
+     thread that was the last one to use the floating point unit.
+  */
   struct SVAThread * previousFPThread = getCPUState()->prevFPThread;
   if(previousFPThread){
   	sva_integer_state_t * prev = &(previousFPThread->integerState);
-	save_fp (&(prev->fpstate));
+	  save_fp (&(prev->fpstate));
   }
 
   if(getCPUState()->is_running_syscall)
   {
 	  panic ("SVA: fptrap while running a system call!");
   }
-  /* SG end */
+  
 
   /*
    * Flag that the floating point unit has now been used.
    */
   getCPUState()->fp_used = 1;
 
-  /* SG start */
-  /* Get a pointer to the saved state (the ID is the pointer) */
+
+  /* Load the floating point state for the current thread and mark this thread as 
+     the last one to use the floating point unit.
+  */
   struct SVAThread * runningThread = getCPUState()->currentThread;
   sva_integer_state_t * intstate = &(runningThread->integerState);
   load_fp (&(intstate->fpstate));
   getCPUState()->prevFPThread = runningThread;
-  /* SG end */
 
   /*
    * Turn off the TS bit in CR0; this allows the FPU to proceed with floating

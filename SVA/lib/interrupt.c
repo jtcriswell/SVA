@@ -299,10 +299,11 @@ sva_getCPUState (tss_t * tssp) {
     getCPUState()->fp_used = 0;
 
 
-    /* SG start */
+    /* Flag that the system is not executing a system call */
     getCPUState()->is_running_syscall = 0;
+    /* No one has used the floating point unit yet */
     getCPUState()->prevFPThread = 0;
-    /* SG end */
+    
 
     /*
      * Initialize a dummy interrupt context so that it looks like we
