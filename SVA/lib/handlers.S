@@ -350,8 +350,8 @@ Trap:
    * performed without a subsequent sva_ipush_function).
    */
   movq $1, %rdi
-  cmpq $1, IC_VALID(%rsp)
-  jne invalidIC
+  testq $1, IC_VALID(%rsp)
+  je invalidIC
 
   /*
    * Pop off the most recent interrupt context.  This requires modifying
@@ -519,19 +519,17 @@ SVAsyscall:
 
   pushq $0
 
-  /* Flag the interrupt context as valid */
-  /* Syscall number of fork() is 2*/
-  
-  movq $1, IC_VALID(%rsp)
+  /*
+   * Mark the interrupt context as valid.  Additionally, set the fork bit
+   * if this is the fork() system call (the fork() system call will have
+   * the value 2 in %rax).
+   */
+  movq $1, %r12
+  movq $3, %r13
   cmpq $2, IC_RAX(%rsp)
-  je 1f
-  jmp 2f
+  cmoveq %r13, %r12
+  movq %r12, IC_VALID(%rsp)
 
-1:
-  movq $3, IC_VALID(%rsp)
-
-2:
-  
   /* Save FP state in the Interrupt Context */
   clts
   callq saveICFPState
@@ -638,27 +636,14 @@ sc_ret:
    * performed without a subsequent sva_ipush_function).
    */
   movq $0, %rdi
-  cmpq $1, IC_VALID(%rsp)
-  jne 3f
-  jmp 5f 
-
-3:
-  cmpq $3, IC_VALID(%rsp)
-  jne 4f
-  jmp 5f
-
-
-4:
-  cmpq $7, IC_VALID(%rsp)
-  jne invalidIC
-
+  testq $1, IC_VALID(%rsp)
+  je invalidIC
 
   /*
    * Pop off the most recent interrupt context.  This requires modifying
    * the newCurrentIC field of the CPUState as well as modifying the IST
    * in the TSS.
    */
-5:
   addq $IC_SIZE, CPU_NEWIC(%rbp)
   movq CPU_TSSP(%rbp), %rbx
   addq $IC_SIZE, TSS_IST3(%rbx)
