@@ -22,6 +22,9 @@ D: FreeBSD port to SVA, MMU code for x86-64
 N: Nicolas Geoffray
 D: MMU code for SVA-OS for x86
 
+N: Wolf Honore
+D: Fixed a bug in secmem.c
+
 N: Andrew Lenharth
 W: http://www.lenharth.org/~andrewl/
 D: Improvements and optimizations for original SVA prototype
