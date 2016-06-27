@@ -65,6 +65,11 @@ save_fp (sva_fp_state_t * buffer) {
 
 sva_fp_state_t *
 saveICFPState (void) {
+  /* Return without saving the floating point state */
+  /* Mark that the system is executing a system call */
+  getCPUState()->is_running_syscall = 1;
+  return 0;
+
   /* Get the current SVA thread */
   struct SVAThread * thread = getCPUState()->currentThread;
 
@@ -80,6 +85,11 @@ saveICFPState (void) {
 
 void
 loadICFPState (void) {
+  /* Return without restoring the floating point state */
+  /* Mark that we finished executing a system call */
+  getCPUState()->is_running_syscall = 0;
+  return;
+
   /* Get the current SVA thread */
   struct SVAThread * thread = getCPUState()->currentThread;
 
@@ -516,7 +526,8 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
   /*
    * Save the floating point state.
    */
-  save_fp (&(old->fpstate));
+  /* I commented the following line. No need to do this after the floating point optimization */
+  //save_fp (&(old->fpstate));
 
   /*
    * Save the current integer state.  Note that returning from sva_integer()
@@ -646,7 +657,8 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
     /*
      * Load the floating point state.
      */
-    load_fp (&(new->fpstate));
+    /* No need to do this after the floating point optimization. */
+    // load_fp (&(new->fpstate));
 
     /*
      * Load the rest of the integer state.
@@ -1007,7 +1019,8 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
    * Clear out saved FP state.
    */
   threadp->ICFPIndex = 1;
-  bzero (threadp->ICFP, sizeof (sva_fp_state_t));
+  /* Commented the following to speed up. Part of the floating point optimization. */
+  //bzero (threadp->ICFP, sizeof (sva_fp_state_t));
 
   /*
    * Clear out any function call targets.
@@ -1092,6 +1105,11 @@ sva_release_stack (uintptr_t id) {
    * Mark the thread as available for reuse.
    */
   newThread->used = 0;
+
+  /* Push the thread into the stack of free threads since it can be reused */
+  extern void ftstack_push(struct SVAThread *thread);
+  ftstack_push(newThread);
+
   return;
 }
 
@@ -1166,10 +1184,10 @@ sva_init_stack (unsigned char * start_stackp,
   /*
    * Verify that the function is a kernel function.
    */
-  uintptr_t f = (uintptr_t)(func);
-  if ((f <= SECMEMEND) || (*((unsigned int *)(f)) != CHECKLABEL)) {
-    panic ("sva_init_stack: Invalid function %p\n", func);
-  }
+//  uintptr_t f = (uintptr_t)(func);
+//  if ((f <= SECMEMEND) || (*((unsigned int *)(f)) != CHECKLABEL)) {
+//    panic ("sva_init_stack: Invalid function %p\n", func);
+//  }
 
   /* Pointer to the current CPU State */
   struct CPUState * cpup = getCPUState();
@@ -1224,10 +1242,11 @@ sva_init_stack (unsigned char * start_stackp,
   /*
    * Copy over the last saved interrupted FP state.
    */
-  if (oldThread->ICFPIndex) {
-    *(newThread->ICFP) = *(oldThread->ICFP + oldThread->ICFPIndex - 1);
-    newThread->ICFPIndex = 1;
-  }
+   /* No need to do the following after the floating point optimization.*/
+   // if (oldThread->ICFPIndex) {
+   //   *(newThread->ICFP) = *(oldThread->ICFP + oldThread->ICFPIndex - 1);
+   //   newThread->ICFPIndex = 1;
+   // }
 
   /*
    * Allocate the call frame for the call to the system call.
