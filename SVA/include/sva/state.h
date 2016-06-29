@@ -265,6 +265,9 @@ struct SVAThread {
   /* Flag whether the thread is in use */
   unsigned char used;
 
+  /* Flags whether the SVA State is the first thread for a CPU */
+  unsigned char isInitialForCPU;
+
   /* Copy of the thread's private key */
   sva_key_t ghostKey;
 

@@ -196,6 +196,7 @@ findNextFreeThread (void) {
     newThread->secmemSize = 0;
     newThread->numPushTargets = 0;
     newThread->secmemPML4e = 0;
+    newThread->isInitialForCPU = 0;
 
     /* 
      * This function currently sets the thread secret with a default
@@ -275,30 +276,23 @@ sva_getCPUState (tss_t * tssp) {
     struct CPUState * cpup = CPUState + index;
 
     /*
-     * Initialize the interrupt context link list pointer.
+     * The first thread to be allocated is the initial thread that starts
+     * SVA for this processor (CPU).  Create an initial thread for this CPU
+     * and mark it as an initial thread for this CPU.
      */
     cpup->currentThread = st = findNextFreeThread();
-
-    /*
-     * The first thread to be allocated is the initial thread that starts
-     * SVA.  Therefore, mark its interrupt contexts with the initial thread
-     * flag.
-     */
-    for (unsigned i = 0; i < maxIC; ++i) {
-      st->interruptContexts[i].valid = 0x00000004;
-    }
+    st->isInitialForCPU = 1;
 
     /*
      * Flag that the floating point unit has not been used.
      */
     getCPUState()->fp_used = 0;
 
-
     /* Flag that the system is not executing a system call */
     getCPUState()->is_running_syscall = 0;
+
     /* No one has used the floating point unit yet */
     getCPUState()->prevFPThread = 0;
-    
 
     /*
      * Initialize a dummy interrupt context so that it looks like we

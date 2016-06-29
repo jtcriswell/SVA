@@ -1304,10 +1304,15 @@ sva_init_stack (unsigned char * start_stackp,
   icontextp->rax = 0;
 
   /*
-   * If initial thread bit is set, we should always set its fork bit on,
-   * else if the fork bit is set, we mark the inpterrupt context valid bit.
+   * If the parent thread is an initial thread for this CPU, we should always
+   * set the fork bit on the child thread as the initial thread for the CPU is
+   * allowed to create child threads directly without calling fork().
+   *
+   * Otherwise, if this is a normal thread and it called fork() (i.e., the
+   * fork bit is set in the Interrupt Context), we disable the fork bit but
+   * mark the Interrupt Context as valid.
    */
-  if ((icontextp->valid & 0x00000004) == 0x00000004) {
+  if (oldThread->isInitialForCPU) {
     /* initial thread bit is set, I should mark the fork bit */
     icontextp->valid |= 0x00000002;
     icontextp->valid |= 0x00000001;
