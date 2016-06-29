@@ -279,21 +279,20 @@ fptrap (void) {
   const unsigned int ts = 0x00000008;
   unsigned int cr0;
 
-  /* This is the implementation of saving the floating point state lazily.
-     Since we're in an fptrap, we need to save the floating point state of the 
-     thread that was the last one to use the floating point unit.
-  */
+  /*
+   * This is the implementation of saving the floating point state lazily.
+   * Since we're in an fptrap, we need to save the floating point state of the 
+   * thread that was the last one to use the floating point unit.
+   */
   struct SVAThread * previousFPThread = getCPUState()->prevFPThread;
-  if(previousFPThread){
-  	sva_integer_state_t * prev = &(previousFPThread->integerState);
-	  save_fp (&(prev->fpstate));
+  if (previousFPThread) {
+    sva_integer_state_t * prev = &(previousFPThread->integerState);
+    save_fp (&(prev->fpstate));
   }
 
-  if(getCPUState()->is_running_syscall)
-  {
-	  panic ("SVA: fptrap while running a system call!");
+  if (getCPUState()->is_running_syscall) {
+    panic ("SVA: fptrap while running a system call!");
   }
-  
 
   /*
    * Flag that the floating point unit has now been used.
@@ -301,9 +300,10 @@ fptrap (void) {
   getCPUState()->fp_used = 1;
 
 
-  /* Load the floating point state for the current thread and mark this thread as 
-     the last one to use the floating point unit.
-  */
+  /*
+   * Load the floating point state for the current thread and mark this thread
+   * as the last one to use the floating point unit.
+   */
   struct SVAThread * runningThread = getCPUState()->currentThread;
   sva_integer_state_t * intstate = &(runningThread->integerState);
   load_fp (&(intstate->fpstate));
