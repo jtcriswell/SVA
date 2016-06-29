@@ -1316,22 +1316,31 @@ sva_init_stack (unsigned char * start_stackp,
   icontextp->rax = 0;
 
   /*
-   * If the parent thread is an initial thread for this CPU, we should always
-   * set the fork bit on the child thread as the initial thread for the CPU is
-   * allowed to create child threads directly without calling fork().
+   * If the parent thread is an initial thread for this CPU, we always
+   * permit it to create a new child process.  Otherwise, the existing
+   * thread's Interrupt Context must have the fork bit set to create a new
+   * child thread.
    *
-   * Otherwise, if this is a normal thread and it called fork() (i.e., the
-   * fork bit is set in the Interrupt Context), we disable the fork bit but
-   * mark the Interrupt Context as valid.
+   * When creating the child thread, disable its fork bit so that the child
+   * cannot be duplicated.  Disable the fork bit in the parent thread's
+   * Interrupt Context as well so that it cannot be duplicated multiple times
+   * for a single call to fork().
    */
-  if (oldThread->isInitialForCPU) {
-    /* initial thread bit is set, I should mark the fork bit */
-    icontextp->valid |= (IC_is_valid | IC_can_fork);
-  } else if ((icontextp->valid & IC_can_fork) == IC_can_fork) {
-    /* fork bit is set */
+  if ((oldThread->isInitialForCPU) ||
+      (cpup->newCurrentIC->valid & IC_can_fork)) {
+    /* Mark the new Interrupt Context as valid */
     icontextp->valid |= IC_is_valid; 
+
+    /* Disable the fork bit in both the old and new Interrupt Contexts. */
+    icontextp->valid &= (~(IC_can_fork));
+    cpup->newCurrentIC->valid &= (~(IC_can_fork));
   } else {
-    printf("Catch you! Fork bit is not set, SVA can not set the icontext valid bit on!\n");
+    /*
+     * Print an error and then permit the child process to be created anyway.
+     * This makes the error more of a warning since we allow the system to
+     * continue executing anyway.
+     */
+    printf ("SVA: Error!  Kernel performing unauthorized fork()!\n");
     icontextp->valid |= IC_is_valid;
   }
 
