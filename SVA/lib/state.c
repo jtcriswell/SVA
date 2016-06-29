@@ -266,7 +266,7 @@ sva_ipush_function5 (void (*newf)(uintptr_t, uintptr_t, uintptr_t),
    * Mark the interrupt context as valid; if an sva_ialloca previously
    * invalidated it, an sva_ipush_function() makes it valid again.
    */
-  ep->valid = (ep->valid) | (1u);
+  ep->valid |= (IC_is_valid);
 
   /*
    * Re-enable interrupts.
@@ -746,7 +746,7 @@ sva_ialloca (uintptr_t size, uintptr_t alignment, void * initp) {
      *
      * We do this by turning off the LSB of the valid field. 
      */
-    icontextp->valid = (icontextp->valid) & (~1u);
+    icontextp->valid &= (~(IC_is_valid));
 
     /*
      * Perform the alloca.
@@ -1314,14 +1314,13 @@ sva_init_stack (unsigned char * start_stackp,
    */
   if (oldThread->isInitialForCPU) {
     /* initial thread bit is set, I should mark the fork bit */
-    icontextp->valid |= 0x00000002;
-    icontextp->valid |= 0x00000001;
-  } else if ((icontextp->valid & 0x00000002) == 0x00000002) {
+    icontextp->valid |= (IC_is_valid | IC_can_fork);
+  } else if ((icontextp->valid & IC_can_fork) == IC_can_fork) {
     /* fork bit is set */
-    icontextp->valid |= 0x00000001; 
+    icontextp->valid |= IC_is_valid; 
   } else {
     printf("Catch you! Fork bit is not set, SVA can not set the icontext valid bit on!\n");
-    icontextp->valid |= 0x00000001;
+    icontextp->valid |= IC_is_valid;
   }
 
   /*

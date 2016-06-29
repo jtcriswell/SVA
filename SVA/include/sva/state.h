@@ -64,6 +64,10 @@ struct invoke_frame {
   uintptr_t cpinvoke;
 };
 
+/* Constants for the different Interrupt Context flags in the valid field */
+static const unsigned long IC_is_valid = 0x00000001u;
+static const unsigned long IC_can_fork = 0x00000002u;
+
 /*
  * Structure: icontext_t
  *
