@@ -484,27 +484,6 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
   old->ifp       = cpup->gip;
 
   /*
-   * Turn off access to the Floating Point Unit (FPU).  We will leave this
-   * state on the CPU but force a trap if another process attempts to use it.
-   */
-#if 0
-  save_fp (&(old->fpstate));
-#else
-  const unsigned int mp = 0x00000002u;
-  const unsigned int em = 0x00000004u;
-  const unsigned int ts = 0x00000008u;
-  unsigned int cr0;
-  __asm__ __volatile__ ("mov %%cr0, %0\n"
-                        "and  %1, %0\n"
-                        "or   %2, %0\n"
-                        "mov %0, %%cr0\n"
-                        : "=&r" (cr0)
-                        : "r" (~(em)),
-                          "r" (mp | ts));
-
-#endif
-
-  /*
    * Save the current integer state.  Note that returning from sva_integer()
    * with a non-zero value means that we've just woken up from a context
    * switch.
@@ -567,6 +546,28 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
      */
     flushSecureMemory (oldThread);
   }
+
+  /*
+   * Turn off access to the Floating Point Unit (FPU).  We will leave this
+   * state on the CPU but force a trap if another process attempts to use it.
+   *
+   * We place this code here since, when Virtual Ghost is enabled, the call to
+   * unprotect_paging() and protect_paging() will flush the pipeline with a
+   * write to CR0.  This code may also cause a pipeline flush, so we place it
+   * close to the other pipeline flushing code to reduce the amount of code
+   * executed between flushes. 
+   */
+  const unsigned int mp = 0x00000002u;
+  const unsigned int em = 0x00000004u;
+  const unsigned int ts = 0x00000008u;
+  unsigned int cr0;
+  __asm__ __volatile__ ("mov %%cr0, %0\n"
+                        "and  %1, %0\n"
+                        "or   %2, %0\n"
+                        "mov %0, %%cr0\n"
+                        : "=&r" (cr0)
+                        : "r" (~(em)),
+                          "r" (mp | ts));
 
   /*
    * Mark the saved integer state as valid.
