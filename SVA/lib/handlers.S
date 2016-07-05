@@ -220,7 +220,9 @@ Trap:
   movq $1, IC_VALID(%rsp)
 
   /* Save FP state in the Interrupt Context */
+#if 0
   clts
+#endif
   callq saveICFPState
   RETTARGET
   movq %rax, IC_FPP(%rsp)
@@ -280,6 +282,11 @@ Trap:
   /*
    * Zero out live registers that could be spilled to the stack.  Without
    * memory safety, we can't guarantee that they're safe.
+   *
+   * We can leave the FP/SSE registers alone.  A read or write of those
+   * registers will cause a floating point trap.  The SVA FP trap handler
+   * will lazily save the floating point state and load the missing floating
+   * point state.
    */
 #ifdef VG
   xorq %r15, %r15
@@ -292,36 +299,6 @@ Trap:
   xorq %r8,  %r8
   xorq %rdx, %rdx
   xorq %rcx, %rcx
-
-  finit
-  /* Comment the following to avoid extra cost in saving the floating point state */
-/*
-  pxor %mm0,  %mm0
-  pxor %mm1,  %mm1
-  pxor %mm2,  %mm2
-  pxor %mm3,  %mm3
-  pxor %mm4,  %mm4
-  pxor %mm5,  %mm5
-  pxor %mm6,  %mm6
-  pxor %mm7,  %mm7
-
-  pxor %xmm0,  %xmm0
-  pxor %xmm1,  %xmm1
-  pxor %xmm2,  %xmm2
-  pxor %xmm3,  %xmm3
-  pxor %xmm4,  %xmm4
-  pxor %xmm5,  %xmm5
-  pxor %xmm6,  %xmm6
-  pxor %xmm7,  %xmm7
-  pxor %xmm8,  %xmm8
-  pxor %xmm9,  %xmm9
-  pxor %xmm10, %xmm10
-  pxor %xmm11, %xmm11
-  pxor %xmm12, %xmm12
-  pxor %xmm13, %xmm13
-  pxor %xmm14, %xmm14
-  pxor %xmm15, %xmm15
-*/
 #endif
 
   /*
@@ -534,7 +511,9 @@ SVAsyscall:
   movq %r12, IC_VALID(%rsp)
 
   /* Save FP state in the Interrupt Context */
+#if 0
   clts
+#endif
   callq saveICFPState
   RETTARGET
   movq %rax, IC_FPP(%rsp)
@@ -573,6 +552,11 @@ SVAsyscall:
   /*
    * Zero out live registers that could be spilled to the stack.  Without
    * memory safety, we can't guarantee that they're safe.
+   *
+   * We can leave the FP/SSE registers alone.  A read or write of those
+   * registers will cause a floating point trap.  The SVA FP trap handler
+   * will lazily save the floating point state and load the missing floating
+   * point state.
    */
 #ifdef VG
   xorq %r15, %r15
@@ -581,33 +565,6 @@ SVAsyscall:
   xorq %r12, %r12
   xorq %r11, %r11
   xorq %r10, %r10
-
-  finit
-  pxor %mm0,  %mm0
-  pxor %mm1,  %mm1
-  pxor %mm2,  %mm2
-  pxor %mm3,  %mm3
-  pxor %mm4,  %mm4
-  pxor %mm5,  %mm5
-  pxor %mm6,  %mm6
-  pxor %mm7,  %mm7
-
-  pxor %xmm0,  %xmm0
-  pxor %xmm1,  %xmm1
-  pxor %xmm2,  %xmm2
-  pxor %xmm3,  %xmm3
-  pxor %xmm4,  %xmm4
-  pxor %xmm5,  %xmm5
-  pxor %xmm6,  %xmm6
-  pxor %xmm7,  %xmm7
-  pxor %xmm8,  %xmm8
-  pxor %xmm9,  %xmm9
-  pxor %xmm10, %xmm10
-  pxor %xmm11, %xmm11
-  pxor %xmm12, %xmm12
-  pxor %xmm13, %xmm13
-  pxor %xmm14, %xmm14
-  pxor %xmm15, %xmm15
 #endif
 
   /*

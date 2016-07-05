@@ -276,23 +276,34 @@ register_x86_trap (int number, void *trap) {
  */
 static void
 fptrap (void) {
-  const unsigned int ts = 0x00000008;
-  unsigned int cr0;
+  /*
+   * Currently, we only support user-space applications using the floating
+   * point unit.  If the kernel uses the floating point unit, panic the
+   * system.
+   */
+  if (sva_was_privileged()) {
+    panic ("SVA: Kernel attempted to use Floating Point Unit!");
+  }
+
+  /*
+   * Get the thread that last used the FPU.  If there is no such thread
+   * (which happens if this is the first thread using the FPU) or if that
+   * thread is the current thread, then just enable the FPU.
+   */
+  struct SVAThread * runningThread    = getCPUState()->currentThread;
+  struct SVAThread * previousFPThread = getCPUState()->prevFPThread;
+  if ((!previousFPThread) || (previousFPThread == runningThread)) {
+    __asm__ __volatile__ ("clts");
+    return;
+  }
 
   /*
    * This is the implementation of saving the floating point state lazily.
    * Since we're in an fptrap, we need to save the floating point state of the 
    * thread that was the last one to use the floating point unit.
    */
-  struct SVAThread * previousFPThread = getCPUState()->prevFPThread;
-  if (previousFPThread) {
-    sva_integer_state_t * prev = &(previousFPThread->integerState);
-    save_fp (&(prev->fpstate));
-  }
-
-  if (getCPUState()->is_running_syscall) {
-    panic ("SVA: fptrap while running a system call!");
-  }
+  sva_integer_state_t * prev = &(previousFPThread->integerState);
+  save_fp (&(prev->fpstate));
 
   /*
    * Flag that the floating point unit has now been used.
@@ -304,7 +315,6 @@ fptrap (void) {
    * Load the floating point state for the current thread and mark this thread
    * as the last one to use the floating point unit.
    */
-  struct SVAThread * runningThread = getCPUState()->currentThread;
   sva_integer_state_t * intstate = &(runningThread->integerState);
   load_fp (&(intstate->fpstate));
   getCPUState()->prevFPThread = runningThread;
@@ -313,9 +323,7 @@ fptrap (void) {
    * Turn off the TS bit in CR0; this allows the FPU to proceed with floating
    * point operations.
    */
-  __asm__ __volatile__ ("movl %%cr0, %0\n"
-                        "andl  %1,  %0\n"
-                        "movl %0, %%cr0\n" : "=&r" (cr0) : "r" (~(ts)));
+  __asm__ __volatile__ ("clts");
   return;
 }
 
