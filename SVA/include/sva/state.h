@@ -300,11 +300,11 @@ struct CPUState {
   /* Processor's Global Invoke Pointer: points to the first invoke frame */
   struct invoke_frame * gip;
 
+  /* Pointer to thread that was the last one to use the Floating Point Unit */
+  struct SVAThread * prevFPThread;  
+
   /* Flags whether the floating point unit has been used */
   unsigned char fp_used;
-
-  /* Pointer to the thread that was the last one to use the Floating Point Unit */
-  struct SVAThread * prevFPThread;  
 };
 
 /*

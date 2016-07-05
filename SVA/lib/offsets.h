@@ -61,6 +61,7 @@
 #define CPU_TSSP   0x08
 #define CPU_NEWIC  0x10
 #define CPU_GIP    0x18
+#define CPU_FPUSED 0x28
 
 /* Offsets into the Task State Segment */
 #define TSS_RSP0 4

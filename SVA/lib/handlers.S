@@ -224,13 +224,17 @@ Trap:
    * kernel mode.  This requires disabling the EM bit and enabling the MP and
    * TS bits in CR0.
    *
-   * Record that no floating point state is saved (it is saved
-   * lazily)
+   * Record that no floating point state is saved (it is saved lazily).
    */
+  movq %gs:0x260, %rdi
+  testq $1, CPU_FPUSED(%rdi)
+  jne 1f
   movq %cr0, %rsi
   andl $0xfffffffb, %esi
   orq  $0x0a, %rsi
   movq %rsi, %cr0
+  movq $0, CPU_FPUSED(%rdi)
+1:
   movq $0, IC_FPP(%rsp)
 
   /*
@@ -515,13 +519,17 @@ SVAsyscall:
    * kernel mode.  This requires disabling the EM bit and enabling the MP and
    * TS bits in CR0.
    *
-   * Record that no floating point state is saved (it is saved
-   * lazily)
+   * Record that no floating point state is saved (it is saved lazily).
    */
+  movq %gs:0x260, %rdi
+  testq $1, CPU_FPUSED(%rdi)
+  jne 1f
   movq %cr0, %rsi
   andl $0xfffffffb, %esi
   orq  $0x0a, %rsi
   movq %rsi, %cr0
+  movq $0, CPU_FPUSED(%rdi)
+1:
   movq $0, IC_FPP(%rsp)
 
   /*
