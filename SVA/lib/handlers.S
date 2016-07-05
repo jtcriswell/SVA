@@ -219,7 +219,18 @@ Trap:
   /* Flag the interrupt context as valid */
   movq $1, IC_VALID(%rsp)
 
-  /* Record that no floating point state is saved (it is saved lazily) */
+  /*
+   * Configure the process to trigger a floating point fault while in
+   * kernel mode.  This requires disabling the EM bit and enabling the MP and
+   * TS bits in CR0.
+   *
+   * Record that no floating point state is saved (it is saved
+   * lazily)
+   */
+  movq %cr0, %rsi
+  andl $0xfffffffb, %esi
+  orq  $0x0a, %rsi
+  movq %rsi, %cr0
   movq $0, IC_FPP(%rsp)
 
   /*
@@ -499,7 +510,18 @@ SVAsyscall:
   cmoveq %r13, %r12
   movq %r12, IC_VALID(%rsp)
 
-  /* Record that no floating point state is saved (it is saved lazily) */
+  /*
+   * Configure the process to trigger a floating point fault while in
+   * kernel mode.  This requires disabling the EM bit and enabling the MP and
+   * TS bits in CR0.
+   *
+   * Record that no floating point state is saved (it is saved
+   * lazily)
+   */
+  movq %cr0, %rsi
+  andl $0xfffffffb, %esi
+  orq  $0x0a, %rsi
+  movq %rsi, %cr0
   movq $0, IC_FPP(%rsp)
 
   /*
