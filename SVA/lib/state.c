@@ -63,46 +63,6 @@ save_fp (sva_fp_state_t * buffer) {
  * Externally Visibile Utility Functions
  ****************************************************************************/
 
-sva_fp_state_t *
-saveICFPState (void) {
-  /* Return without saving the floating point state */
-  /* Mark that the system is executing a system call */
-  getCPUState()->is_running_syscall = 1;
-  return 0;
-
-  /* Get the current SVA thread */
-  struct SVAThread * thread = getCPUState()->currentThread;
-
-  /* Find the buffer into which we want to save state. */
-  sva_fp_state_t * fp = thread->ICFP + (thread->ICFPIndex++);
-
-  /*
-   * Save the FP state.
-   */
-  save_fp (fp);
-  return fp;
-}
-
-void
-loadICFPState (void) {
-  /* Return without restoring the floating point state */
-  /* Mark that we finished executing a system call */
-  getCPUState()->is_running_syscall = 0;
-  return;
-
-  /* Get the current SVA thread */
-  struct SVAThread * thread = getCPUState()->currentThread;
-
-  /* Find the buffer into which we want to save state. */
-  sva_fp_state_t * fp = thread->ICFP + (--(thread->ICFPIndex));
-
-  /*
-   * Save the FP state.
-   */
-  load_fp (fp);
-  return;
-}
-
 void
 installNewPushTarget (void) {
   /* Get the current SVA thread */
