@@ -10,7 +10,9 @@ the expression of operating system code, SVA can reliably control operating
 system kernel behavior through compiler instrumentation.
 
 This release is the second version of SVA that works on 64-bit x86 systems and
-supports FreeBSD 9.0.
+supports FreeBSD 9.0.  It contains the source code for KCoFI (for enforcing
+control-flow integrity) and Virtual Ghost (which protects applications from
+a compromised operating system kernel).
 
 License:
 ========
