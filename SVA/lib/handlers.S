@@ -505,12 +505,25 @@ SVAsyscall:
 
   /*
    * Mark the interrupt context as valid.  Additionally, set the fork bit
-   * if this is the fork() system call (the fork() system call will have
-   * the value 2 in %rax).
+   * if this is the fork(), vfork(), rfork(), or pdfork() system calls.  The
+   * system call number will be in %rax and can have the following values
+   * (you can find these in syscalls.master) within the FreeBSD kernel source
+   * code):
+   *
+   *   2 - fork()
+   *  66 - vfork()
+   * 251 - rfork()
+   * 518 - pdfork()
    */
   movq $1, %r12
   movq $3, %r13
   cmpq $2, IC_RAX(%rsp)
+  cmoveq %r13, %r12
+  cmpq $66, IC_RAX(%rsp)
+  cmoveq %r13, %r12
+  cmpq $251, IC_RAX(%rsp)
+  cmoveq %r13, %r12
+  cmpq $518, IC_RAX(%rsp)
   cmoveq %r13, %r12
   movq %r12, IC_VALID(%rsp)
 
