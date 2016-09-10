@@ -426,14 +426,14 @@ SVAsyscall:
   /*
    * Save the stack pointer (%rsp) for the application.
    */
-  pushq %rsp
+  movq %rsp, %gs:0x268
 
   /*
    * Save a few registers so that we have some with which to work.
    */
-  pushq %rbp
-  pushq %rdi
-  pushq %rsi
+  movq %rbp, %gs:0x270
+  movq %rdi, %gs:0x278
+  movq %rsi, %gs:0x280
 
   /*
    * Save the current stack pointer into a different register.  We'll use it
@@ -456,7 +456,7 @@ SVAsyscall:
   pushq $0
 
   /* Push the user-space stack pointer (%rsp) */
-  pushq 0x18(%rsi)
+  pushq %gs:0x268
 
   /* Push the user-space status flags */
   pushq %r11
@@ -476,7 +476,7 @@ SVAsyscall:
   /*
    * Save a copy of the interrupt context into SVA memory.
    */
-  pushq 0x10(%rsi)
+  pushq %gs:0x270
   pushq %r15
   pushq %r14
   pushq %r13
@@ -491,8 +491,8 @@ SVAsyscall:
   pushq %rbx
   pushq %rax
 
-  pushq 0x00(%rsi)
-  pushq 0x08(%rsi)
+  pushq %gs:0x280
+  pushq %gs:0x278
 
   movw %ds, %ax
   movw %es, %bx
