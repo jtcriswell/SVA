@@ -424,22 +424,10 @@ SVAsyscall:
   swapgs
 
   /*
-   * Save the stack pointer (%rsp) for the application.
+   * Save the stack pointer (%rsp) and frame pointer (%rbp) of the application.
    */
   movq %rsp, %gs:0x268
-
-  /*
-   * Save a few registers so that we have some with which to work.
-   */
   movq %rbp, %gs:0x270
-  movq %rdi, %gs:0x278
-  movq %rsi, %gs:0x280
-
-  /*
-   * Save the current stack pointer into a different register.  We'll use it
-   * to copy values from the user-space stack into the Interrupt Context.
-   */
-  movq %rsp, %rsi
 
   /*
    * Get the location of the Interrupt Context within the current thread and
@@ -450,9 +438,13 @@ SVAsyscall:
   movq TSS_IST3(%rbp), %rsp
   addq $0x10, %rsp
 
-  /* Push two dummy values and a dummy stack segment */
+  /* Initialize the floating point state pointer to NULL */
   pushq $0
-  pushq $0
+
+  /* Mark the Interrupt Context as valid */
+  pushq $1
+
+  /* Set the stack segment register to zero */
   pushq $0
 
   /* Push the user-space stack pointer (%rsp) */
@@ -491,8 +483,8 @@ SVAsyscall:
   pushq %rbx
   pushq %rax
 
-  pushq %gs:0x280
-  pushq %gs:0x278
+  pushq %rsi
+  pushq %rdi
 
   movw %ds, %ax
   movw %es, %bx
@@ -501,6 +493,7 @@ SVAsyscall:
   pushw %gs
   pushw %fs
 
+  /* Push a NULL invoke pointer into the Interrupt Context */
   pushq $0
 
   /*
