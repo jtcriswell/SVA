@@ -133,7 +133,6 @@ static void fptrap (void);
 static void init_debug (void);
 #endif
 extern void init_mmu (void);
-void init_fpu ();
 static void init_dispatcher ();
 
 /* Default LLVA interrupt, exception, and system call handlers */
@@ -472,8 +471,8 @@ init_mmu (void)
  * Description:
  *  Initialize various things that needs to be initialized for the FPU.
  */
-void
-init_fpu () {
+static void
+init_fpu (void) {
   const unsigned int mp = 0x00000002u;
   const unsigned int em = 0x00000004u;
   const unsigned int ts = 0x00000008u;
