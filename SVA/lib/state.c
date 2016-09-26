@@ -557,10 +557,10 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
    * close to the other pipeline flushing code to reduce the amount of code
    * executed between flushes. 
    */
-  const unsigned int mp = 0x00000002u;
-  const unsigned int em = 0x00000004u;
-  const unsigned int ts = 0x00000008u;
-  unsigned int cr0;
+  const unsigned long mp = 0x00000002u;
+  const unsigned long em = 0x00000004u;
+  const unsigned long ts = 0x00000008u;
+  unsigned long cr0;
   __asm__ __volatile__ ("mov %%cr0, %0\n"
                         "and  %1, %0\n"
                         "or   %2, %0\n"

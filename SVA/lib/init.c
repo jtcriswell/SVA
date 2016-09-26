@@ -473,10 +473,10 @@ init_mmu (void)
  */
 static void
 init_fpu (void) {
-  const unsigned int mp = 0x00000002u;
-  const unsigned int em = 0x00000004u;
-  const unsigned int ts = 0x00000008u;
-  unsigned int cr0;
+  const uintptr_t mp = 0x00000002u;
+  const uintptr_t em = 0x00000004u;
+  const uintptr_t ts = 0x00000008u;
+  uintptr_t cr0;
 
   /*
    * Configure the processor so that the first use of the FPU generates an
