@@ -1349,12 +1349,6 @@ sva_mm_load_pgtable (void * pg) {
     panic ("SVA: Loading non-L4 page into CR3: %lx %x\n", pg, getPageDescPtr (pg)->type);
   }
 
-  /* 
-   * Unset page protection so that we can write to cr3 and can write into
-   * the top-level page-table page if necessary.
-   */
-  unprotect_paging();
-
   /*
    * Load the new page table and enable paging in the CR0 register.
    */
@@ -1371,6 +1365,12 @@ sva_mm_load_pgtable (void * pg) {
    */
   struct SVAThread * threadp = getCPUState()->currentThread;
   if (vg && threadp->secmemSize) {
+    /* 
+     * Unset page protection so that we can write into the top-level page-table
+     * page if necessary.
+     */
+    unprotect_paging();
+
     /*
      * Get a pointer into the page tables for the secure memory region.
      */
@@ -1380,12 +1380,12 @@ sva_mm_load_pgtable (void * pg) {
      * Restore the PML4E entry for the secure memory region.
      */
     *secmemp = threadp->secmemPML4e;
-  }
 
-  /*
-   * Mark the page table pages as read-only again.
-   */
-  protect_paging();
+    /*
+     * Mark the page table pages as read-only again.
+     */
+    protect_paging();
+  }
 
   /* Restore interrupts */
   sva_exit_critical (rflags);
