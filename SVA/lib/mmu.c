@@ -1358,7 +1358,7 @@ sva_mm_load_pgtable (void * pg) {
                         "movl %0, %%cr0\n"
                         : "=r" (cr0)
           : "r" (pg) : "memory");
-    
+
   /*
    * Ensure that the secure memory region is still mapped within the current
    * set of page tables.
