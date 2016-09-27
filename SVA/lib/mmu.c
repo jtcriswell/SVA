@@ -1340,7 +1340,7 @@ sva_mm_load_pgtable (void * pg) {
   unsigned long rflags = sva_enter_critical();
 
   /* Control Register 0 Value (which is used to enable paging) */
-  unsigned int cr0;
+  unsigned long cr0;
 
   /*
    * Check that the new page table is an L4 page table page.
@@ -1352,12 +1352,13 @@ sva_mm_load_pgtable (void * pg) {
   /*
    * Load the new page table and enable paging in the CR0 register.
    */
-  __asm__ __volatile__ ("movq %1, %%cr3\n"
-                        "movl %%cr0, %0\n"
-                        "orl  $0x80000000, %0\n"
-                        "movl %0, %%cr0\n"
-                        : "=r" (cr0)
-          : "r" (pg) : "memory");
+  __asm__ __volatile__ ("movq %0, %%cr3\n"
+                        "movq %%cr0, %%rax\n"
+                        "orl  $0x80000000, %%eax\n"
+                        "movq %%rax, %%cr0\n"
+                        :
+                        : "r" (pg)
+                        : "%rax", "memory");
 
   /*
    * Ensure that the secure memory region is still mapped within the current
