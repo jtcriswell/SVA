@@ -105,10 +105,23 @@ addLabelInstruction (MachineBasicBlock & MBB,
   BuildMI(MBB,MI,dl,TII->get(X86::XCHG32ar)).addReg(X86::EAX);
 #endif
 
+  //
+  // Build the following NOP sequence:
+  //
+  //  movq %rcx, %rcx
+  //  movq %rdx, %rdx
+  //  nop (opcode 0x90)
+  //  nop (opcode 0x90)
+  //
+  // Using the X86::NOOP instruction ensures that we generate the same NOP
+  // opcode sequence regardless of whether we are using the internal LLVM
+  // assembler or an external assembler like the GNU assembler.
+  //
+  //
   BuildMI(MBB,MI,dl,TII->get(X86::MOV64rr), X86::RCX).addReg(X86::RCX);
   BuildMI(MBB,MI,dl,TII->get(X86::MOV64rr), X86::RDX).addReg(X86::RDX);
-  BuildMI(MBB,MI,dl,TII->get(X86::XCHG32ar)).addReg(X86::EAX);
-  BuildMI(MBB,MI,dl,TII->get(X86::XCHG32ar)).addReg(X86::EAX);
+  BuildMI(MBB,MI,dl,TII->get(X86::NOOP));
+  BuildMI(MBB,MI,dl,TII->get(X86::NOOP));
   return;
 }
 
