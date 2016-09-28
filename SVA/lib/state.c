@@ -23,41 +23,6 @@
 #include <sva/mmu.h>
 #include "sva/mmu_intrinsics.h"
 #include <sva/x86.h>
-/*****************************************************************************
- * Internal Utility Functions
- ****************************************************************************/
-
-/*
- * Function: load_fp()
- *
- * Description:
- *  This function loads floating point state back on to the processor.
- */
-static inline void
-load_fp (sva_fp_state_t * buffer) {
-  /*
-   * Save the state of the floating point unit.
-   */
-  if (buffer->present)
-    __asm__ __volatile__ ("fxrstor %0" : "=m" (buffer->words));
-  return;
-}
-
-/*
- * Function: save_fp()
- *
- * Description:
- *  Save the processor's current floating point state into the specified
- *  buffer.
- *
- * Inputs:
- *  buffer - A pointer to the buffer in which to save the data.
- */
-static inline void
-save_fp (sva_fp_state_t * buffer) {
-  __asm__ __volatile__ ("fxsave %0" : "=m" (buffer->words) :: "memory");
-  buffer->present = 1;
-}
 
 /*****************************************************************************
  * Externally Visibile Utility Functions
