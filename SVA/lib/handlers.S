@@ -532,14 +532,14 @@ SVAsyscall:
    *
    * Record that no floating point state is saved (it is saved lazily).
    */
-  movq %gs:0x260, %rdi
-  testq $1, CPU_FPUSED(%rdi)
+  movq %gs:0x260, %rbp
+  testq $1, CPU_FPUSED(%rbp)
   jne 1f
   movq %cr0, %rsi
   andl $0xfffffffb, %esi
   orq  $0x0a, %rsi
   movq %rsi, %cr0
-  movq $0, CPU_FPUSED(%rdi)
+  movq $0, CPU_FPUSED(%rbp)
 1:
   movq $0, IC_FPP(%rsp)
 
@@ -547,7 +547,6 @@ SVAsyscall:
    * Save the address of the current interrupt context into this processor's
    * CPU state.
    */
-  movq %gs:0x260, %rbp
   movq %rsp, CPU_NEWIC(%rbp)
   
   /*
@@ -556,13 +555,15 @@ SVAsyscall:
    * context.
    */
 #if 1 
+  /*
+   * Adjust the stack pointer to point to the first byte of the current
+   * interrupt context before storing it into the TSS.  Restore it when
+   * we're done.
+   */
+  subq $0x10, %rsp
   movq CPU_TSSP(%rbp), %rbx
   movq %rsp, TSS_IST3(%rbx)
-
-  /*
-   * Adjust it to point to the first byte of the current interrupt context.
-   */
-  subq $0x10, TSS_IST3(%rbx)
+  addq $0x10, %rsp
 #else
   movq CPU_TSSP(%rbp), %rbx
   subq $IC_SIZE, TSS_IST3(%rbx)
@@ -590,6 +591,7 @@ SVAsyscall:
   xorq %r12, %r12
   xorq %r11, %r11
   xorq %r10, %r10
+  xorq %rdi, %rdi
 #endif
 
   /*
