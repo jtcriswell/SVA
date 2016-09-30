@@ -177,12 +177,10 @@ Trap:
   /*
    * Switch to the stack segment.
    */
-  subq $8, %rsp
-  movq %rax, (%rsp)
+  movq %rax, %gs:0x268
   movw $0x28, %ax
   movw %ax, %ss
-  movq (%rsp), %rax
-  addq $8, %rsp
+  movq %gs:0x268, %rax
 
   /*
    * Save a copy of the interrupt context into SVA memory.
@@ -226,16 +224,22 @@ Trap:
    *
    * Record that no floating point state is saved (it is saved lazily).
    */
-  movq %gs:0x260, %rdi
-  testq $1, CPU_FPUSED(%rdi)
+  movq %gs:0x260, %rbp
+  testq $1, CPU_FPUSED(%rbp)
   jne 1f
   movq %cr0, %rsi
   andl $0xfffffffb, %esi
   orq  $0x0a, %rsi
   movq %rsi, %cr0
-  movq $0, CPU_FPUSED(%rdi)
+  movq $0, CPU_FPUSED(%rbp)
 1:
   movq $0, IC_FPP(%rsp)
+
+  /*
+   * Save the address of the current interrupt context into this processor's
+   * CPU state.
+   */
+  movq %rsp, CPU_NEWIC(%rbp)
 
   /*
    * Move the trap number into the %rdi register.
@@ -247,13 +251,6 @@ Trap:
    * into the %rsi register to make it the second argument.
    */
   movq %cr2, %rsi
-
-  /*
-   * Save the address of the current interrupt context into this processor's
-   * CPU state.
-   */
-  movq %gs:0x260, %rbp
-  movq %rsp, CPU_NEWIC(%rbp)
 
 #if 0 
   /* Verify the Interrupt Context */
