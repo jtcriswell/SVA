@@ -281,9 +281,8 @@ Trap:
    *       layout changes, the offset used to look for the code segment will
    *       also need to change.
    */
-  movq CPU_TSSP(%rbp), %rbp
   cmpq $USERCS, 0xa0(%rsp)
-  cmoveq 4(%rbp), %rsp
+  cmoveq 4(%rbx), %rsp
   cmovneq IC_RSP(%rsp), %rsp
 
   /*
