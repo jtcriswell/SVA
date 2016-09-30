@@ -183,36 +183,45 @@ Trap:
   movq %gs:0x268, %rax
 
   /*
+   * Allocate space for the SVA Interrupt Context.  Note that the hardware
+   * has already created part of the Interrupt Context, so we only need to
+   * allocate space for the fields not saved by the hardware.
+   */
+  subq $IC_TRSIZE, %rsp
+
+  /*
    * Save a copy of the interrupt context into SVA memory.
    */
-  pushq %rbp
-  pushq %r15
-  pushq %r14
-  pushq %r13
-  pushq %r12
-  pushq %r11
-  pushq %r10
-  pushq %r9
-  pushq %r8
+  movq %rbp, IC_RBP(%rsp)
+  movq %r15, IC_R15(%rsp)
+  movq %r14, IC_R14(%rsp)
+  movq %r13, IC_R13(%rsp)
+  movq %r12, IC_R12(%rsp)
+  movq %r11, IC_R11(%rsp)
+  movq %r10, IC_R10(%rsp)
+  movq %r9,  IC_R9(%rsp)
+  movq %r8,  IC_R8(%rsp)
 
-  pushq %rdx
-  pushq %rcx
-  pushq %rbx
-  pushq %rax
+  movq %rdx, IC_RDX(%rsp)
+  movq %rcx, IC_RCX(%rsp)
+  movq %rbx, IC_RBX(%rsp)
+  movq %rax, IC_RAX(%rsp)
 
-  pushq %rsi
-  pushq %rdi
+  movq %rsi, IC_RSI(%rsp)
+  movq %rdi, IC_RDI(%rsp)
 
   /* Save the segment registers */
   movw %ds, %ax
-  pushw %ax
-  movw %es, %ax
-  pushw %ax
-  pushw %gs
-  pushw %fs
+  movw %es, %bx
+  movw %fs, %cx
+  movw %gs, %dx
+  movw %ax, IC_DS(%rsp)
+  movw %bx, IC_ES(%rsp)
+  movw %cx, IC_FS(%rsp)
+  movw %dx, IC_GS(%rsp)
 
   /* Push the invoke frame pointer */
-  pushq $0
+  movq $0, IC_INVOKEP(%rsp)
 
   /* Flag the interrupt context as valid */
   movq $1, IC_VALID(%rsp)

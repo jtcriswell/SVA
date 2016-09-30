@@ -54,6 +54,9 @@
 /* Size of the interrupt context */
 #define IC_SIZE    0xd0
 
+/* Size of the interrupt context allocated by trap dispatch software */
+#define IC_TRSIZE  0x88
+
 #define IS_HACKRIP 0xc8
 
 /* Offsets for various fields in the CPU State Structure */
