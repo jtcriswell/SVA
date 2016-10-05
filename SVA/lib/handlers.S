@@ -177,44 +177,51 @@ Trap:
   /*
    * Switch to the stack segment.
    */
-  subq $8, %rsp
-  movq %rax, (%rsp)
+  movq %rax, %gs:0x268
   movw $0x28, %ax
   movw %ax, %ss
-  movq (%rsp), %rax
-  addq $8, %rsp
+  movq %gs:0x268, %rax
+
+  /*
+   * Allocate space for the SVA Interrupt Context.  Note that the hardware
+   * has already created part of the Interrupt Context, so we only need to
+   * allocate space for the fields not saved by the hardware.
+   */
+  subq $IC_TRSIZE, %rsp
 
   /*
    * Save a copy of the interrupt context into SVA memory.
    */
-  pushq %rbp
-  pushq %r15
-  pushq %r14
-  pushq %r13
-  pushq %r12
-  pushq %r11
-  pushq %r10
-  pushq %r9
-  pushq %r8
+  movq %rbp, IC_RBP(%rsp)
+  movq %r15, IC_R15(%rsp)
+  movq %r14, IC_R14(%rsp)
+  movq %r13, IC_R13(%rsp)
+  movq %r12, IC_R12(%rsp)
+  movq %r11, IC_R11(%rsp)
+  movq %r10, IC_R10(%rsp)
+  movq %r9,  IC_R9(%rsp)
+  movq %r8,  IC_R8(%rsp)
 
-  pushq %rdx
-  pushq %rcx
-  pushq %rbx
-  pushq %rax
+  movq %rdx, IC_RDX(%rsp)
+  movq %rcx, IC_RCX(%rsp)
+  movq %rbx, IC_RBX(%rsp)
+  movq %rax, IC_RAX(%rsp)
 
-  pushq %rsi
-  pushq %rdi
+  movq %rsi, IC_RSI(%rsp)
+  movq %rdi, IC_RDI(%rsp)
 
   /* Save the segment registers */
   movw %ds, %ax
-  pushw %ax
-  movw %es, %ax
-  pushw %ax
-  pushw %gs
-  pushw %fs
+  movw %es, %bx
+  movw %fs, %cx
+  movw %gs, %dx
+  movw %ax, IC_DS(%rsp)
+  movw %bx, IC_ES(%rsp)
+  movw %cx, IC_FS(%rsp)
+  movw %dx, IC_GS(%rsp)
 
   /* Push the invoke frame pointer */
-  pushq $0
+  movq $0, IC_INVOKEP(%rsp)
 
   /* Flag the interrupt context as valid */
   movq $1, IC_VALID(%rsp)
@@ -226,16 +233,22 @@ Trap:
    *
    * Record that no floating point state is saved (it is saved lazily).
    */
-  movq %gs:0x260, %rdi
-  testq $1, CPU_FPUSED(%rdi)
+  movq %gs:0x260, %rbp
+  testq $1, CPU_FPUSED(%rbp)
   jne 1f
   movq %cr0, %rsi
   andl $0xfffffffb, %esi
   orq  $0x0a, %rsi
   movq %rsi, %cr0
-  movq $0, CPU_FPUSED(%rdi)
+  movq $0, CPU_FPUSED(%rbp)
 1:
   movq $0, IC_FPP(%rsp)
+
+  /*
+   * Save the address of the current interrupt context into this processor's
+   * CPU state.
+   */
+  movq %rsp, CPU_NEWIC(%rbp)
 
   /*
    * Move the trap number into the %rdi register.
@@ -247,13 +260,6 @@ Trap:
    * into the %rsi register to make it the second argument.
    */
   movq %cr2, %rsi
-
-  /*
-   * Save the address of the current interrupt context into this processor's
-   * CPU state.
-   */
-  movq %gs:0x260, %rbp
-  movq %rsp, CPU_NEWIC(%rbp)
 
 #if 0 
   /* Verify the Interrupt Context */
@@ -284,9 +290,8 @@ Trap:
    *       layout changes, the offset used to look for the code segment will
    *       also need to change.
    */
-  movq CPU_TSSP(%rbp), %rbp
   cmpq $USERCS, 0xa0(%rsp)
-  cmoveq 4(%rbp), %rsp
+  cmoveq 4(%rbx), %rsp
   cmovneq IC_RSP(%rsp), %rsp
 
   /*
@@ -527,14 +532,14 @@ SVAsyscall:
    *
    * Record that no floating point state is saved (it is saved lazily).
    */
-  movq %gs:0x260, %rdi
-  testq $1, CPU_FPUSED(%rdi)
+  movq %gs:0x260, %rbp
+  testq $1, CPU_FPUSED(%rbp)
   jne 1f
   movq %cr0, %rsi
   andl $0xfffffffb, %esi
   orq  $0x0a, %rsi
   movq %rsi, %cr0
-  movq $0, CPU_FPUSED(%rdi)
+  movq $0, CPU_FPUSED(%rbp)
 1:
   movq $0, IC_FPP(%rsp)
 
@@ -542,7 +547,6 @@ SVAsyscall:
    * Save the address of the current interrupt context into this processor's
    * CPU state.
    */
-  movq %gs:0x260, %rbp
   movq %rsp, CPU_NEWIC(%rbp)
   
   /*
@@ -551,13 +555,15 @@ SVAsyscall:
    * context.
    */
 #if 1 
+  /*
+   * Adjust the stack pointer to point to the first byte of the current
+   * interrupt context before storing it into the TSS.  Restore it when
+   * we're done.
+   */
+  subq $0x10, %rsp
   movq CPU_TSSP(%rbp), %rbx
   movq %rsp, TSS_IST3(%rbx)
-
-  /*
-   * Adjust it to point to the first byte of the current interrupt context.
-   */
-  subq $0x10, TSS_IST3(%rbx)
+  addq $0x10, %rsp
 #else
   movq CPU_TSSP(%rbp), %rbx
   subq $IC_SIZE, TSS_IST3(%rbx)
@@ -585,6 +591,7 @@ SVAsyscall:
   xorq %r12, %r12
   xorq %r11, %r11
   xorq %r10, %r10
+  xorq %rdi, %rdi
 #endif
 
   /*
