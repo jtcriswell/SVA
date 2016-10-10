@@ -465,6 +465,83 @@ init_fpu (void) {
 }
 
 /*
+ * Function: init_mpx()
+ *
+ * Description:
+ *  This function initializes the Intel MPX bounds checking registers for use
+ *  with software fault isolation (SFI).
+ */
+static void
+init_mpx (void) {
+  struct bounds {
+    uintptr_t Base;
+    uintptr_t Size;
+  } kernelBounds = {0xffffff8000000000, ~(0x7fffffffff)};
+
+  /* Bits within control register 4 (CR4) */
+  static const uintptr_t oxsave = (1u << 18);
+
+  /* Bits to configure in the extended control register XCR0 */
+  static unsigned char bndreg = (1u << 3);
+  static unsigned char bndcsr = (1u << 4);
+  unsigned long cr4;
+  unsigned long cpuid;
+
+  /*
+   * Enable the OSXSAVE feature in CR4.  This is needed to enable MPX.
+   */
+  __asm__ __volatile__ ("movq %%cr4, %0\n"
+                        "orq %1, %0\n"
+                        "movq %0, %%cr4\n"
+                        : "=r" (cr4)
+                        : "i" (oxsave));
+
+  /*
+   *  Enable the XCR0.BNDREG and XCR0.BNDCSR bits in XCR0.
+   */
+#if 0
+  /* This works */
+  __asm__ __volatile__ ("xgetbv\n" : : "c" (1) : "%rax", "%rdx");
+#endif
+
+#if 0
+  /* This does not work */
+  __asm__ __volatile__ ("xgetbv\n"
+                        "xsetbv\n"
+                        :
+                        : "c" (1)
+                        : "%rax", "%rdx");
+#endif
+
+
+#if 0
+  /* This does not work */
+  __asm__ __volatile__ ("xgetbv\n"
+                        "orq %1, %%rax\n"
+                        "xsetbv\n"
+                        :
+                        : "c" (1), "i" (bndreg | bndcsr)
+                        : "%rax", "%rdx");
+#endif
+
+  /*
+   * Load bounds information into the first bounds register.
+   */
+#if 0
+  __asm__ __volatile__ ("bndmov %0, %%bnd0\n"
+                        :
+                        : "r" (&kernelBounds)
+                        : "memory");
+  /*
+   * Load bounds information into the first bounds register.
+   */
+  __asm__ __volatile__ ("bndmk (%rax,%rdx), %bnd0\n");
+#endif
+
+  return;
+}
+
+/*
  * Intrinsic: sva_init_primary()
  *
  * Description:
@@ -492,6 +569,7 @@ sva_init_primary () {
 
   init_mmu ();
   init_fpu ();
+  init_mpx ();
 #if 0
   llva_reset_counters();
   llva_reset_local_counters();
