@@ -484,6 +484,7 @@ init_mpx (void) {
   /* Bits to configure in the extended control register XCR0 */
   static unsigned char bndreg = (1u << 3);
   static unsigned char bndcsr = (1u << 4);
+  static unsigned char enableX87 = (1u << 0);
   unsigned long cr4;
   unsigned long cpuid;
 
@@ -497,32 +498,15 @@ init_mpx (void) {
                         : "i" (oxsave));
 
   /*
-   *  Enable the XCR0.BNDREG and XCR0.BNDCSR bits in XCR0.
+   * Enable the XCR0.BNDREG and XCR0.BNDCSR bits in XCR0.  We must also
+   * enable XCR0.X87 to prevent a general protection fault.
    */
-#if 0
-  /* This works */
-  __asm__ __volatile__ ("xgetbv\n" : : "c" (1) : "%rax", "%rdx");
-#endif
-
-#if 0
-  /* This does not work */
-  __asm__ __volatile__ ("xgetbv\n"
-                        "xsetbv\n"
-                        :
-                        : "c" (1)
-                        : "%rax", "%rdx");
-#endif
-
-
-#if 0
-  /* This does not work */
   __asm__ __volatile__ ("xgetbv\n"
                         "orq %1, %%rax\n"
                         "xsetbv\n"
                         :
-                        : "c" (1), "i" (bndreg | bndcsr)
+                        : "c" (0), "i" (bndreg | bndcsr | enableX87)
                         : "%rax", "%rdx");
-#endif
 
   /*
    * Load bounds information into the first bounds register.
@@ -568,8 +552,8 @@ sva_init_primary () {
   init_dispatcher ();
 
   init_mmu ();
-  init_fpu ();
   init_mpx ();
+  init_fpu ();
 #if 0
   llva_reset_counters();
   llva_reset_local_counters();
