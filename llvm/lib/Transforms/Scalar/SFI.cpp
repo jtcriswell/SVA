@@ -17,6 +17,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Attributes.h"
 #include "llvm/Constants.h"
+#include "llvm/InlineAsm.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InstVisitor.h"
@@ -39,6 +40,12 @@ static llvm::cl::opt<bool>
 DoSVAChecks("enable-sfi-svachecks",
             llvm::cl::desc("Add special SFI checks for SVA Memory"),
             llvm::cl::init(false));
+
+/* Command line option for enabling SVA Memory checks */
+static llvm::cl::opt<bool>
+UseMPX("enable-mpx-sfi",
+            llvm::cl::desc("Use Intel MPX extensions for SFI"),
+            llvm::cl::init(true));
 
 #if 0
 /* Mask to determine if we use the original value or the masked value */
@@ -201,109 +208,177 @@ SFI::doInitialization (Module & M) {
 //
 Value *
 SFI::addBitMasking (Value * Pointer, Instruction & I) {
-  //
-  // Create the integer values used for bit-masking.
-  //
+  // Object which provides size of data types on target machine
   TargetData & TD = getAnalysis<TargetData>();
+
+  // Integer type that is the size of a pointer on the target machine
   Type * IntPtrTy = TD.getIntPtrType(I.getContext());
-  Value * CheckMask = ConstantInt::get (IntPtrTy, checkMask);
-  Value * SetMask   = ConstantInt::get (IntPtrTy, setMask);
-  Value * Zero      = ConstantInt::get (IntPtrTy, 0u);
-  Value * ThirtyTwo = ConstantInt::get (IntPtrTy, 32u);
-  Value * svaLow    = ConstantInt::get (IntPtrTy, 0xffffffff819ef000u);
-  Value * svaHigh   = ConstantInt::get (IntPtrTy, 0xffffffff89b96060u);
 
-  //
-  // Convert the pointer into an integer and then shift the higher order bits
-  // into the lower-half of the integer.  Bit-masking operations can use
-  // constant operands, reducing register pressure, if the operands are 32-bits
-  // or smaller.
-  //
-  Value * CastedPointer = new PtrToIntInst (Pointer, IntPtrTy, "ptr", &I);
-  Value * PtrHighBits = BinaryOperator::Create (Instruction::LShr,
-                                                CastedPointer,
-                                                ThirtyTwo,
-                                                "highbits",
-                                                &I);
-                                                    
-  //
-  // Create an instruction to mask off the proper bits to see if the pointer
-  // is within the secure memory range.
-  //
-  Value * CheckMasked = BinaryOperator::Create (Instruction::And,
-                                                PtrHighBits,
-                                                CheckMask,
-                                                "checkMask",
-                                                &I);
-
-  //
-  // Compare the masked pointer to the mask.  If they're the same, we need to
-  // set that bit.
-  //
-  Value * Cmp = new ICmpInst (&I,
-                              CmpInst::ICMP_EQ,
-                              CheckMasked,
-                              CheckMask,
-                              "cmp");
-
-  //
-  // Create the select instruction that, at run-time, will determine if we use
-  // the bit-masked pointer or the original pointer value.
-  //
-  Value * MaskValue = SelectInst::Create (Cmp, SetMask, Zero, "ptr", &I);
-
-  //
-  // Create instructions that create a version of the pointer with the proper
-  // bit set.
-  //
-  Value * Masked = BinaryOperator::Create (Instruction::Or,
-                                           CastedPointer,
-                                           MaskValue,
-                                           "setMask",
-                                           &I);
-
-  //
-  // Insert a special check to protect SVA memory.  Note that this is a hack
-  // that is used because the SVA memory isn't positioned after Ghost Memory
-  // like it should be as described in the Virtual Ghost and KCoFI papers.
-  //
-  Value * Final = Masked;
-  if (DoSVAChecks) {
+  if (UseMPX) {
     //
-    // Compare against the first and last SVA addresses.  
+    // Get a reference to the context to the LLVM module which this code is
+    // transforming.
     //
-    Value * svaLCmp = new ICmpInst (&I,
-                                CmpInst::ICMP_ULE,
-                                svaLow,
-                                Masked,
-                                "svacmp");
-    Value * svaHCmp = new ICmpInst (&I,
-                                CmpInst::ICMP_ULE,
-                                Masked,
-                                svaHigh,
-                                "svacmp");
-    Value * InSVA = BinaryOperator::Create (Instruction::And,
-                                             svaLCmp,
-                                             svaHCmp,
-                                             "inSVA",
+    LLVMContext & Context = I.getContext();
+
+    //
+    // Create a function type for the inline assembly instruction.
+    //
+    FunctionType * CheckType;
+    CheckType = FunctionType::get(Type::getVoidTy(Context),
+                                  Pointer->getType(),
+                                  false);
+
+    //
+    // Create an inline assembly "value" that will perform the bounds check.
+    //
+    Value * LowerBoundsCheck = InlineAsm::get (CheckType,
+                                               "bndcl $0, %bnd0\n",
+                                               "r,~{dirflag},~{fpsr},~{flags}",
+                                               true);
+
+    Value * UpperBoundsCheck = InlineAsm::get (CheckType,
+                                               "bndcu $0, %bnd0\n",
+                                               "r,~{dirflag},~{fpsr},~{flags}",
+                                               true);
+
+    //
+    // Create a value representing the last address to which the pointer can
+    // point given the data type size.  Since we may not run any optimizations
+    // after this point, specifically check if the pointer is only a byte long
+    // and omit the size calculution in that case.
+    //
+    Value * EndPtr = Pointer;
+    if (unsigned ptrsize = TD.getPointerSize() - 1) {
+      //
+      // Create an instruction to calculate the last address accessed by the
+      // pointer.
+      //
+      Constant * ptrSize = ConstantInt::get (IntPtrTy, ptrsize, false);
+      Value * IntPtr = new PtrToIntInst (Pointer,
+                                         IntPtrTy,
+                                         Pointer->getName(),
+                                         &I);
+      EndPtr = BinaryOperator::Create (Instruction::Add,
+                                       IntPtr,
+                                       ptrSize,
+                                       "ptrsize",
+                                       &I);
+      EndPtr = new IntToPtrInst (EndPtr,
+                                 Pointer->getType(),
+                                 Pointer->getName(),
+                                 &I);
+    }
+
+    //
+    // Add the run-time checks.
+    //
+    CallInst::Create (LowerBoundsCheck, Pointer, "", &I);
+    CallInst::Create (UpperBoundsCheck, EndPtr, "", &I);
+    return Pointer;
+  } else {
+    //
+    // Create the integer values used for bit-masking.
+    //
+    Value * CheckMask = ConstantInt::get (IntPtrTy, checkMask);
+    Value * SetMask   = ConstantInt::get (IntPtrTy, setMask);
+    Value * Zero      = ConstantInt::get (IntPtrTy, 0u);
+    Value * ThirtyTwo = ConstantInt::get (IntPtrTy, 32u);
+    Value * svaLow    = ConstantInt::get (IntPtrTy, 0xffffffff819ef000u);
+    Value * svaHigh   = ConstantInt::get (IntPtrTy, 0xffffffff89b96060u);
+
+    //
+    // Convert the pointer into an integer and then shift the higher order bits
+    // into the lower-half of the integer.  Bit-masking operations can use
+    // constant operands, reducing register pressure, if the operands are 32-bits
+    // or smaller.
+    //
+    Value * CastedPointer = new PtrToIntInst (Pointer, IntPtrTy, "ptr", &I);
+    Value * PtrHighBits = BinaryOperator::Create (Instruction::LShr,
+                                                  CastedPointer,
+                                                  ThirtyTwo,
+                                                  "highbits",
+                                                  &I);
+                                                      
+    //
+    // Create an instruction to mask off the proper bits to see if the pointer
+    // is within the secure memory range.
+    //
+    Value * CheckMasked = BinaryOperator::Create (Instruction::And,
+                                                  PtrHighBits,
+                                                  CheckMask,
+                                                  "checkMask",
+                                                  &I);
+
+    //
+    // Compare the masked pointer to the mask.  If they're the same, we need to
+    // set that bit.
+    //
+    Value * Cmp = new ICmpInst (&I,
+                                CmpInst::ICMP_EQ,
+                                CheckMasked,
+                                CheckMask,
+                                "cmp");
+
+    //
+    // Create the select instruction that, at run-time, will determine if we use
+    // the bit-masked pointer or the original pointer value.
+    //
+    Value * MaskValue = SelectInst::Create (Cmp, SetMask, Zero, "ptr", &I);
+
+    //
+    // Create instructions that create a version of the pointer with the proper
+    // bit set.
+    //
+    Value * Masked = BinaryOperator::Create (Instruction::Or,
+                                             CastedPointer,
+                                             MaskValue,
+                                             "setMask",
                                              &I);
 
     //
-    // Create a value of the pointer that is zero.
+    // Insert a special check to protect SVA memory.  Note that this is a hack
+    // that is used because the SVA memory isn't positioned after Ghost Memory
+    // like it should be as described in the Virtual Ghost and KCoFI papers.
     //
-    Value * mkZero = BinaryOperator::Create (Instruction::Xor,
-                                             Masked,
-                                             Masked,
-                                             "mkZero",
-                                             &I);
+    Value * Final = Masked;
+    if (DoSVAChecks) {
+      //
+      // Compare against the first and last SVA addresses.  
+      //
+      Value * svaLCmp = new ICmpInst (&I,
+                                  CmpInst::ICMP_ULE,
+                                  svaLow,
+                                  Masked,
+                                  "svacmp");
+      Value * svaHCmp = new ICmpInst (&I,
+                                  CmpInst::ICMP_ULE,
+                                  Masked,
+                                  svaHigh,
+                                  "svacmp");
+      Value * InSVA = BinaryOperator::Create (Instruction::And,
+                                               svaLCmp,
+                                               svaHCmp,
+                                               "inSVA",
+                                               &I);
 
-    //
-    // Select the correct value based on whether the pointer is in SVA memory.
-    //
-    Value * Final = SelectInst::Create (InSVA, mkZero, Masked, "fptr", &I);
+      //
+      // Create a value of the pointer that is zero.
+      //
+      Value * mkZero = BinaryOperator::Create (Instruction::Xor,
+                                               Masked,
+                                               Masked,
+                                               "mkZero",
+                                               &I);
+
+      //
+      // Select the correct value based on whether the pointer is in SVA memory.
+      //
+      Value * Final = SelectInst::Create (InSVA, mkZero, Masked, "fptr", &I);
+    }
+
+    return (new IntToPtrInst (Final, Pointer->getType(), "masked", &I));
   }
-
-  return (new IntToPtrInst (Final, Pointer->getType(), "masked", &I));
 }
 
 void
