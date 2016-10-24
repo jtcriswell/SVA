@@ -470,13 +470,27 @@ init_fpu (void) {
  * Description:
  *  This function initializes the Intel MPX bounds checking registers for use
  *  with software fault isolation (SFI).
+ *
+ * Notes:
+ *  This function will initialize the bounds register so that it contains
+ *  the 1 TB direct map, the SVA VM internal memory, and the 512 GB kernel
+ *  memory.  This is because the initial SVA implementation puts the SVA VM
+ *  internal memory between the direct map and the kernel memory.  Therefore,
+ *  this configuration will allow us to measure performance but will not
+ *  actually protect SVA VM memory; we need to move SVA internal memory so
+ *  that it does not sit between two regions of memory which the kernel needs
+ *  to access.
  */
 static void
 init_mpx (void) {
-  struct bounds {
-    uintptr_t Base;
-    uintptr_t Size;
-  } kernelBounds = {0xffffff8000000000, ~(0x7fffffffff)};
+  /* First address of kernel memory */
+#if 0
+  static uintptr_t kernelBase = 0xfffffe0000000000;
+  static uintptr_t kernelSize = 0xffffffffffffffff - 0xfffffe0000000000;
+#else
+  static uintptr_t kernelBase = 4096;
+  static uintptr_t kernelSize = 0xffffffffffffffff;
+#endif
 
   /* Bits within control register 4 (CR4) */
   static const uintptr_t oxsave = (1u << 18);
@@ -485,6 +499,10 @@ init_mpx (void) {
   static unsigned char bndreg = (1u << 3);
   static unsigned char bndcsr = (1u << 4);
   static unsigned char enableX87 = (1u << 0);
+
+  /* ID number of the configuration register for MPX kernel mode code */
+  static const unsigned IA32_BNDCFGS = 0x0d90;
+
   unsigned long cr4;
   unsigned long cpuid;
 
@@ -509,19 +527,44 @@ init_mpx (void) {
                         : "%rax", "%rdx");
 
   /*
-   * Load bounds information into the first bounds register.
+   * Enable kernel mode bounds checking.
    */
-#if 0
-  __asm__ __volatile__ ("bndmov %0, %%bnd0\n"
+  __asm__ __volatile__ ("wrmsr\n"
                         :
-                        : "r" (&kernelBounds)
-                        : "memory");
+                        : "c" (IA32_BNDCFGS), "A" (1));
+
+  /*
+   * Load bounds information for kernel memory into the first bounds register.
+   */
+  __asm__ __volatile__ ("bndmk (%0,%1), %%bnd0\n"
+                        :
+                        : "a" (kernelBase), "d" (kernelSize));
+
+  return;
+}
+
+/*
+ * Function: testmpx()
+ *
+ * Description:
+ *  This function can be called by the kernel to test the MPX functionality.
+ */
+void
+testmpx (void) {
+  struct sillyStruct {
+    unsigned long a;
+    unsigned long b;
+  } foo;
+
   /*
    * Load bounds information into the first bounds register.
    */
-  __asm__ __volatile__ ("bndmk (%rax,%rdx), %bnd0\n");
-#endif
+  __asm__ __volatile__ ("bndmk (%0,%1), %%bnd0\n"
+                        :
+                        : "a" (&foo), "d" (sizeof(foo) - 1));
 
+  __asm__ __volatile__ ("bndcl %0, %%bnd0\n" :: "a" (&(testmpx)));
+  __asm__ __volatile__ ("bndcu %0, %%bnd0\n" :: "a" (&(foo.b)));
   return;
 }
 
@@ -590,6 +633,7 @@ sva_init_secondary () {
 #if 0
   init_mmu ();
 #endif
+  init_mpx ();
   init_fpu ();
 #if 0
   llva_reset_counters();
