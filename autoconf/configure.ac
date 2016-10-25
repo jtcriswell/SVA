@@ -18,6 +18,23 @@ case "$enableval" in
   *) AC_MSG_ERROR([Invalid setting for --enable-vg. Use "yes" or "no"]) ;;
 esac
 
+dnl Enable the use of MPX for SFI
+AC_ARG_ENABLE(mpx,
+              AS_HELP_STRING([--enable-mpx],
+                             [Enable MPX for SFI (default is NO)]),,
+                             enableval=default)
+case "$enableval" in
+  yes) AC_DEFINE(MPX) ;;
+  no) AC_DEFINE(NOMPX) ;;
+  *) AC_MSG_ERROR([Invalid setting for --enable-mpx. Use "yes" or "no"]) ;;
+esac
+
+case "$enableval" in
+  yes) AC_SUBST([COPTFLAGS], ["-mllvm -enable-mpx-sfi"]) ;;
+  no)  AC_SUBST([COPTFLAGS], [""]) ;;
+  *) AC_MSG_ERROR([Invalid setting for --enable-mpx. Use "yes" or "no"]) ;;
+esac
+
 dnl Enable the SVA MMU Checks
 AC_ARG_ENABLE(mmuchecks,
               AS_HELP_STRING([--enable-mmuchecks],

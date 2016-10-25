@@ -588,6 +588,7 @@ enable_option_checking=no
 ac_subst_vars='LTLIBOBJS
 LIBOBJS
 subdirs
+COPTFLAGS
 target_alias
 host_alias
 build_alias
@@ -630,6 +631,7 @@ ac_subst_files=''
 ac_user_opts='
 enable_option_checking
 enable_vg
+enable_mpx
 enable_mmuchecks
 enable_targets
 '
@@ -1246,6 +1248,7 @@ Optional Features:
   --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
   --enable-vg             Enable Virtual Ghost (default is NO)
+  --enable-mpx            Enable MPX for SFI (default is NO)
   --enable-mmuchecks      Enable SVA MMU Checks (default is YES)
 
 
@@ -1692,6 +1695,29 @@ case "$enableval" in
   no) $as_echo "#define NOVG 1" >>confdefs.h
  ;;
   *) as_fn_error $? "Invalid setting for --enable-vg. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
+esac
+
+# Check whether --enable-mpx was given.
+if test "${enable_mpx+set}" = set; then :
+  enableval=$enable_mpx;
+else
+  enableval=default
+fi
+
+case "$enableval" in
+  yes) $as_echo "#define MPX 1" >>confdefs.h
+ ;;
+  no) $as_echo "#define NOMPX 1" >>confdefs.h
+ ;;
+  *) as_fn_error $? "Invalid setting for --enable-mpx. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
+esac
+
+case "$enableval" in
+  yes) COPTFLAGS="-mllvm -enable-mpx-sfi"
+ ;;
+  no)  COPTFLAGS=""
+ ;;
+  *) as_fn_error $? "Invalid setting for --enable-mpx. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
 esac
 
 # Check whether --enable-mmuchecks was given.

@@ -45,7 +45,7 @@ DoSVAChecks("enable-sfi-svachecks",
 static llvm::cl::opt<bool>
 UseMPX("enable-mpx-sfi",
             llvm::cl::desc("Use Intel MPX extensions for SFI"),
-            llvm::cl::init(true));
+            llvm::cl::init(false));
 
 #if 0
 /* Mask to determine if we use the original value or the masked value */

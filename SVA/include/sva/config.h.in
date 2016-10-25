@@ -21,6 +21,9 @@
 /* Let the configure script determine if we enable Virtual Ghost */
 #undef VG
 
+/* Let the configure script determine if we enable MPX support for SFI */
+#undef MPX
+
 /* Let the configure script determine if we enable SVA MMU Checks */
 #undef CHECKMMU
 
@@ -30,6 +33,14 @@ static const unsigned char vg = 1;
 #else
 static const unsigned char vg = 0;
 #endif
+
+/* Enable or Disable the use of MPX */
+#ifdef MPX
+static const unsigned char usempx = 1;
+#else
+static const unsigned char usempx = 0;
+#endif
+
 
 /* Configure whether to use the hack that keeps page tables writeable */
 static unsigned char keepPTWriteableHack = 1;

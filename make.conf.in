@@ -16,6 +16,11 @@ WERROR=
 KERNCONF=SVA
 
 #
+# Add command line options to C compiler
+#
+COPTFLAGS += @COPTFLAGS@
+
+#
 # Skip some steps to speed up kernel compiles.
 #
 #NO_KERNELCLEAN=true

@@ -507,38 +507,44 @@ init_mpx (void) {
   unsigned long cpuid;
 
   /*
-   * Enable the OSXSAVE feature in CR4.  This is needed to enable MPX.
+   * Only configure MPX if we are configured to do so.
    */
-  __asm__ __volatile__ ("movq %%cr4, %0\n"
-                        "orq %1, %0\n"
-                        "movq %0, %%cr4\n"
-                        : "=r" (cr4)
-                        : "i" (oxsave));
+  if (usempx) {
+    /*
+     * Enable the OSXSAVE feature in CR4.  This is needed to enable MPX.
+     */
+    __asm__ __volatile__ ("movq %%cr4, %0\n"
+                          "orq %1, %0\n"
+                          "movq %0, %%cr4\n"
+                          : "=r" (cr4)
+                          : "i" (oxsave));
 
-  /*
-   * Enable the XCR0.BNDREG and XCR0.BNDCSR bits in XCR0.  We must also
-   * enable XCR0.X87 to prevent a general protection fault.
-   */
-  __asm__ __volatile__ ("xgetbv\n"
-                        "orq %1, %%rax\n"
-                        "xsetbv\n"
-                        :
-                        : "c" (0), "i" (bndreg | bndcsr | enableX87)
-                        : "%rax", "%rdx");
+    /*
+     * Enable the XCR0.BNDREG and XCR0.BNDCSR bits in XCR0.  We must also
+     * enable XCR0.X87 to prevent a general protection fault.
+     */
+    __asm__ __volatile__ ("xgetbv\n"
+                          "orq %1, %%rax\n"
+                          "xsetbv\n"
+                          :
+                          : "c" (0), "i" (bndreg | bndcsr | enableX87)
+                          : "%rax", "%rdx");
 
-  /*
-   * Enable kernel mode bounds checking.
-   */
-  __asm__ __volatile__ ("wrmsr\n"
-                        :
-                        : "c" (IA32_BNDCFGS), "A" (1));
+    /*
+     * Enable kernel mode bounds checking.
+     */
+    __asm__ __volatile__ ("wrmsr\n"
+                          :
+                          : "c" (IA32_BNDCFGS), "A" (1));
 
-  /*
-   * Load bounds information for kernel memory into the first bounds register.
-   */
-  __asm__ __volatile__ ("bndmk (%0,%1), %%bnd0\n"
-                        :
-                        : "a" (kernelBase), "d" (kernelSize));
+    /*
+     * Load bounds information for kernel memory into the first bounds register.
+     */
+    __asm__ __volatile__ ("bndmk (%0,%1), %%bnd0\n"
+                          :
+                          : "a" (kernelBase), "d" (kernelSize));
+
+  }
 
   return;
 }
