@@ -59,6 +59,8 @@
 #include <sys/types.h>
 #include "mmu_types.h"
 
+#include "sva/state.h"
+
 /* Size of the smallest page frame in bytes */
 static const uintptr_t X86_PAGE_SIZE = 4096u;
 
@@ -260,7 +262,7 @@ static page_desc_t page_desc[numPageDescEntries];
 
 extern uintptr_t getPhysicalAddr (void * v);
 extern pml4e_t mapSecurePage (uintptr_t v, uintptr_t paddr);
-extern void unmapSecurePage (unsigned char * cr3, unsigned char * v);
+extern void unmapSecurePage (struct SVAThread *, unsigned char * v);
 
 /*
  *****************************************************************************
