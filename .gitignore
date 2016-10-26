@@ -18,4 +18,28 @@
 # vim swap files
 .*.swp
 
+#==============================================================================#
+# Ignore files created by the configure script
+#==============================================================================#
+
 SVA/include/sva/config.h
+make.conf
+config.log
+config.status
+autoconf/autom4te.cache/*
+autom4te.cache/*
+
+#==============================================================================#
+# Ignore files created by LLVM Build process
+#==============================================================================#
+
+llvm/Release+Asserts/*
+llvm/lib/*/Release+Asserts/*
+llvm/lib/*/*/Release+Asserts/*
+llvm/lib/*/*/*/Release+Asserts/*
+llvm/lib/*/*/*.inc
+llvm/tools/*/Release+Asserts/*
+llvm/unittests/*/Release+Asserts/*
+llvm/unittests/*/*/Release+Asserts/
+llvm/utils/*/Release+Asserts/*
+llvm/utils/*/*/Release+Asserts/*
