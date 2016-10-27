@@ -484,13 +484,8 @@ init_fpu (void) {
 static void
 init_mpx (void) {
   /* First address of kernel memory */
-#if 0
-  static uintptr_t kernelBase = 0xfffffe0000000000;
-  static uintptr_t kernelSize = 0xffffffffffffffff - 0xfffffe0000000000;
-#else
-  static uintptr_t kernelBase = 4096;
-  static uintptr_t kernelSize = 0xffffffffffffffff;
-#endif
+  static uintptr_t kernelBase = 0x1000u;
+  static uintptr_t kernelSize = 0xffffffffffffefffu;
 
   /* Bits within control register 4 (CR4) */
   static const uintptr_t oxsave = (1u << 18);
@@ -499,6 +494,10 @@ init_mpx (void) {
   static unsigned char bndreg = (1u << 3);
   static unsigned char bndcsr = (1u << 4);
   static unsigned char enableX87 = (1u << 0);
+
+  /* Bits to configure the BNDCFGS register */
+  static unsigned char bndEnable   = (1u << 0);
+  static unsigned char bndPreserve = (1u << 1);
 
   /* ID number of the configuration register for MPX kernel mode code */
   static const unsigned IA32_BNDCFGS = 0x0d90;
@@ -531,11 +530,13 @@ init_mpx (void) {
                           : "%rax", "%rdx");
 
     /*
-     * Enable kernel mode bounds checking.
+     * Enable bounds checking for kernel mode code.  We enable the
+     * bndEnable bit to enable bounds checking and the bndPreserve bit to
+     * ensure that control flow instructions do not clear the bounds registers.
      */
     __asm__ __volatile__ ("wrmsr\n"
                           :
-                          : "c" (IA32_BNDCFGS), "A" (1));
+                          : "c" (IA32_BNDCFGS), "A" (bndEnable | bndPreserve));
 
     /*
      * Load bounds information for kernel memory into the first bounds register.
@@ -565,12 +566,12 @@ testmpx (void) {
   /*
    * Load bounds information into the first bounds register.
    */
-  __asm__ __volatile__ ("bndmk (%0,%1), %%bnd0\n"
+  __asm__ __volatile__ ("bndmk (%0,%1), %%bnd1\n"
                         :
                         : "a" (&foo), "d" (sizeof(foo) - 1));
 
-  __asm__ __volatile__ ("bndcl %0, %%bnd0\n" :: "a" (&(testmpx)));
-  __asm__ __volatile__ ("bndcu %0, %%bnd0\n" :: "a" (&(foo.b)));
+  __asm__ __volatile__ ("bndcl %0, %%bnd1\n" :: "a" (&(testmpx)));
+  __asm__ __volatile__ ("bndcu %0, %%bnd1\n" :: "a" (&(foo.b)));
   return;
 }
 
