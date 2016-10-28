@@ -243,13 +243,19 @@ SFI::addBitMasking (Value * Pointer, Instruction & I) {
                                                true);
 
     //
+    // Create the lower bounds check.  Do this before calculating the address
+    // for the upper bounds check; this might reduce register pressure.
+    //
+    CallInst::Create (LowerBoundsCheck, Pointer, "", &I);
+
+    //
     // Create a value representing the last address to which the pointer can
     // point given the data type size.  Since we may not run any optimizations
     // after this point, specifically check if the pointer is only a byte long
     // and omit the size calculution in that case.
     //
     Value * EndPtr = Pointer;
-    if (unsigned ptrsize = TD.getPointerSize() - 1) {
+    if (unsigned ptrsize = (TD.getPointerSize() - 1)) {
       //
       // Create an instruction to calculate the last address accessed by the
       // pointer.
@@ -273,7 +279,6 @@ SFI::addBitMasking (Value * Pointer, Instruction & I) {
     //
     // Add the run-time checks.
     //
-    CallInst::Create (LowerBoundsCheck, Pointer, "", &I);
     CallInst::Create (UpperBoundsCheck, EndPtr, "", &I);
     return Pointer;
   } else {
