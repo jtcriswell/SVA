@@ -1713,7 +1713,7 @@ case "$enableval" in
 esac
 
 case "$enableval" in
-  yes) COPTFLAGS="-mllvm -enable-mpx-sfi"
+  yes) COPTFLAGS="-mllvm -enable-mpx-sfi -no-integrated-as"
  ;;
   no)  COPTFLAGS=""
  ;;
