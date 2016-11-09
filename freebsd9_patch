@@ -2651,7 +2651,7 @@ index 4047f1c..fe5b332 100644
  	pushq	$0			/* junk to fake return addr. */
  	movq	$SYS_sigreturn,%rax
 diff --git a/sys/amd64/amd64/support.S b/sys/amd64/amd64/support.S
-index 2f73775..81cfddd 100644
+index 2f73775..27b571c 100644
 --- a/sys/amd64/amd64/support.S
 +++ b/sys/amd64/amd64/support.S
 @@ -38,6 +38,8 @@
@@ -2764,8 +2764,9 @@ index 2f73775..81cfddd 100644
  	movq	$0,PCB_ONFAULT(%rdx)
  	movq	$EFAULT,%rax
 -	ret
+-END(copyout)
 +	RETQ
- END(copyout)
++END(real_copyout)
  
  /*
   * copyin(from_user, to_kernel, len) - MP SAFE
@@ -2795,8 +2796,9 @@ index 2f73775..81cfddd 100644
  	movq	$0,PCB_ONFAULT(%rdx)
  	movq	$EFAULT,%rax
 -	ret
+-END(copyin)
 +	RETQ
- END(copyin)
++END(real_copyin)
  
  /*
   * casuword32.  Compare and set user integer.  Returns -1 or the current value.
@@ -2818,8 +2820,9 @@ index 2f73775..81cfddd 100644
  	movq	PCPU(CURPCB),%rcx
  	movq	$0,PCB_ONFAULT(%rcx)
 -	ret
+-END(casuword32)
 +	RETQ
- END(casuword32)
++END(real_casuword32)
  
  /*
   * casuword.  Compare and set user word.  Returns -1 or the current value.
@@ -2836,15 +2839,17 @@ index 2f73775..81cfddd 100644
  
  	movq	$VM_MAXUSER_ADDRESS-4,%rax
  	cmpq	%rax,%rdi			/* verify address is valid */
-@@ -367,7 +386,7 @@ ENTRY(casuword)
+@@ -367,8 +386,8 @@ ENTRY(casuword)
  	movq	PCPU(CURPCB),%rcx
  	movq	$fusufault,PCB_ONFAULT(%rcx)
  	movq	$0,PCB_ONFAULT(%rcx)
 -	ret
+-END(casuword)
 +	RETQ
- END(casuword)
++END(real_casuword)
  
  /*
+  * Fetch (load) a 64-bit word, a 32-bit word, a 16-bit word, or an 8-bit
 @@ -376,10 +395,14 @@ END(casuword)
   * addr = %rdi
   */
@@ -2867,9 +2872,11 @@ index 2f73775..81cfddd 100644
  	movq	(%rdi),%rax
  	movq	$0,PCB_ONFAULT(%rcx)
 -	ret
+-END(fuword64)	
+-END(fuword)
 +	RETQ
- END(fuword64)	
- END(fuword)
++END(real_fuword64)	
++END(real_fuword)
  
 -ENTRY(fuword32)
 +ENTRY(real_fuword32)
@@ -2882,15 +2889,17 @@ index 2f73775..81cfddd 100644
  
  	movq	$VM_MAXUSER_ADDRESS-4,%rax
  	cmpq	%rax,%rdi			/* verify address is valid */
-@@ -401,7 +428,7 @@ ENTRY(fuword32)
+@@ -401,8 +428,8 @@ ENTRY(fuword32)
  
  	movl	(%rdi),%eax
  	movq	$0,PCB_ONFAULT(%rcx)
 -	ret
+-END(fuword32)
 +	RETQ
- END(fuword32)
++END(real_fuword32)
  
  /*
+  * fuswintr() and suswintr() are specialized variants of fuword16() and
 @@ -414,13 +441,17 @@ END(fuword32)
  ALTENTRY(suswintr)
  ENTRY(fuswintr)
@@ -2916,8 +2925,9 @@ index 2f73775..81cfddd 100644
  	movzwl	(%rdi),%eax
  	movq	$0,PCB_ONFAULT(%rcx)
 -	ret
+-END(fuword16)
 +	RETQ
- END(fuword16)
++END(real_fuword16)
  
 -ENTRY(fubyte)
 +ENTRY(real_fubyte)
@@ -2930,15 +2940,17 @@ index 2f73775..81cfddd 100644
  
  	movq	$VM_MAXUSER_ADDRESS-1,%rax
  	cmpq	%rax,%rdi
-@@ -441,7 +476,7 @@ ENTRY(fubyte)
+@@ -441,8 +476,8 @@ ENTRY(fubyte)
  
  	movzbl	(%rdi),%eax
  	movq	$0,PCB_ONFAULT(%rcx)
 -	ret
+-END(fubyte)
 +	RETQ
- END(fubyte)
++END(real_fubyte)
  
  	ALIGN_TEXT
+ fusufault:
 @@ -450,17 +485,21 @@ fusufault:
  	xorl	%eax,%eax
  	movq	%rax,PCB_ONFAULT(%rcx)
@@ -2969,9 +2981,11 @@ index 2f73775..81cfddd 100644
  	movq	PCPU(CURPCB),%rcx
  	movq	%rax,PCB_ONFAULT(%rcx)
 -	ret
+-END(suword64)
+-END(suword)
 +	RETQ
- END(suword64)
- END(suword)
++END(real_suword64)
++END(real_suword)
  
 -ENTRY(suword32)
 +ENTRY(real_suword32)
@@ -2989,8 +3003,9 @@ index 2f73775..81cfddd 100644
  	movq	PCPU(CURPCB),%rcx
  	movq	%rax,PCB_ONFAULT(%rcx)
 -	ret
+-END(suword32)
 +	RETQ
- END(suword32)
++END(real_suword32)
  
 -ENTRY(suword16)
 +ENTRY(real_suword16)
@@ -3008,8 +3023,9 @@ index 2f73775..81cfddd 100644
  	movq	PCPU(CURPCB),%rcx		/* restore trashed register */
  	movq	%rax,PCB_ONFAULT(%rcx)
 -	ret
+-END(suword16)
 +	RETQ
- END(suword16)
++END(real_suword16)
  
 -ENTRY(subyte)
 +ENTRY(real_subyte)
@@ -3022,15 +3038,17 @@ index 2f73775..81cfddd 100644
  
  	movq	$VM_MAXUSER_ADDRESS-1,%rax
  	cmpq	%rax,%rdi			/* verify address validity */
-@@ -517,7 +568,7 @@ ENTRY(subyte)
+@@ -517,8 +568,8 @@ ENTRY(subyte)
  	xorl	%eax,%eax
  	movq	PCPU(CURPCB),%rcx		/* restore trashed register */
  	movq	%rax,PCB_ONFAULT(%rcx)
 -	ret
+-END(subyte)
 +	RETQ
- END(subyte)
++END(real_subyte)
  
  /*
+  * copyinstr(from, to, maxlen, int *lencopied) - MP SAFE
 @@ -529,6 +580,7 @@ END(subyte)
   *	EFAULT on protection violations. If lencopied is non-zero,
   *	return the actual length in *lencopied.
