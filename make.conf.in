@@ -18,7 +18,7 @@ KERNCONF=SVA
 #
 # Add command line options to C compiler
 #
-COPTFLAGS += @COPTFLAGS@
+COPTFLAGS += -O2 -frename-registers -pipe -fno-strict-aliasing @COPTFLAGS@
 
 #
 # Skip some steps to speed up kernel compiles.
