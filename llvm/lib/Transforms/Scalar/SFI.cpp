@@ -226,11 +226,11 @@ SFI::addBitMasking (Value * Pointer, Instruction & I) {
 
     //
     // Create a pointer value that is the pointer minus the start of the
-    // secure memory minus the length of the pointer value.
+    // secure memory.
     //
     unsigned ptrSize = TD.getPointerSize();
     Constant * adjSize = ConstantInt::get (IntPtrTy,
-                                           startGhostMemory + ptrSize,
+                                           startGhostMemory,
                                            false);
     Value * IntPtr = new PtrToIntInst (Pointer,
                                        IntPtrTy,
