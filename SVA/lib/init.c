@@ -83,14 +83,12 @@
 
 #include "sva/config.h"
 #include "sva/state.h"
+#include "sva/mmu.h"
 
 #include <string.h>
 #include <limits.h>
 
 #include <sys/types.h>
-
-extern int printf(const char *, ...);
-extern void panic(const char *, ...);
 
 void register_x86_interrupt (int number, void *interrupt, unsigned char priv);
 void register_x86_trap (int number, void *trap);
@@ -484,8 +482,8 @@ init_fpu (void) {
 static void
 init_mpx (void) {
   /* First address of kernel memory */
-  static uintptr_t kernelBase = 0x1000u;
-  static uintptr_t kernelSize = 0xffffffffffffefffu;
+  static uintptr_t const kernelBase = SECMEMEND - SECMEMSTART;
+  static uintptr_t const kernelSize = (0xffffffffffffffffu - kernelBase);
 
   /* Bits within control register 4 (CR4) */
   static const uintptr_t oxsave = (1u << 18);
