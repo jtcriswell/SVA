@@ -821,6 +821,20 @@ isPresent (uintptr_t * pte) {
 }
 
 /*
+ * Function: getPhysicalAddrDMAP()
+ *
+ * Description:
+ *  Find the physical page number of the specified virtual address based on kernel direct mapping.
+ */
+
+static inline uintptr_t
+getPhysicalAddrKDMAP (void * v) {
+ return  ((uintptr_t) v & ~0xfffffe0000000000u);
+}
+
+
+
+/*
  * Function: getPhysicalAddr()
  *
  * Description:
@@ -828,6 +842,10 @@ isPresent (uintptr_t * pte) {
  */
 uintptr_t
 getPhysicalAddr (void * v) {
+
+  if (((uintptr_t) v >= 0xfffffe0000000000u) && ((uintptr_t) v < 0xffffff0000000000u))
+       return getPhysicalAddrKDMAP(v);
+
   /* Mask to get the proper number of bits from the virtual address */
   static const uintptr_t vmask = 0x0000000000000fffu;
 
