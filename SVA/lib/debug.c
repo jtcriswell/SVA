@@ -83,6 +83,10 @@ sva_trapframe (struct trapframe * tf) {
   /*
    * Fetch the currently available interrupt context.
    */
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+  	tsc_tmp = sva_read_tsc();
+
   struct CPUState * cpup = getCPUState();
   sva_icontext_t * p = getCPUState()->newCurrentIC;
 
@@ -132,6 +136,7 @@ sva_trapframe (struct trapframe * tf) {
   tf->tf_rsp = (unsigned long)(p->rsp);
   tf->tf_ss = p->ss;
 
+  record_tsc(sva_trapframe_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 
@@ -152,6 +157,10 @@ sva_syscall_trapframe (struct trapframe * tf) {
   /*
    * Fetch the currently available interrupt context.
    */
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
+
   struct CPUState * cpup = getCPUState();
   sva_icontext_t * p = getCPUState()->newCurrentIC;
 
@@ -197,6 +206,7 @@ sva_syscall_trapframe (struct trapframe * tf) {
   tf->tf_rsp = (unsigned long)(p->rsp);
   tf->tf_ss = p->ss;
 
+  record_tsc(sva_syscall_trapframe_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 
@@ -328,6 +338,10 @@ sva_checkptr (uintptr_t p) {
   // If we're in kernel memory but not above the secure memory region, hit a
   // breakpoint.
   //
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
+
   if (p >= 0xffffff8000000000) {
     if (!(p & 0x0000008000000000u)) {
       bochsBreak();
@@ -335,6 +349,7 @@ sva_checkptr (uintptr_t p) {
     }
   }
 
+  record_tsc(sva_checkptr_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 

@@ -250,6 +250,9 @@ freeSecureMemory (void) {
 
 void
 sva_ghost_fault (uintptr_t vaddr) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -310,6 +313,7 @@ sva_ghost_fault (uintptr_t vaddr) {
 
   /* Re-enable interrupts if necessary */
   sva_exit_critical (rflags);
+  record_tsc(sva_ghost_fault_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 

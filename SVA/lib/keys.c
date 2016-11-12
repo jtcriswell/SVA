@@ -28,6 +28,7 @@
 #include "sva/mmu_intrinsics.h"
 #include "sva/keys.h"
 #include "sva/state.h"
+#include "sva/util.h"
 
 #define DEBUG               1
 #define INCOMPLETE_ON       1
@@ -116,6 +117,10 @@ struct translation translations [4096] __attribute__ ((section ("svamem")));
  */
 void *
 sva_translate(void * entryPoint) {
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
+
   if (vg) {
     /*
      * Find a free translation.
@@ -133,7 +138,8 @@ sva_translate(void * entryPoint) {
         transp->entryPoint = entryPoint;
         memcpy (&(transp->key), dummy256KeyPtr, sizeof (sva_key_t));
         transp->used = 2;
-
+        
+	record_tsc(sva_translate_1_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
         return transp;
       }
     }
@@ -141,11 +147,13 @@ sva_translate(void * entryPoint) {
     /*
      * Translation failed.
      */
+    record_tsc(sva_translate_2_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
     return 0;
   }
 
   /*
    * If we're not doing Virtual Ghost, then just return the function pointer.
    */
+  record_tsc(sva_translate_3_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return entryPoint;
 }

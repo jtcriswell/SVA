@@ -75,7 +75,13 @@ getThreadRID (void) {
  */
 uintptr_t
 sva_icontext_getpc (void) {
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
+
   struct CPUState * cpuState = getCPUState();
+
+  record_tsc(sva_icontext_getpc_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return cpuState->newCurrentIC->rip;
 }
 
@@ -110,6 +116,9 @@ sva_ipush_function5 (void (*newf)(uintptr_t, uintptr_t, uintptr_t),
                      uintptr_t p3,
                      uintptr_t p4,
                      uintptr_t p5) {
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();   
 
   /* Old interrupt flags */
   uintptr_t rflags;
@@ -142,6 +151,7 @@ sva_ipush_function5 (void (*newf)(uintptr_t, uintptr_t, uintptr_t),
     if (!found) {
       panic ("SVA: Pushing bad value %lx\n", newf);
       sva_exit_critical (rflags);
+      record_tsc(sva_ipush_function5_1_api, ((uint64_t) sva_read_tsc() - tsc_tmp)); 
       return;
     }
 
@@ -156,6 +166,7 @@ sva_ipush_function5 (void (*newf)(uintptr_t, uintptr_t, uintptr_t),
     if (!found) {
       panic ("SVA: Pushing bad sighandler value %lx\n", p5);
       sva_exit_critical (rflags);
+      record_tsc(sva_ipush_function5_2_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
       return;
     }
 
@@ -197,6 +208,7 @@ sva_ipush_function5 (void (*newf)(uintptr_t, uintptr_t, uintptr_t),
    * Re-enable interrupts.
    */
   sva_exit_critical (rflags);
+  record_tsc(sva_ipush_function5_3_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 
@@ -396,6 +408,9 @@ flushSecureMemory (struct SVAThread * threadp) {
  */
 uintptr_t
 sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
   /* Function for saving state */
   extern unsigned int save_integer (sva_integer_state_t * buffer);
   extern void load_integer (sva_integer_state_t * p);
@@ -435,6 +450,7 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
      * Re-enable interrupts.
      */
     sva_exit_critical (rflags);
+    record_tsc(sva_swap_integer_1_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
     return 0;
   }
 #endif
@@ -473,6 +489,7 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
      * Re-enable interrupts.
      */
     sva_exit_critical (rflags);
+    record_tsc(sva_swap_integer_2_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
     return 1;
   }
 
@@ -613,6 +630,7 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
    * The context switch failed.
    */
   sva_exit_critical (rflags);
+  record_tsc(sva_swap_integer_3_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return 0; 
 }
 
@@ -638,6 +656,9 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
  */
 void *
 sva_ialloca (uintptr_t size, uintptr_t alignment, void * initp) {
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -743,6 +764,7 @@ sva_ialloca (uintptr_t size, uintptr_t alignment, void * initp) {
   }
 
   sva_exit_critical (rflags);
+  record_tsc(sva_ialloca_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return allocap;
 }
 
@@ -755,6 +777,10 @@ sva_ialloca (uintptr_t size, uintptr_t alignment, void * initp) {
  */
 void
 sva_load_icontext (void) {
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
+
  
   /* Old interrupt flags */
   uintptr_t rflags;
@@ -777,6 +803,7 @@ sva_load_icontext (void) {
    */
   if (sva_was_privileged ()) {
       sva_exit_critical (rflags);
+      record_tsc(sva_load_icontext_1_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
       return;
   }
 
@@ -785,6 +812,7 @@ sva_load_icontext (void) {
    */
   if (threadp->savedICIndex < 1) {
       sva_exit_critical (rflags);
+      record_tsc(sva_load_icontext_2_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
       return;
   }
 
@@ -797,6 +825,7 @@ sva_load_icontext (void) {
    * Re-enable interrupts.
    */
   sva_exit_critical (rflags);
+  record_tsc(sva_load_icontext_3_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 
@@ -813,7 +842,11 @@ sva_load_icontext (void) {
  */
 unsigned char
 sva_save_icontext (void) {
-  /* Old interrupt flags */
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
+ 
+ /* Old interrupt flags */
   uintptr_t rflags;
 
   /*
@@ -834,6 +867,7 @@ sva_save_icontext (void) {
    */
   if (sva_was_privileged ()) {
       sva_exit_critical (rflags);
+      record_tsc(sva_save_icontext_1_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
       return 0;
   }
 
@@ -842,6 +876,7 @@ sva_save_icontext (void) {
    */
   if (threadp->savedICIndex > maxIC) {
       sva_exit_critical (rflags);
+      record_tsc(sva_save_icontext_2_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
       return 0;
   }
 
@@ -860,6 +895,7 @@ sva_save_icontext (void) {
    * Re-enable interrupts.
    */
   sva_exit_critical (rflags);
+  record_tsc(sva_save_icontext_3_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return savedICIndex;
 }
 
@@ -886,6 +922,10 @@ svaDummy (void) {
  */
 void
 sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintptr_t arg) {
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
+
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -905,10 +945,12 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
     if ((translations <= transp) && (transp < translations + 4096)) {
       if (((uint64_t)transp - (uint64_t)translations) % sizeof (struct translation)) {
         panic ("SVA: Invalid translation handle: %p %p %lx\n", transp, translations, sizeof (struct translation));
+        record_tsc(sva_reinit_icontext_1_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
         return;
       }
     } else {
       panic ("SVA: Out of range translation handle: %p %p %lx\n", transp, translations, sizeof (struct translation));
+      record_tsc(sva_reinit_icontext_2_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
       return;
     }
 
@@ -1010,7 +1052,7 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
 
   /* Re-enable interupts if they were enabled before */
   sva_exit_critical (rflags);
-
+  record_tsc(sva_reinit_icontext_3_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 
@@ -1023,6 +1065,10 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
  */
 void
 sva_release_stack (uintptr_t id) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
+  
   /* Get a pointer to the saved state (the ID is the pointer) */
   struct SVAThread * newThread = (struct SVAThread *)(id);
   sva_integer_state_t * new =  newThread ? &(newThread->integerState) : 0;
@@ -1031,8 +1077,10 @@ sva_release_stack (uintptr_t id) {
    * Ensure that we're not trying to release our own state.
    */
   if (newThread == getCPUState()->currentThread)
+  {
+    record_tsc(sva_release_stack_1_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
     return;
-
+  }
   /*
    * Release ghost memory.  Be sure to use the value of CR3 belonging to the
    * thread that is being released.
@@ -1059,6 +1107,7 @@ sva_release_stack (uintptr_t id) {
   extern void ftstack_push(struct SVAThread *thread);
   ftstack_push(newThread);
 
+  record_tsc(sva_release_stack_2_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 
@@ -1086,7 +1135,11 @@ sva_init_stack (unsigned char * start_stackp,
                 uintptr_t arg1,
                 uintptr_t arg2,
                 uintptr_t arg3) {
-  
+ 
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
+ 
   /* Working memory pointer */
   sva_icontext_t * icontextp;
   /* Working integer state */
@@ -1287,5 +1340,6 @@ sva_init_stack (unsigned char * start_stackp,
    * Re-enable interrupts.
    */
   sva_exit_critical (rflags);
+  record_tsc(sva_init_stack_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return (unsigned long) newThread;
 }

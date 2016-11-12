@@ -179,6 +179,10 @@ init_mmu () {
  */
 static inline void
 page_entry_store (unsigned long *page_entry, page_entry_t newVal) {
+  uint64_t tsc_tmp; 
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
+
   /* Disable page protection so we can write to the referencing table entry */
   unprotect_paging();
     
@@ -187,6 +191,8 @@ page_entry_store (unsigned long *page_entry, page_entry_t newVal) {
 
   /* Reenable page protection */
   protect_paging();
+
+  record_tsc(page_entry_store_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
 /*
@@ -1353,6 +1359,9 @@ unmapSecurePage (unsigned char * cr3, unsigned char * v) {
  */
 void
 sva_mm_load_pgtable (void * pg) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
   /*
    * Disable interrupts so that we appear to execute as a single instruction.
    */
@@ -1409,7 +1418,7 @@ sva_mm_load_pgtable (void * pg) {
 
   /* Restore interrupts */
   sva_exit_critical (rflags);
-
+  record_tsc(sva_mm_load_pgtable_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 
@@ -1422,8 +1431,12 @@ sva_mm_load_pgtable (void * pg) {
  */
 void 
 sva_load_cr0 (unsigned long val) {
+    uint64_t tsc_tmp;
+    if(tsc_read_enable_sva)
+       tsc_tmp = sva_read_tsc();
     val |= CR0_WP;
     _load_cr0(val);
+    record_tsc(sva_load_cr0_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
 /*
@@ -1945,6 +1958,9 @@ sva_mmu_init (pml4e_t * kpml4Mapping,
               uintptr_t * firstpaddr,
               uintptr_t btext,
               uintptr_t etext) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
   /* Get the virtual address of the pml4e mapping */
 #if USE_VIRT
   pml4e_t * kpml4eVA = (pml4e_t *) getVirtual( (uintptr_t) kpml4Mapping);
@@ -1994,6 +2010,7 @@ sva_mmu_init (pml4e_t * kpml4Mapping,
    * Note that the MMU is now initialized.
    */
   mmuIsInitialized = 1;
+  record_tsc(sva_mmu_init_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
 /*
@@ -2010,6 +2027,9 @@ sva_mmu_init (pml4e_t * kpml4Mapping,
  */
 void
 sva_declare_l1_page (uintptr_t frameAddr) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
   /* Disable interrupts so that we appear to execute as a single instruction. */
   unsigned long rflags = sva_enter_critical();
 
@@ -2058,6 +2078,7 @@ sva_declare_l1_page (uintptr_t frameAddr) {
 
   /* Restore interrupts */
   sva_exit_critical (rflags);
+  record_tsc(sva_declare_l1_page_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 
@@ -2075,6 +2096,9 @@ sva_declare_l1_page (uintptr_t frameAddr) {
  */
 void
 sva_declare_l2_page (uintptr_t frameAddr) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
   /* Disable interrupts so that we appear to execute as a single instruction. */
   unsigned long rflags = sva_enter_critical();
 
@@ -2119,6 +2143,7 @@ sva_declare_l2_page (uintptr_t frameAddr) {
 
   /* Restore interrupts */
   sva_exit_critical (rflags);
+  record_tsc(sva_declare_l2_page_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 
@@ -2136,6 +2161,9 @@ sva_declare_l2_page (uintptr_t frameAddr) {
  */
 void
 sva_declare_l3_page (uintptr_t frameAddr) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
   /* Disable interrupts so that we appear to execute as a single instruction */
   unsigned long rflags = sva_enter_critical();
 
@@ -2180,6 +2208,7 @@ sva_declare_l3_page (uintptr_t frameAddr) {
 
   /* Restore interrupts */
   sva_exit_critical (rflags);
+  record_tsc(sva_declare_l3_page_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 
@@ -2197,6 +2226,9 @@ sva_declare_l3_page (uintptr_t frameAddr) {
  */
 void
 sva_declare_l4_page (uintptr_t frameAddr) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
   /* Disable interrupts so that we appear to execute as a single instruction. */
   unsigned long rflags = sva_enter_critical();
 
@@ -2249,6 +2281,7 @@ sva_declare_l4_page (uintptr_t frameAddr) {
 
   /* Restore interrupts */
   sva_exit_critical (rflags);
+  record_tsc(sva_declare_l4_page_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
 static inline page_entry_t * 
@@ -2311,6 +2344,9 @@ printPTES (uintptr_t vaddr) {
  */
 void
 sva_remove_page (uintptr_t paddr) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
   /* Disable interrupts so that we appear to execute as a single instruction. */
   unsigned long rflags = sva_enter_critical();
 
@@ -2335,6 +2371,7 @@ sva_remove_page (uintptr_t paddr) {
       /* Restore interrupts */
       panic ("SVA: undeclare bad page type: %lx %lx\n", paddr, pgDesc->type);
       sva_exit_critical (rflags);
+      record_tsc(sva_remove_page_1_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
       return;
       break;
   }
@@ -2366,6 +2403,7 @@ sva_remove_page (uintptr_t paddr) {
 
   /* Restore interrupts */
   sva_exit_critical (rflags);
+  record_tsc(sva_remove_page_2_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 
@@ -2385,6 +2423,9 @@ sva_remove_page (uintptr_t paddr) {
  */
 void
 sva_remove_mapping(page_entry_t * pteptr) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
   /* Disable interrupts so that we appear to execute as a single instruction. */
   unsigned long rflags = sva_enter_critical();
 
@@ -2396,6 +2437,7 @@ sva_remove_mapping(page_entry_t * pteptr) {
 
   /* Restore interrupts */
   sva_exit_critical (rflags);
+  record_tsc(sva_remove_mapping_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
 /* 
@@ -2415,6 +2457,9 @@ sva_remove_mapping(page_entry_t * pteptr) {
  */
 void
 sva_update_l1_mapping(pte_t * pteptr, page_entry_t val) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
   /*
    * Disable interrupts so that we appear to execute as a single instruction.
    */
@@ -2436,6 +2481,7 @@ sva_update_l1_mapping(pte_t * pteptr, page_entry_t val) {
 
   /* Restore interrupts */
   sva_exit_critical (rflags);
+  record_tsc(sva_update_l1_mapping_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 
@@ -2448,6 +2494,9 @@ sva_update_l1_mapping(pte_t * pteptr, page_entry_t val) {
  */
 void
 sva_update_l2_mapping(pde_t * pdePtr, page_entry_t val) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
   /*
    * Disable interrupts so that we appear to execute as a single instruction.
    */
@@ -2469,6 +2518,7 @@ sva_update_l2_mapping(pde_t * pdePtr, page_entry_t val) {
 
   /* Restore interrupts */
   sva_exit_critical (rflags);
+  record_tsc(sva_update_l2_mapping_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 
@@ -2476,6 +2526,9 @@ sva_update_l2_mapping(pde_t * pdePtr, page_entry_t val) {
  * Updates a level3 mapping 
  */
 void sva_update_l3_mapping(pdpte_t * pdptePtr, page_entry_t val) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
   /*
    * Disable interrupts so that we appear to execute as a single instruction.
    */
@@ -2494,6 +2547,7 @@ void sva_update_l3_mapping(pdpte_t * pdptePtr, page_entry_t val) {
 
   /* Restore interrupts */
   sva_exit_critical (rflags);
+  record_tsc(sva_update_l3_mapping_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 
@@ -2501,6 +2555,9 @@ void sva_update_l3_mapping(pdpte_t * pdptePtr, page_entry_t val) {
  * Updates a level4 mapping 
  */
 void sva_update_l4_mapping (pml4e_t * pml4ePtr, page_entry_t val) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
   /*
    * Disable interrupts so that we appear to execute as a single instruction.
    */
@@ -2519,6 +2576,7 @@ void sva_update_l4_mapping (pml4e_t * pml4ePtr, page_entry_t val) {
 
   /* Restore interrupts */
   sva_exit_critical (rflags);
+  record_tsc(sva_update_l4_mapping_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 

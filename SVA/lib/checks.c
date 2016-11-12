@@ -14,11 +14,16 @@
  */
 
 #include "sva/mmu.h"
+#include "sva/util.h"
 
 #include <sys/types.h>
 
 void
 sva_check_buffer (uintptr_t start, uintptr_t len) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
+
   /*
    * Compute the last address of the buffer.
    */
@@ -47,7 +52,7 @@ sva_check_buffer (uintptr_t start, uintptr_t len) {
   if ((sstart <= svamemlen) || (send <= svamemlen)) {
     panic ("SVA: Invalid buffer access: %lx %lx\n", start, end);
   }
-
+  record_tsc(sva_check_buffer_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 

@@ -83,6 +83,7 @@
 
 #include "sva/config.h"
 #include "sva/state.h"
+#include "sva/util.h"
 
 #include <string.h>
 #include <limits.h>
@@ -592,6 +593,10 @@ sva_init_primary () {
   init_segs ();
   init_debug ();
 #endif
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+   	tsc_tmp = sva_read_tsc();
+
   /* Initialize the processor ID */
   init_procID();
 
@@ -610,6 +615,7 @@ sva_init_primary () {
   llva_reset_counters();
   llva_reset_local_counters();
 #endif
+  record_tsc(sva_init_primary_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
 /*
@@ -622,6 +628,10 @@ sva_init_primary () {
  */
 void
 sva_init_secondary () {
+
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
 #if 0
   init_segs ();
   init_debug ();
@@ -648,6 +658,7 @@ sva_init_secondary () {
   llva_reset_counters();
   llva_reset_local_counters();
 #endif
+  record_tsc(sva_init_secondary_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
 #define REGISTER_EXCEPTION(number) \
