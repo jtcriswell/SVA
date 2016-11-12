@@ -279,6 +279,9 @@ void init_leaf_page_from_mapping(page_entry_t mapping);
 /* CR0 Flags */
 #define     CR0_WP      0x00010000      /* Write protect enable */
 
+/* CR4 Flags */
+#define     CR4_PGE     0x00000080      /* enable global pages */
+
 /*
  * Function: getVirtual()
  *
@@ -354,6 +357,16 @@ static inline void load_cr3(unsigned long data)
     __asm __volatile("movq %0,%%cr3" : : "r" (data) : "memory"); 
 }
 
+/*
+ * Function: load_cr4
+ *
+ * Description: 
+ *  Load the cr4 with the given value passed in.
+ */
+static inline void load_cr4(unsigned long data)
+{
+    __asm __volatile("movq %0,%%cr4" : : "r" (data));
+}
 
 static inline u_long
 _rcr0(void) {
@@ -379,6 +392,32 @@ _rcr4(void) {
 static inline uint64_t
 _efer(void) {
     return rdmsr(MSR_REG_EFER);
+}
+
+/*  
+ * Global TLB flush (except for this for pages marked PG_G)
+ */ 
+static inline void
+invltlb(void)
+{
+    
+    load_cr3(_rcr3());
+}
+
+/*
+ * Invalidate all TLB entries (including global entries)
+ * Interrupts should have already been disabled when this function is invoked.
+ * clear PGE of CR4 first and then write old PGE again to CR4 to flush TLBs
+ */
+
+static inline void
+invltlb_all(void)
+{
+    unsigned long cr4;
+    cr4 = _rcr4();
+    load_cr4(cr4 & ~CR4_PGE);
+    load_cr4(cr4);
+    
 }
 
 static inline void

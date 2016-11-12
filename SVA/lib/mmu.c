@@ -554,6 +554,10 @@ updateOrigPageData(page_entry_t mapping) {
    */
   if ((mapping & PG_V) && (origPG->count)) {
     --(origPG->count);
+    if(origPG->count == 1)
+    {
+	invltlb_all();
+    }
   }
 
   return;
@@ -2052,6 +2056,9 @@ sva_declare_l1_page (uintptr_t frameAddr) {
       break;
   }
 
+  /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
+  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l1_page: more than one virtual addresses are still using this page!");
+
   /* 
    * Declare the page as an L1 page (unless it is already an L1 page).
    */
@@ -2121,6 +2128,9 @@ sva_declare_l2_page (uintptr_t frameAddr) {
       break;
   }
 
+ /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
+  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l2_page: more than one virtual addresses are still using this page!");
+
   /* 
    * Declare the page as an L2 page (unless it is already an L2 page).
    */
@@ -2186,6 +2196,9 @@ sva_declare_l3_page (uintptr_t frameAddr) {
       break;
   }
 
+
+ /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
+  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l3_page: more than one virtual addresses are still using this page!");
   /* 
    * Declare the page as an L3 page (unless it is already an L3 page).
    */
@@ -2259,6 +2272,8 @@ sva_declare_l4_page (uintptr_t frameAddr) {
       break;
   }
 
+ /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
+  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l1_page: more than one virtual addresses are still using this page!");
   /* 
    * Declare the page as an L4 page (unless it is already an L4 page).
    */
