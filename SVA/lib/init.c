@@ -483,6 +483,7 @@ init_fpu (void) {
  */
 static void
 init_mpx (void) {
+#ifdef MPX
   /* First address of kernel memory */
 #if 0
   static uintptr_t kernelBase = 0xfffffe0000000000;
@@ -545,7 +546,7 @@ init_mpx (void) {
                           : "a" (kernelBase), "d" (kernelSize));
 
   }
-
+#endif
   return;
 }
 
@@ -557,6 +558,7 @@ init_mpx (void) {
  */
 void
 testmpx (void) {
+#ifdef MPX
   struct sillyStruct {
     unsigned long a;
     unsigned long b;
@@ -571,6 +573,7 @@ testmpx (void) {
 
   __asm__ __volatile__ ("bndcl %0, %%bnd0\n" :: "a" (&(testmpx)));
   __asm__ __volatile__ ("bndcu %0, %%bnd0\n" :: "a" (&(foo.b)));
+#endif
   return;
 }
 
