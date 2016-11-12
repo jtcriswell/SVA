@@ -65,6 +65,11 @@ static inline uintptr_t get_pdePaddr (pdpte_t * pdpte, uintptr_t vaddr);
 static inline uintptr_t get_ptePaddr (pde_t * pde, uintptr_t vaddr);
 
 /*
+ * SVA direct mapping related functions
+ */
+static inline uintptr_t getPhysicalAddrKDMAP (void * v);
+static inline uintptr_t getPhysicalAddrSVADMAP (void * v);
+/*
  * Mapping update function prototypes.
  */
 static inline void __update_mapping (pte_t * pageEntryPtr, page_entry_t val);
@@ -134,6 +139,7 @@ printPageType (unsigned char * p) {
   return;
 }
 
+
 /*
  * Function: init_mmu
  *
@@ -146,6 +152,8 @@ init_mmu () {
   memset (page_desc, 0, sizeof (struct page_desc_t) * numPageDescEntries);
   return;
 }
+
+
 
 /*
  *****************************************************************************
@@ -183,14 +191,24 @@ page_entry_store (unsigned long *page_entry, page_entry_t newVal) {
   if(tsc_read_enable_sva)
      tsc_tmp = sva_read_tsc();
 
+  uintptr_t phys;
+  uintptr_t* page_entry_svadm;
+  phys = getPhysicalAddr(page_entry);
+  page_entry_svadm = (uintptr_t*)getVirtualSVADMAP(phys);  
+
+  if(getPageDescPtr(phys)->dmap)
+  {
+	newVal |= PG_RW;
+  }
+
   /* Disable page protection so we can write to the referencing table entry */
-  unprotect_paging();
+  //unprotect_paging();
     
   /* Write the new value to the page_entry */
-  *page_entry = newVal;
+  *page_entry_svadm = newVal;
 
   /* Reenable page protection */
-  protect_paging();
+  //protect_paging();
 
   record_tsc(page_entry_store_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
@@ -441,6 +459,10 @@ pt_update_is_valid (page_entry_t *page_entry, page_entry_t newVal) {
       default:
         break;
     }
+  }
+
+  if(isCodePg (newPG)) {
+    retValue = 1;
   }
 
   /*
@@ -844,6 +866,20 @@ getPhysicalAddrKDMAP (void * v) {
 
 
 
+
+/*
+ * Function: getPhysicalAddrSVADMAP()
+ *
+ * Description:
+ *  Find the physical page number of the specified virtual address based on SVA direct mapping.
+ */
+
+static inline uintptr_t
+getPhysicalAddrSVADMAP (void * v) {
+ return  ((uintptr_t) v & ~SVADMAPSTART);
+}
+
+
 /*
  * Function: getPhysicalAddr()
  *
@@ -1095,7 +1131,6 @@ uintptr_t
 mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
   /* PML4e value for the secure memory region */
   pml4e_t pml4eVal;
-
   /*
    * Ensure that this page is not being used for something else.
    */
@@ -1443,6 +1478,7 @@ sva_load_cr0 (unsigned long val) {
     record_tsc(sva_load_cr0_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
+
 /*
  * Function: declare_ptp_and_walk_pt_entries
  *
@@ -1775,7 +1811,7 @@ declare_kernel_code_pages (uintptr_t btext, uintptr_t etext) {
 static inline void
 makePTReadOnly (void) {
   /* Disable page protection */
-  unprotect_paging();
+  //unprotect_paging();
 
   /*
    * For each physical page, determine if it is used as a page table page.
@@ -1791,7 +1827,7 @@ makePTReadOnly (void) {
   }
 
   /* Re-enable page protection */
-  protect_paging();
+  //protect_paging();
 }
 
 /*
@@ -1933,6 +1969,85 @@ remap_internal_memory (uintptr_t * firstpaddr) {
 }
 
 /*
+ * Function: sva_create_dmap()
+ *
+ * Description:
+ *  This function sets up the SVA direct mapping region.
+ *
+ * Input:
+ * KPML4phys - phys addr of kernel level 4 page table page
+ * DMPDPphys - phys addr of SVA direct mapping level 3 page table page
+ * DMPDphys -  phys addr of SVA direct mapping level 2 page table page
+ * ndmpdp   -  number of SVA direct mapping level 3 page table pages
+ * ndm1g    -  number of 1GB pages used for SVA direct mapping
+ */
+
+void
+sva_create_dmap(void * KPML4phys, void * DMPDPphys,
+void * DMPDphys, int ndmpdp, int ndm1g)
+{
+  int i, j;
+
+  for (i = NPDEPG * ndm1g, j = 0; i < NPDEPG * ndmpdp; i++, j++) {
+                ((pde_t *)DMPDphys)[j] = (uintptr_t)i << PDRSHIFT;
+                /* Preset PG_M and PG_A because demotion expects it. */
+                ((pde_t *)DMPDphys)[j] |= PG_RW | PG_V | PG_PS | PG_G |
+                    PG_M | PG_A;
+  }
+
+  for (i = 384; i < 384 + ndm1g; i++) {
+                ((pdpte_t *)DMPDPphys)[i] = (uintptr_t)(i - 384) << PDPSHIFT;
+                /* Preset PG_M and PG_A because demotion expects it. */
+                ((pdpte_t *)DMPDPphys)[i] |= PG_RW | PG_V | PG_PS | PG_G |
+                    PG_M | PG_A;
+  }
+  for (j = 0; i < 384 + ndmpdp; i++, j++) {
+                ((pdpte_t *)DMPDPphys)[i] = DMPDphys + (j << PAGE_SHIFT);
+                ((pdpte_t *)DMPDPphys)[i] |= PG_RW | PG_V | PG_U;
+
+  }
+
+
+  /* Connect the Direct Map slot(s) up to the PML4. */
+  for (i = 0; i < NDMPML4E; i++) {
+                ((pdpte_t *)KPML4phys)[DMPML4I + i] = DMPDPphys +
+                    (i << PAGE_SHIFT);
+                ((pdpte_t *)KPML4phys)[DMPML4I + i] |= PG_RW | PG_V | PG_U;
+  }
+
+
+  for(i = 0; i < NDMPML4E; i++)
+  {
+	sva_declare_dmap_page(DMPDPphys + (i << PAGE_SHIFT));
+  }
+
+  for(i = 0; i < ndmpdp - ndm1g; i ++)
+  {
+	sva_declare_dmap_page(DMPDphys + (i << PAGE_SHIFT));
+  }
+
+  return;
+}
+
+/*
+ * Instrinsic: sva_update_l4_dmap
+ *
+ * Description:
+ *  This function updates the pml4 entries of a process with the SVA direct mapping.
+ *
+ * Input:
+ *  pml4pg - the virtual address of the pml4 page table page to be updated
+ *  index  - the index of the SVA direct mapping pml4 entry
+ *  val    - the page table entry to be populated in
+ */
+
+void sva_update_l4_dmap(void * pml4pg, int index, page_entry_t val)
+{
+  if(index < NDMPML4E)
+  sva_update_l4_mapping(&(((pdpte_t *)pml4pg)[DMPML4I + index]), val);
+}
+
+/*
  * Function: sva_mmu_init
  *
  * Description:
@@ -2057,7 +2172,7 @@ sva_declare_l1_page (uintptr_t frameAddr) {
   }
 
   /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
-  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l1_page: more than one virtual addresses are still using this page!");
+  SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l1_page: more than one virtual addresses are still using this page!");
 
   /* 
    * Declare the page as an L1 page (unless it is already an L1 page).
@@ -2129,7 +2244,7 @@ sva_declare_l2_page (uintptr_t frameAddr) {
   }
 
  /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
-  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l2_page: more than one virtual addresses are still using this page!");
+  SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l2_page: more than one virtual addresses are still using this page!");
 
   /* 
    * Declare the page as an L2 page (unless it is already an L2 page).
@@ -2198,7 +2313,7 @@ sva_declare_l3_page (uintptr_t frameAddr) {
 
 
  /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
-  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l3_page: more than one virtual addresses are still using this page!");
+  SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l3_page: more than one virtual addresses are still using this page!");
   /* 
    * Declare the page as an L3 page (unless it is already an L3 page).
    */
@@ -2273,7 +2388,7 @@ sva_declare_l4_page (uintptr_t frameAddr) {
   }
 
  /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
-  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l1_page: more than one virtual addresses are still using this page!");
+  SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l1_page: more than one virtual addresses are still using this page!");
   /* 
    * Declare the page as an L4 page (unless it is already an L4 page).
    */
@@ -2298,6 +2413,20 @@ sva_declare_l4_page (uintptr_t frameAddr) {
   sva_exit_critical (rflags);
   record_tsc(sva_declare_l4_page_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
+
+/*
+ * Function: sva_declare_dmap_page()
+ *
+ * Description:
+ *   Declare a physical page frame to be a page for SVA direct mapping
+ *
+ * Input:
+ *   frameAddr - the address of a physical page frame
+ */
+void sva_declare_dmap_page(uintptr_t frameAddr)
+ {
+    getPageDescPtr(frameAddr)->dmap = 1;
+ }
 
 static inline page_entry_t * 
 printPTES (uintptr_t vaddr) {
@@ -2400,7 +2529,7 @@ sva_remove_page (uintptr_t paddr) {
    * Note that we check for a reference count of 1 because the page is always
    * mapped into the direct map.
    */
-  if ((pgDesc->count == 1) || (pgDesc->count == 0)) {
+  if ((pgDesc->count == 2) || (pgDesc->count == 1) || (pgDesc->count == 0)) {
     /*
      * Mark the page frame as an unused page.
      */
@@ -2455,6 +2584,7 @@ sva_remove_mapping(page_entry_t * pteptr) {
   record_tsc(sva_remove_mapping_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
+
 /* 
  * Function: sva_update_l1_mapping()
  *
@@ -2484,7 +2614,7 @@ sva_update_l1_mapping(pte_t * pteptr, page_entry_t val) {
    * Ensure that the PTE pointer points to an L1 page table.  If it does not,
    * then report an error.
    */
-  page_desc_t * ptDesc = getPageDescPtr (getPhysicalAddr (pteptr));
+  page_desc_t * ptDesc = getPageDescPtr (getPhysicalAddr(pteptr));
   if ((ptDesc->type != PG_L1) && (!disableMMUChecks)) {
     panic ("SVA: MMU: update_l1 not an L1: %lx %lx: %lx\n", pteptr, val, ptDesc->type);
   }

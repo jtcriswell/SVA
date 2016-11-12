@@ -72,7 +72,11 @@ static const unsigned long numPageDescEntries = memSize / pageSize;
 
 /* Start and end addresses of the secure memory */
 #define SECMEMSTART 0xffffff0000000000u
-#define SECMEMEND   0xffffff8000000000u
+#define SECMEMEND   0xffffff6000000000u
+
+/* Start and end addresses of the SVA direct mapping */
+#define SVADMAPSTART 0xffffff6000000000u
+#define SVADMAPEND   0xffffff7fffffffffu
 
 /* Start and end addresses of user memory */
 static const uintptr_t USERSTART = 0x0000000000000000u;
@@ -188,6 +192,9 @@ typedef struct page_desc_t {
 
     /* Is this page a user page? */
     unsigned user : 1;
+
+    /* Is this page for SVA direct mapping? */
+    unsigned dmap : 1;    
 } page_desc_t;
 
 /* Array describing the physical pages */
@@ -252,6 +259,18 @@ static page_desc_t page_desc[numPageDescEntries];
 #define NBPML4      (1UL<<PML4SHIFT)/* bytes/page map lev4 table */
 #define PML4MASK    (NBPML4-1)
 
+
+/* SVA direct mapping */
+
+/*
+ * NDMPML4E is the number of PML4 entries that are used to implement the
+ * SVA direct map.  It must be a power of two.
+ */
+#define NDMPML4E    1 
+#define KPML4I      (NPML4EPG - 1)    /* Top 512GB for KVM */
+#define DMPML4I     (KPML4I - NDMPML4E)/NDMPML4E * NDMPML4E /* the index of SVA direct mapping on pml4*/
+
+
 /*
  * ===========================================================================
  * END FreeBSD CODE BLOCK
@@ -287,7 +306,7 @@ void init_leaf_page_from_mapping(page_entry_t mapping);
  *
  * Description:
  *  This function takes a physical address and converts it into a virtual
- *  address that the SVA VM can access.
+ *  address that the SVA VM can access based on kernel direct mapping.
  *
  *  In a real system, this is done by having the SVA VM create its own
  *  virtual-to-physical mapping of all of physical memory within its own
@@ -298,6 +317,19 @@ void init_leaf_page_from_mapping(page_entry_t mapping);
 static inline unsigned char *
 getVirtual (uintptr_t physical) {
   return (unsigned char *)(physical | 0xfffffe0000000000u);
+}
+
+/*
+ * Function: getVirtualSVADMAP()
+ *
+ * Description:
+ *  This function takes a physical address and converts it into a virtual
+ *  address that the SVA VM can access based on SVA direct mapping.
+ *
+ */
+static inline unsigned char *
+getVirtualSVADMAP (uintptr_t physical) {
+  return (unsigned char *)(physical | SVADMAPSTART);
 }
 
 /*
