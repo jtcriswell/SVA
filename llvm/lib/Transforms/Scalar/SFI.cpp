@@ -58,6 +58,9 @@ static const uintptr_t checkMask = 0x00000000ffffff00;
 /* Mask to set proper lower-order bits */
 static const uintptr_t setMask   = 0x0000008000000000u;
 
+// Location of secure memory
+static uintptr_t startGhostMemory = 0xffffff0000000000u;
+
 namespace llvm {
   //
   // Pass: SFI
@@ -222,6 +225,28 @@ SFI::addBitMasking (Value * Pointer, Instruction & I) {
     LLVMContext & Context = I.getContext();
 
     //
+    // Create a pointer value that is the pointer minus the start of the
+    // secure memory.
+    //
+    unsigned ptrSize = TD.getPointerSize();
+    Constant * adjSize = ConstantInt::get (IntPtrTy,
+                                           startGhostMemory,
+                                           false);
+    Value * IntPtr = new PtrToIntInst (Pointer,
+                                       IntPtrTy,
+                                       Pointer->getName(),
+                                       &I);
+    Value * AdjustPtr = BinaryOperator::Create (Instruction::Sub,
+                                                IntPtr,
+                                                adjSize,
+                                                "adjSize",
+                                                &I);
+    AdjustPtr = new IntToPtrInst (AdjustPtr,
+                                  Pointer->getType(),
+                                  Pointer->getName(),
+                                  &I);
+
+    //
     // Create a function type for the inline assembly instruction.
     //
     FunctionType * CheckType;
@@ -237,44 +262,11 @@ SFI::addBitMasking (Value * Pointer, Instruction & I) {
                                                "r,~{dirflag},~{fpsr},~{flags}",
                                                true);
 
-    Value * UpperBoundsCheck = InlineAsm::get (CheckType,
-                                               "bndcu $0, %bnd0\n",
-                                               "r,~{dirflag},~{fpsr},~{flags}",
-                                               true);
-
     //
-    // Create a value representing the last address to which the pointer can
-    // point given the data type size.  Since we may not run any optimizations
-    // after this point, specifically check if the pointer is only a byte long
-    // and omit the size calculution in that case.
+    // Create the lower bounds check.  Do this before calculating the address
+    // for the upper bounds check; this might reduce register pressure.
     //
-    Value * EndPtr = Pointer;
-    if (unsigned ptrsize = TD.getPointerSize() - 1) {
-      //
-      // Create an instruction to calculate the last address accessed by the
-      // pointer.
-      //
-      Constant * ptrSize = ConstantInt::get (IntPtrTy, ptrsize, false);
-      Value * IntPtr = new PtrToIntInst (Pointer,
-                                         IntPtrTy,
-                                         Pointer->getName(),
-                                         &I);
-      EndPtr = BinaryOperator::Create (Instruction::Add,
-                                       IntPtr,
-                                       ptrSize,
-                                       "ptrsize",
-                                       &I);
-      EndPtr = new IntToPtrInst (EndPtr,
-                                 Pointer->getType(),
-                                 Pointer->getName(),
-                                 &I);
-    }
-
-    //
-    // Add the run-time checks.
-    //
-    CallInst::Create (LowerBoundsCheck, Pointer, "", &I);
-    CallInst::Create (UpperBoundsCheck, EndPtr, "", &I);
+    CallInst::Create (LowerBoundsCheck, AdjustPtr, "", &I);
     return Pointer;
   } else {
     //

@@ -235,7 +235,8 @@ freeSecureMemory (void) {
     /*
      * Unmap the memory from the secure memory virtual address space.
      */
-    unmapSecurePage (get_pagetable(), p);
+    struct CPUState * cpup = getCPUState();
+    unmapSecurePage (cpup->currentThread, p);
 
     /*
      * Release the memory to the operating system.  Note that we must first

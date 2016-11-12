@@ -30,7 +30,7 @@ case "$enableval" in
 esac
 
 case "$enableval" in
-  yes) AC_SUBST([COPTFLAGS], ["-mllvm -enable-mpx-sfi"]) ;;
+  yes) AC_SUBST([COPTFLAGS], ["-mllvm -enable-mpx-sfi -no-integrated-as"]) ;;
   no)  AC_SUBST([COPTFLAGS], [""]) ;;
   *) AC_MSG_ERROR([Invalid setting for --enable-mpx. Use "yes" or "no"]) ;;
 esac

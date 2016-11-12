@@ -1283,36 +1283,22 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
  *  Unmap a single frame of secure memory from the specified virtual address.
  *
  * Inputs:
- *  cr3   - The value to use for the CR3 register (provides the starting point
- *          for virtual to physical page translation).
- *  vaddr - The virtual address to unmap.
+ *  threadp - A pointer to the SVA Thread for which we should release the frame
+ *            of secure memory.
+ *  v       - The virtual address to unmap.
  *
  * TODO:
  *  Implement code that will tell other processors to invalidate their TLB
  *  entries for this page.
  */
 void
-unmapSecurePage (unsigned char * cr3, unsigned char * v) {
+unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
   /*
    * Get the PML4E of the current page table.  If there isn't one in the
    * table, add one.
    */
   uintptr_t vaddr = (uintptr_t) v;
-#if 0
-  pml4e_t * pml4e = get_pml4eVaddr (cr3, vaddr);
-  if (!isPresent (pml4e)) {
-    return;
-    panic ("SVA: unmapSecurePage: No PML4E!\n");
-  }
-
-  /*
-   * Get the PDPTE entry (or add it if it is not present).
-   */
-  pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr);
-#else
-  struct SVAThread * thread = getCPUState()->currentThread;
-  pdpte_t * pdpte = get_pdpteVaddr (&(thread->secmemPML4e), vaddr);
-#endif
+  pdpte_t * pdpte = get_pdpteVaddr (&(threadp->secmemPML4e), vaddr);
   if (!isPresent (pdpte)) {
     return;
   }

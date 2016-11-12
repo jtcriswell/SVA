@@ -1,0 +1,46 @@
+#==============================================================================#
+# This file specifies intentionally untracked files that git should ignore.
+# See: http://www.kernel.org/pub/software/scm/git/docs/gitignore.html
+#
+# This file is intentionally different from the output of `git svn show-ignore`,
+# as most of those are useless.
+#==============================================================================#
+
+#==============================================================================#
+# File extensions to be ignored anywhere in the tree.
+#==============================================================================#
+# Temp files created by most text editors.
+*~
+# Merge files created by git.
+*.orig
+# Byte compiled python modules.
+*.pyc
+# vim swap files
+.*.swp
+
+#==============================================================================#
+# Ignore files created by the configure script
+#==============================================================================#
+
+SVA/include/sva/config.h
+SVA/lib/*.o
+make.conf
+config.log
+config.status
+autoconf/autom4te.cache/*
+autom4te.cache/*
+
+#==============================================================================#
+# Ignore files created by LLVM Build process
+#==============================================================================#
+
+llvm/Release+Asserts/*
+llvm/lib/*/Release+Asserts/*
+llvm/lib/*/*/Release+Asserts/*
+llvm/lib/*/*/*/Release+Asserts/*
+llvm/lib/*/*/*.inc
+llvm/tools/*/Release+Asserts/*
+llvm/unittests/*/Release+Asserts/*
+llvm/unittests/*/*/Release+Asserts/
+llvm/utils/*/Release+Asserts/*
+llvm/utils/*/*/Release+Asserts/*

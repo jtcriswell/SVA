@@ -84,14 +84,12 @@
 #include "sva/config.h"
 #include "sva/state.h"
 #include "sva/util.h"
+#include "sva/mmu.h"
 
 #include <string.h>
 #include <limits.h>
 
 #include <sys/types.h>
-
-extern int printf(const char *, ...);
-extern void panic(const char *, ...);
 
 void register_x86_interrupt (int number, void *interrupt, unsigned char priv);
 void register_x86_trap (int number, void *trap);
@@ -486,13 +484,8 @@ static void
 init_mpx (void) {
 #ifdef MPX
   /* First address of kernel memory */
-#if 0
-  static uintptr_t kernelBase = 0xfffffe0000000000;
-  static uintptr_t kernelSize = 0xffffffffffffffff - 0xfffffe0000000000;
-#else
-  static uintptr_t kernelBase = 4096;
-  static uintptr_t kernelSize = 0xffffffffffffffff;
-#endif
+  static uintptr_t const kernelBase = SECMEMEND - SECMEMSTART;
+  static uintptr_t const kernelSize = (0xffffffffffffffffu - kernelBase);
 
   /* Bits within control register 4 (CR4) */
   static const uintptr_t oxsave = (1u << 18);
@@ -501,6 +494,10 @@ init_mpx (void) {
   static unsigned char bndreg = (1u << 3);
   static unsigned char bndcsr = (1u << 4);
   static unsigned char enableX87 = (1u << 0);
+
+  /* Bits to configure the BNDCFGS register */
+  static unsigned char bndEnable   = (1u << 0);
+  static unsigned char bndPreserve = (1u << 1);
 
   /* ID number of the configuration register for MPX kernel mode code */
   static const unsigned IA32_BNDCFGS = 0x0d90;
@@ -533,11 +530,13 @@ init_mpx (void) {
                           : "%rax", "%rdx");
 
     /*
-     * Enable kernel mode bounds checking.
+     * Enable bounds checking for kernel mode code.  We enable the
+     * bndEnable bit to enable bounds checking and the bndPreserve bit to
+     * ensure that control flow instructions do not clear the bounds registers.
      */
     __asm__ __volatile__ ("wrmsr\n"
                           :
-                          : "c" (IA32_BNDCFGS), "A" (1));
+                          : "c" (IA32_BNDCFGS), "A" (bndEnable | bndPreserve));
 
     /*
      * Load bounds information for kernel memory into the first bounds register.
@@ -568,7 +567,7 @@ testmpx (void) {
   /*
    * Load bounds information into the first bounds register.
    */
-  __asm__ __volatile__ ("bndmk (%0,%1), %%bnd0\n"
+  __asm__ __volatile__ ("bndmk (%0,%1), %%bnd1\n"
                         :
                         : "a" (&foo), "d" (sizeof(foo) - 1));
 

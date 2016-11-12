@@ -1088,7 +1088,7 @@ sva_release_stack (uintptr_t id) {
   uintptr_t cr3 = ((((uintptr_t)new->cr3) & 0x000ffffffffff000u));
   for (uintptr_t size=0; size < newThread->secmemSize; size += X86_PAGE_SIZE) {
     if (vg) {
-      unmapSecurePage ((unsigned char *)cr3, SECMEMSTART + size);
+      unmapSecurePage (newThread, SECMEMSTART + size);
     }
   }
 
