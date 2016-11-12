@@ -875,7 +875,8 @@ getPhysicalAddr (void * v) {
    * a 1 GB page; return the physical address of that page.
    */
   if ((*pdpte) & PTE_PS) {
-    return (*pdpte & 0x000fffffffffffffu) >> 30;
+    //return (*pdpte & 0x000fffffffffffffu) >> 30;
+    return (*pdpte & 0x000fffffc0000000u) + (vaddr & 0x3fffffffu);
   }
 
   /*
@@ -1635,7 +1636,7 @@ declare_ptp_and_walk_pt_entries(page_entry_t *pageEntry, unsigned long
    */
   if(traversedPTEAlready) {
 #if DEBUG_INIT >= 1
-    printf("%sRecursed on already initialized page_desc\n", indent);
+    printf("%s Recursed on already initialized page_desc\n", indent);
 #endif
     return;
   }
@@ -1649,6 +1650,8 @@ declare_ptp_and_walk_pt_entries(page_entry_t *pageEntry, unsigned long
    * walk on all sub entries.
    */
   for (i = 0; i < numSubLevelPgEntries; i++){
+   if ((pageLevel == PG_L4) && (i == 256))
+	continue;
 #if 0
     /*
      * Do not process any entries that implement the direct map.  This prevents
@@ -2456,7 +2459,7 @@ sva_update_l2_mapping(pde_t * pdePtr, page_entry_t val) {
    */
   page_desc_t * ptDesc = getPageDescPtr (getPhysicalAddr (pdePtr));
   if ((ptDesc->type != PG_L2) && (!disableMMUChecks)) {
-    printf ("SVA: MMU: update_l2 not an L2: %lx %lx: type=%lx count=%lx\n", pdePtr, val, ptDesc->type, ptDesc->count);
+    panic ("SVA: MMU: update_l2 not an L2: %lx %lx: type=%lx count=%lx\n", pdePtr, val, ptDesc->type, ptDesc->count);
   }
 
   /*
