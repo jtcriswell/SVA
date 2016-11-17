@@ -23,31 +23,10 @@
 #include "sva/keys.h"
 
 
-/* PCID-related functions: 
- * kernel pcid is 1, and user/SVA pcid is 0
- */
+/* functions to change PCID and page table during user/sva and kernel switch*/
+static inline void usersva_to_kernel_pcid(void);
+static inline void kernel_to_usersva_pcid(void);
 
-static inline void usersva_to_kernel_pcid(void)
-{
-  unsigned long cr3;
-  __asm __volatile("movq %%cr3,%0" : "=r" (cr3));
-  if(!(cr3 & 0x1))
-  {
-	cr3 = (cr3 & ~0xfff) | 0x1 | ((unsigned long)1 << 63);
-         __asm __volatile("movq %0,%%cr3" : : "r" (cr3) : "memory");
-  }
-}
-
-static inline void kernel_to_usersva_pcid(void)
-{
-  unsigned long cr3;
-  __asm __volatile("movq %%cr3,%0" : "=r" (cr3));
-  if(cr3 & 0x1)
-  {
-	cr3 = (cr3 & ~0xfff) | ((unsigned long)1 << 63);
-  	__asm __volatile("movq %0,%%cr3" : : "r" (cr3) : "memory");
-  }
-}
 
 /* Processor privilege level */
 typedef unsigned char priv_level_t;
@@ -304,6 +283,13 @@ struct SVAThread {
 
   /* Randomly created identifier */
   uintptr_t rid;
+
+  /* phyiscal address of the kernel-version pml4 page table page*/
+  uintptr_t kernel_cr3;
+
+   /* phyiscal address of the user/sva-version pml4 page table page*/
+  uintptr_t usersva_cr3;
+
 } __attribute__ ((aligned (16)));
 
 /*
@@ -499,5 +485,44 @@ save_fp (sva_fp_state_t * buffer) {
   buffer->present = 1;
 }
 
+/* PCID-related functions: 
+ * kernel pcid is 1, and user/SVA pcid is 0
+ */
+
+static inline void usersva_to_kernel_pcid(void)
+{
+  unsigned long cr3;
+  struct SVAThread * curThread;
+  unsigned long pg = 0;
+
+  __asm __volatile("movq %%cr3,%0" : "=r" (cr3));
+  if(!(cr3 & 0x1))
+  {
+	curThread = getCPUState()->currentThread;
+	if(curThread)
+		pg = curThread->kernel_cr3;
+	pg = (pg == 0)? cr3 : pg;
+	cr3 = (pg & ~0xfff) | 0x1 | ((unsigned long)1 << 63);
+         __asm __volatile("movq %0,%%cr3" : : "r" (cr3) : "memory");
+  }
+}
+
+static inline void kernel_to_usersva_pcid(void)
+{
+  unsigned long cr3;
+  struct SVAThread * curThread;
+  unsigned long pg = 0;
+
+  __asm __volatile("movq %%cr3,%0" : "=r" (cr3));
+  if(cr3 & 0x1)
+  {
+	curThread = getCPUState()->currentThread;
+        if(curThread)
+                pg = curThread->usersva_cr3;
+	pg = (pg == 0)? cr3 : pg;
+	cr3 = (pg & ~0xfff) | ((unsigned long)1 << 63);
+  	__asm __volatile("movq %0,%%cr3" : : "r" (cr3) : "memory");
+  }
+}
 
 #endif

@@ -193,10 +193,13 @@ page_entry_store (unsigned long *page_entry, page_entry_t newVal) {
 
   uintptr_t phys;
   uintptr_t* page_entry_svadm;
+  page_desc_t * pgDescPtr; 
+
   phys = getPhysicalAddr(page_entry);
   page_entry_svadm = (uintptr_t*)getVirtualSVADMAP(phys);  
+  pgDescPtr = getPageDescPtr(phys);
 
-  if(getPageDescPtr(phys)->dmap)
+  if(pgDescPtr->dmap)
   {
 	newVal |= PG_RW;
   }
@@ -207,6 +210,17 @@ page_entry_store (unsigned long *page_entry, page_entry_t newVal) {
   /* Write the new value to the page_entry */
   *page_entry_svadm = newVal;
 
+  if(pgDescPtr->type == PG_L4)
+  {
+  	uintptr_t other_cr3 = pgDescPtr->other_pgPaddr;
+  	if(other_cr3)
+  	{
+		uintptr_t other_phys = other_cr3 | (phys & 0xfff);
+		uintptr_t * other_page_entry_svadm = (uintptr_t *) getVirtualSVADMAP(other_phys);
+		* other_page_entry_svadm = newVal;
+   	}	
+   
+   }
   /* Reenable page protection */
   //protect_paging();
 
@@ -1985,14 +1999,14 @@ void * DMPDphys, int ndmpdp, int ndm1g)
   for (i = NPDEPG * ndm1g, j = 0; i < NPDEPG * ndmpdp; i++, j++) {
                 ((pde_t *)DMPDphys)[j] = (uintptr_t)i << PDRSHIFT;
                 /* Preset PG_M and PG_A because demotion expects it. */
-                ((pde_t *)DMPDphys)[j] |= PG_RW | PG_V | PG_PS | PG_G |
+                ((pde_t *)DMPDphys)[j] |= PG_RW | PG_V | PG_PS | 
                     PG_M | PG_A;
   }
 
   for (i = 384; i < 384 + ndm1g; i++) {
                 ((pdpte_t *)DMPDPphys)[i] = (uintptr_t)(i - 384) << PDPSHIFT;
                 /* Preset PG_M and PG_A because demotion expects it. */
-                ((pdpte_t *)DMPDPphys)[i] |= PG_RW | PG_V | PG_PS | PG_G |
+                ((pdpte_t *)DMPDPphys)[i] |= PG_RW | PG_V | PG_PS | 
                     PG_M | PG_A;
   }
   for (j = 0; i < 384 + ndmpdp; i++, j++) {
@@ -2012,16 +2026,18 @@ void * DMPDphys, int ndmpdp, int ndm1g)
 
   for(i = 0; i < NDMPML4E; i++)
   {
-	sva_declare_dmap_page(DMPDPphys + (i << PAGE_SHIFT));
+	sva_declare_dmap_page((unsigned long)DMPDPphys + (i << PAGE_SHIFT));
   }
 
   for(i = 0; i < ndmpdp - ndm1g; i ++)
   {
-	sva_declare_dmap_page(DMPDphys + (i << PAGE_SHIFT));
+	sva_declare_dmap_page((unsigned long)DMPDphys + (i << PAGE_SHIFT));
   }
 
   return;
 }
+
+
 
 /*
  * Instrinsic: sva_update_l4_dmap
@@ -2542,11 +2558,27 @@ sva_remove_page (uintptr_t paddr) {
    * mapped into the direct map.
    */
   if ((pgDesc->count == 2) || (pgDesc->count == 1) || (pgDesc->count == 0)) {
+
+
+    if(pgDesc->type == PG_L4)
+    {
+	uintptr_t other_cr3 = pgDesc->other_pgPaddr;
+	
+	if(other_cr3)
+	{  
+		page_desc_t *other_pgDesc = getPageDescPtr(other_cr3);
+		SVA_ASSERT(((other_pgDesc->count == 2) || (other_pgDesc->count == 1) || (other_pgDesc->count == 0)),
+			    "the kernel or usersva version pml4 page table page still has reference.\n" );
+		other_pgDesc->type = PG_UNUSED;
+		other_pgDesc->other_pgPaddr = 0;
+		pgDesc->other_pgPaddr = 0;
+	}
+    }
     /*
      * Mark the page frame as an unused page.
      */
     pgDesc->type = PG_UNUSED;
-
+   
     /*
      * Make the page writeable again.  Be sure to flush the TLBs to make the
      * change take effect right away.
@@ -2563,6 +2595,23 @@ sva_remove_page (uintptr_t paddr) {
   record_tsc(sva_remove_page_2_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
+
+/*
+ * Function: sva_get_kernel_pml4pg
+ * 
+ * Description:
+ *   Return the physical address of the kernel pml4 page table page
+ *
+ * Input:
+ *   paddr - the physical address of the original (user/sva verison) pml4 page table page
+ */
+uintptr_t sva_get_kernel_pml4pg(uintptr_t paddr)
+{
+	page_desc_t *pgDesc = getPageDescPtr(paddr);
+	uintptr_t other_paddr = pgDesc->other_pgPaddr;
+	return other_paddr;		
+}
+
 
 /* 
  * Function: sva_remove_mapping()
@@ -2601,6 +2650,64 @@ sva_remove_mapping(page_entry_t * pteptr) {
   record_tsc(sva_remove_mapping_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
+
+/* 
+ * Function: sva_update_l1_mapping_checkglobal()
+ *
+ * Description:
+ *  This function updates a Level-1 Mapping.  In other words, it adds a
+ *  a direct translation from a virtual page to a physical page.
+ *  Compared to sva_update_l1_mapping, this function checks whether the virtual 
+ *  address falls within the sva internal memory. If yes, make sure the PTEs are
+ *  not marked as global.
+ *
+ *  This function makes different checks to ensure the mapping
+ *  does not bypass the type safety proved by the compiler.
+ *
+ * Inputs:
+ *  pteptr - The location within the L1 page in which the new translation
+ *           should be place.
+ *  val    - The new translation to insert into the page table.
+ */
+void
+sva_update_l1_mapping_checkglobal(pte_t * pteptr, page_entry_t val, unsigned long va) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
+
+  kernel_to_usersva_pcid();
+  /*
+   * Disable interrupts so that we appear to execute as a single instruction.
+   */
+  unsigned long rflags = sva_enter_critical();
+
+  if((va >= 0xffffffff819ef000u) && (va <= 0xffffffff89b96060u) )
+  {
+    val &= ~PG_G;
+  }
+
+  /*
+   * Ensure that the PTE pointer points to an L1 page table.  If it does not,
+   * then report an error.
+   */
+  page_desc_t * ptDesc = getPageDescPtr (getPhysicalAddr(pteptr));
+  if ((ptDesc->type != PG_L1) && (!disableMMUChecks)) {
+    panic ("SVA: MMU: update_l1 not an L1: %lx %lx: %lx\n", pteptr, val, ptDesc->type);
+  }
+
+  /*
+   * Update the page table with the new mapping.
+   */
+  __update_mapping(pteptr, val);
+
+  /* Restore interrupts */
+  sva_exit_critical (rflags);
+
+  usersva_to_kernel_pcid();
+
+  record_tsc(sva_update_l1_mapping_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
+  return;
+}
 
 /* 
  * Function: sva_update_l1_mapping()
@@ -2726,7 +2833,7 @@ void sva_update_l3_mapping(pdpte_t * pdptePtr, page_entry_t val) {
 }
 
 /*
- * Updates a level4 mapping 
+ * updates a level4 mapping 
  */
 void sva_update_l4_mapping (pml4e_t * pml4ePtr, page_entry_t val) {
   uint64_t tsc_tmp;
@@ -2748,6 +2855,7 @@ void sva_update_l4_mapping (pml4e_t * pml4ePtr, page_entry_t val) {
     panic ("SVA: MMU: update_l4 not an L4: %lx %lx: %lx\n", pml4ePtr, val, ptDesc->type);
   }
 
+
   __update_mapping(pml4ePtr, val);
 
   /* Restore interrupts */
@@ -2759,3 +2867,39 @@ void sva_update_l4_mapping (pml4e_t * pml4ePtr, page_entry_t val) {
   return;
 }
 
+
+/*
+ * Function: sva_create_kernel_pml4pg
+ *
+ * Description:
+ *   Create a kernel version pml4 page table page that does not have the mappings 
+ * of ghost memory and SVA internal memory. Currently, for the pure purpose of 
+ * measuring the overhead of ASID and page table manipulation, this kernel version 
+ * pml4 page table page is entirely the same as the user/sva version to walk around a problem 
+ * due to the feature of x86, which automatically saves interrupt context on one stack upon trap/interrupt.
+ *
+ * Input:
+ *   curthread - svaThread of the process
+ *   pml4_orig - the original pml4 page table page
+ *   pml4_new  - the kernel version pml4 page table page
+ */
+
+void sva_create_kernel_pml4pg(uintptr_t curthread, pml4e_t * pml4_orig, pml4e_t * pml4_kernel)
+{
+   for(int i = 0; i < NPML4EPG; i ++)
+   {
+	sva_update_l4_mapping(pml4_kernel + i,  pml4_orig[i]);
+   }
+
+   uintptr_t kernelPml4Phys = getPhysicalAddrKDMAP(pml4_kernel);
+   uintptr_t usersvaPml4Phys = getPhysicalAddrKDMAP(pml4_orig);
+
+   ((struct SVAThread *)curthread)->kernel_cr3 = kernelPml4Phys;
+   ((struct SVAThread *)curthread)->usersva_cr3 = usersvaPml4Phys;
+
+   page_desc_t * kernel_ptDesc = getPageDescPtr(kernelPml4Phys);  
+   page_desc_t * usersva_ptDesc = getPageDescPtr(usersvaPml4Phys);
+
+   kernel_ptDesc->other_pgPaddr = usersvaPml4Phys;
+   usersva_ptDesc->other_pgPaddr = kernelPml4Phys;
+}

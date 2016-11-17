@@ -77,3 +77,6 @@
 #define INVOKE_STRNCPY  3
 #define INVOKE_MEMSET   2
 
+/* offsets for kernel_cr3 and usersva_cr3 fields in the SVAThread structure*/
+#define THREAD_KERNELCR3 0x7d80
+#define THREAD_SVACR3    0x7d88

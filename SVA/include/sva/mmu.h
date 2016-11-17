@@ -196,7 +196,10 @@ typedef struct page_desc_t {
     unsigned user : 1;
 
     /* Is this page for SVA direct mapping? */
-    unsigned dmap : 1;    
+    unsigned dmap : 1;   
+
+    /* the physical adddress of the other (kernel or user/SVA) version pml4 page table page*/
+    uintptr_t other_pgPaddr; 
 } page_desc_t;
 
 /* Array describing the physical pages */

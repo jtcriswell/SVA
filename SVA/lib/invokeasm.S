@@ -42,6 +42,8 @@
  *  1 - Stack was unwound.
  */
 sva_invoke:
+
+
   /*
    * Create the new invoke frame.  Note that we save call the registers that
    * are saved and restored by callee functions.  This is because callees may
@@ -59,6 +61,11 @@ sva_invoke:
 
   //change PCID from 1(kernel) to 0(SVA)
   movq %cr3, %r15
+  movq %gs:0x260, %r14
+  movq CPU_THREAD(%r14), %r14
+  movq THREAD_SVACR3(%r14), %r14
+  testq %r14, %r14
+  cmovneq %r14, %r15
   shrq $12,  %r15  
   shlq $12,  %r15
   movq $1,   %r14
@@ -79,6 +86,11 @@ sva_invoke:
 
   //change PCID from 0(SVA) to 1(kernel)
   movq %cr3, %r15
+  movq %gs:0x260, %r14
+  movq CPU_THREAD(%r14), %r14
+  movq THREAD_KERNELCR3(%r14), %r14
+  testq %r14, %r14
+  cmovneq %r14, %r15
   shrq $12,  %r15
   shlq $12,  %r15
   orq $1,    %r15
@@ -98,6 +110,11 @@ sva_invoke:
 
   //change PCID from 1(kernel) to 0(SVA)
   movq %cr3, %r15
+  movq %gs:0x260, %r14
+  movq CPU_THREAD(%r14), %r14
+  movq THREAD_SVACR3(%r14), %r14
+  testq %r14, %r14
+  cmovneq %r14, %r15
   shrq $12, %r15
   shlq $12, %r15
   movq $1,   %r14
@@ -112,8 +129,14 @@ sva_invoke:
   /* Store the return value into the memory location */
   movq %rax, (%rbx)
 
+
   //change PCID from 0(SVA) to 1(kernel)
   movq %cr3, %rbp
+  movq %gs:0x260, %rbx
+  movq CPU_THREAD(%rbx), %rbx
+  movq THREAD_KERNELCR3(%rbx), %rbx
+  testq %rbx, %rbx
+  cmovneq %rbx, %rbp
   shrq $12, %rbp
   shlq $12, %rbp
   orq $1, %rbp
@@ -133,6 +156,8 @@ sva_invoke:
   /* Remove the saved gip pointer */
   movq %gs:0x260, %rax
   popq CPU_GIP(%rax)
+
+
 
   /* Set the return value */
   movq $0, %rax

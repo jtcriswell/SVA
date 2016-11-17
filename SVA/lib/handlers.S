@@ -236,7 +236,12 @@ Trap:
   movq %r14, IC_VALID(%rsp)
   testq %r13, %r13 //if PCID = 0, it is already SVA PCID. Do nothing.
   je   L9   
-  
+
+  movq %gs:0x260, %r14
+  movq CPU_THREAD(%r14), %r14
+  movq THREAD_SVACR3(%r14), %r14
+  testq %r14, %r14
+  cmovneq %r14, %r15  
   shrq $12, %r15  //change PCID from 1 (kernel) to 0 (SVA/PCID)
   shlq $12, %r15
   movq $1,  %r14
@@ -335,6 +340,13 @@ L9:
 #endif
   
  movq %cr3, %r15  //change PCID from 0 (SVA) to 1 (kernel)
+ movq %gs:0x260, %r14
+ movq CPU_THREAD(%r14), %r14
+ movq THREAD_KERNELCR3(%r14), %r14
+ testq %r14, %r14
+ cmovneq %r14, %r15
+ shrq $12,  %r15
+ shlq $12,  %r15
  orq  $1,   %r15
  movq $1,  %r14
  shlq $63, %r14
@@ -355,6 +367,11 @@ L9:
   cli
  
   movq %cr3, %r15  //change PCID from 1 (kernel) to 0 (SVA)
+  movq %gs:0x260, %r14
+  movq CPU_THREAD(%r14), %r14
+  movq THREAD_SVACR3(%r14), %r14
+  testq %r14, %r14
+  cmovneq %r14, %r15
   shrq $12,  %r15
   shlq $12,  %r15
   movq $1,   %r14
@@ -399,6 +416,12 @@ L9:
   subq %rcx, %rax
   testq %rax, %rax
   je L10
+
+  movq %gs:0x260, %rcx
+  movq CPU_THREAD(%rcx), %rcx
+  movq THREAD_KERNELCR3(%rcx), %rcx
+  testq %rcx, %rcx
+  cmovneq %rcx, %rbx  
   shrq $12, %rbx
   shlq $12, %rbx
   orq  %rax, %rbx
@@ -650,8 +673,14 @@ SVAsyscall:
   xorq %r10, %r10
   xorq %rdi, %rdi
 #endif
-
+ 
+  //change PCID from 0 (SVA) to 1 (kernel)
   movq %cr3, %r15
+  movq %gs:0x260, %r14
+  movq CPU_THREAD(%r14), %r14
+  movq THREAD_KERNELCR3(%r14), %r14
+  testq %r14, %r14
+  cmovneq %r14, %r15
   shrq $12,  %r15
   shlq $12,  %r15
   orq  $1,   %r15
@@ -671,7 +700,13 @@ sc_ret:
    */
   cli
 
+  //change PCID from 1 (kernel) to 0 (SVA)
   movq %cr3, %r15
+  movq %gs:0x260, %r14
+  movq CPU_THREAD(%r14), %r14
+  movq THREAD_SVACR3(%r14), %r14
+  testq %r14, %r14
+  cmovneq %r14, %r15
   shrq $12,  %r15
   shlq $12,  %r15
   movq $1,   %r14
