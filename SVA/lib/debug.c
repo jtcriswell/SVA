@@ -87,6 +87,8 @@ sva_trapframe (struct trapframe * tf) {
   if(tsc_read_enable_sva)
   	tsc_tmp = sva_read_tsc();
 
+  kernel_to_usersva_pcid();
+
   struct CPUState * cpup = getCPUState();
   sva_icontext_t * p = getCPUState()->newCurrentIC;
 
@@ -136,6 +138,8 @@ sva_trapframe (struct trapframe * tf) {
   tf->tf_rsp = (unsigned long)(p->rsp);
   tf->tf_ss = p->ss;
 
+
+  usersva_to_kernel_pcid();
   record_tsc(sva_trapframe_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
@@ -160,6 +164,8 @@ sva_syscall_trapframe (struct trapframe * tf) {
   uint64_t tsc_tmp;  
   if(tsc_read_enable_sva)
      tsc_tmp = sva_read_tsc();
+
+  kernel_to_usersva_pcid();
 
   struct CPUState * cpup = getCPUState();
   sva_icontext_t * p = getCPUState()->newCurrentIC;
@@ -206,6 +212,7 @@ sva_syscall_trapframe (struct trapframe * tf) {
   tf->tf_rsp = (unsigned long)(p->rsp);
   tf->tf_ss = p->ss;
 
+  usersva_to_kernel_pcid();
   record_tsc(sva_syscall_trapframe_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
@@ -283,6 +290,8 @@ print_icontext (char * s, sva_icontext_t * p) {
 
 int
 sva_print_icontext (char * s) {
+
+  kernel_to_usersva_pcid();
   struct CPUState * cpup = getCPUState();
   struct SVAThread * threadp = cpup->currentThread;
   sva_icontext_t * p = cpup->newCurrentIC;
@@ -292,6 +301,8 @@ sva_print_icontext (char * s) {
   print_icontext (s, p);
   pml4e_t * secmemp = (pml4e_t *) getVirtual (get_pagetable() + secmemOffset);
   printf ("SVA: secmem: %lx %lx\n", threadp->secmemPML4e, *secmemp);
+
+  usersva_to_kernel_pcid();
   return 0;
 }
 

@@ -57,6 +57,15 @@ sva_invoke:
   pushq %rbx
   pushq %rbp
 
+  //change PCID from 1(kernel) to 0(SVA)
+  movq %cr3, %r15
+  shrq $12,  %r15  
+  shlq $12,  %r15
+  movq $1,   %r14
+  shlq $63,  %r14
+  orq  %r14, %r15
+  movq %r15, %cr3
+
   /*
    * Save the location of the invoke frame into the CPUState.
    */
@@ -68,6 +77,16 @@ sva_invoke:
    */
   movq %rcx, %rbx
 
+  //change PCID from 0(SVA) to 1(kernel)
+  movq %cr3, %r15
+  shrq $12,  %r15
+  shlq $12,  %r15
+  orq $1,    %r15
+  movq $1,   %r14
+  shlq $63,  %r14
+  orq  %r14, %r15
+  movq %r15, %cr3
+
   /*
    * Call the function.
    *
@@ -76,12 +95,32 @@ sva_invoke:
   callq *%r8
   RETTARGET
 
+
+  //change PCID from 1(kernel) to 0(SVA)
+  movq %cr3, %r15
+  shrq $12, %r15
+  shlq $12, %r15
+  movq $1,   %r14
+  shlq $63,  %r14
+  orq  %r14, %r15
+  movq %r15, %cr3  
+
   /*
    * Regular Return
    */
 
   /* Store the return value into the memory location */
   movq %rax, (%rbx)
+
+  //change PCID from 0(SVA) to 1(kernel)
+  movq %cr3, %rbp
+  shrq $12, %rbp
+  shlq $12, %rbp
+  orq $1, %rbp
+  //movq $1, %rbx
+  //shlq $63, %rbx
+  //orq  %rbx, %rbp
+  movq %rbp, %cr3
 
   /* Restore the saved registers */
   popq %rbp

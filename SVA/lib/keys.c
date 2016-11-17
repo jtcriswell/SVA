@@ -121,6 +121,8 @@ sva_translate(void * entryPoint) {
   if(tsc_read_enable_sva)
      tsc_tmp = sva_read_tsc();
 
+  kernel_to_usersva_pcid();
+
   if (vg) {
     /*
      * Find a free translation.
@@ -138,7 +140,8 @@ sva_translate(void * entryPoint) {
         transp->entryPoint = entryPoint;
         memcpy (&(transp->key), dummy256KeyPtr, sizeof (sva_key_t));
         transp->used = 2;
-        
+
+        usersva_to_kernel_pcid();        
 	record_tsc(sva_translate_1_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
         return transp;
       }
@@ -147,6 +150,7 @@ sva_translate(void * entryPoint) {
     /*
      * Translation failed.
      */
+    usersva_to_kernel_pcid();
     record_tsc(sva_translate_2_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
     return 0;
   }
@@ -154,6 +158,7 @@ sva_translate(void * entryPoint) {
   /*
    * If we're not doing Virtual Ghost, then just return the function pointer.
    */
+  usersva_to_kernel_pcid();
   record_tsc(sva_translate_3_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return entryPoint;
 }

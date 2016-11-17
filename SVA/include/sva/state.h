@@ -22,6 +22,33 @@
 #include "sva/mmu_types.h"
 #include "sva/keys.h"
 
+
+/* PCID-related functions: 
+ * kernel pcid is 1, and user/SVA pcid is 0
+ */
+
+static inline void usersva_to_kernel_pcid(void)
+{
+  unsigned long cr3;
+  __asm __volatile("movq %%cr3,%0" : "=r" (cr3));
+  if(!(cr3 & 0x1))
+  {
+	cr3 = (cr3 & ~0xfff) | 0x1 | ((unsigned long)1 << 63);
+         __asm __volatile("movq %0,%%cr3" : : "r" (cr3) : "memory");
+  }
+}
+
+static inline void kernel_to_usersva_pcid(void)
+{
+  unsigned long cr3;
+  __asm __volatile("movq %%cr3,%0" : "=r" (cr3));
+  if(cr3 & 0x1)
+  {
+	cr3 = (cr3 & ~0xfff) | ((unsigned long)1 << 63);
+  	__asm __volatile("movq %0,%%cr3" : : "r" (cr3) : "memory");
+  }
+}
+
 /* Processor privilege level */
 typedef unsigned char priv_level_t;
 
@@ -337,6 +364,8 @@ getCPUState(void) {
  */
 static inline unsigned char
 sva_was_privileged (void) {
+  kernel_to_usersva_pcid();
+
   /* Constant mask for user-space code segments */
   const uintptr_t userCodeSegmentMask = 0x03;
 
@@ -362,6 +391,7 @@ sva_was_privileged (void) {
                        : "=r" (cs)
                        : "m" ((currentIC->cs)));
 
+  usersva_to_kernel_pcid();
   /*
    * Lookup the most recent interrupt context for this processor and see
    * if it's code segment has the user-mode segment bits turned on.  Apparently
@@ -468,4 +498,6 @@ save_fp (sva_fp_state_t * buffer) {
   __asm__ __volatile__ ("fxsave %0" : "=m" (buffer->words) :: "memory");
   buffer->present = 1;
 }
+
+
 #endif

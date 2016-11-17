@@ -268,6 +268,7 @@ sva_getCPUState (tss_t * tssp) {
   if(tsc_read_enable_sva)
      tsc_tmp = sva_read_tsc();
 
+
   /* Index of next available CPU state */
   static int nextIndex __attribute__ ((section ("svamem"))) = 0;
   struct SVAThread * st;
@@ -322,6 +323,8 @@ sva_getCPUState (tss_t * tssp) {
     /*
      * Return the CPU State to the caller.
      */
+
+
     record_tsc(sva_getCPUState_1_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
     return cpup;
   }
@@ -347,6 +350,8 @@ sva_icontext_setretval (unsigned long high,
   uint64_t tsc_tmp;
   if(tsc_read_enable_sva)
      tsc_tmp = sva_read_tsc();
+
+  kernel_to_usersva_pcid();
   /*
    * FIXME: This should ensure that the interrupt context is for a system
    *        call.
@@ -372,6 +377,7 @@ sva_icontext_setretval (unsigned long high,
     icontextp->rflags &= 0xfffffffffffffffeu;
   }
 
+  usersva_to_kernel_pcid();
   record_tsc(sva_icontext_setretval_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
@@ -392,6 +398,8 @@ sva_icontext_restart (unsigned long r10, unsigned long rip) {
   uint64_t tsc_tmp;
   if(tsc_read_enable_sva)
      tsc_tmp = sva_read_tsc();
+
+  kernel_to_usersva_pcid();
   /*
    * FIXME: This should ensure that the interrupt context is for a system
    *        call.
@@ -405,6 +413,7 @@ sva_icontext_restart (unsigned long r10, unsigned long rip) {
    * instruction.  We do this by reducing it by 2 bytes.
    */
   icontextp->rcx -= 2;
+  usersva_to_kernel_pcid();
   record_tsc(sva_icontext_restart_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
@@ -426,6 +435,7 @@ sva_register_general_exception (unsigned char number,
   uint64_t tsc_tmp;
   if(tsc_read_enable_sva)
      tsc_tmp = sva_read_tsc();
+
   /*
    * First, ensure that the exception number is within range.
    */
@@ -456,6 +466,7 @@ sva_register_general_exception (unsigned char number,
    * Put the handler into our dispatch table.
    */
   interrupt_table[number] = handler;
+
   record_tsc(sva_register_general_exception_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return 0;
 }
@@ -502,6 +513,8 @@ sva_register_interrupt (unsigned char number, interrupt_handler_t interrupt) {
   uint64_t tsc_tmp;
   if(tsc_read_enable_sva)
      tsc_tmp = sva_read_tsc();
+
+
   /*
    * Ensure that the number is within range.
    */
@@ -516,6 +529,7 @@ sva_register_interrupt (unsigned char number, interrupt_handler_t interrupt) {
    * Put the handler into the system call table.
    */
   interrupt_table[number] = interrupt;
+
   record_tsc(sva_register_interrupt_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return 0;
 }

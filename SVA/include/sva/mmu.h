@@ -302,6 +302,7 @@ void init_leaf_page_from_mapping(page_entry_t mapping);
 
 /* CR4 Flags */
 #define     CR4_PGE     0x00000080      /* enable global pages */
+#define	    CR4_PCIDE   0x00020000		/* enable PCID */
 
 /*
  * Function: getVirtual()

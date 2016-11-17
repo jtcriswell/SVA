@@ -226,6 +226,24 @@ Trap:
   /* Flag the interrupt context as valid */
   movq $1, IC_VALID(%rsp)
 
+  movq %cr3, %r15
+  movq $0xfff, %r14
+  movq %r15, %r13
+  andq %r14, %r13 //PCID
+  shlq $2,   %r13
+  movq IC_VALID(%rsp), %r14
+  orq  %r13, %r14
+  movq %r14, IC_VALID(%rsp)
+  testq %r13, %r13 //if PCID = 0, it is already SVA PCID. Do nothing.
+  je   L9   
+  
+  shrq $12, %r15  //change PCID from 1 (kernel) to 0 (SVA/PCID)
+  shlq $12, %r15
+  movq $1,  %r14
+  shlq $63, %r14
+  orq  %r14, %r15
+  movq %r15, %cr3 
+L9:
   /*
    * Configure the process to trigger a floating point fault while in
    * kernel mode.  This requires disabling the EM bit and enabling the MP and
@@ -315,7 +333,15 @@ Trap:
   xorq %rdx, %rdx
   xorq %rcx, %rcx
 #endif
+  
+ movq %cr3, %r15  //change PCID from 0 (SVA) to 1 (kernel)
+ orq  $1,   %r15
+ movq $1,  %r14
+ shlq $63, %r14
+ orq  %r14, %r15
+ movq %r15, %cr3 
 
+ 
   /*
    * Call the trap handler registered by the OS for this trap.
    */
@@ -327,7 +353,15 @@ Trap:
    * Disable interrupts.
    */
   cli
-
+ 
+  movq %cr3, %r15  //change PCID from 1 (kernel) to 0 (SVA)
+  shrq $12,  %r15
+  shlq $12,  %r15
+  movq $1,   %r14
+  shlq $63,  %r14
+  orq  %r14, %r15
+  movq %r15, %cr3
+ 
   /*
    * Switch the stack pointer back to the interrupt context.
    */
@@ -339,7 +373,9 @@ Trap:
    * performed without a subsequent sva_ipush_function).
    */
   movq $1, %rdi
-  testq $1, IC_VALID(%rsp)
+  movq IC_VALID(%rsp), %rbx
+  andq $1, %rbx
+  testq $1, %rbx
   je invalidIC
 
   /*
@@ -351,6 +387,27 @@ Trap:
   movq CPU_TSSP(%rbp), %rbx
   addq $IC_SIZE, TSS_IST3(%rbx)
 
+  movq IC_VALID(%rsp), %rax //restore the PCID where the trap occurs
+  movq %rax, %rbx
+  movq $0x3, %rcx
+  andq %rcx, %rbx
+  movq %rbx, IC_VALID(%rsp)
+  shrq $2, %rax
+  movq %cr3, %rbx
+  movq $0xfff, %rcx
+  andq %rbx, %rcx
+  subq %rcx, %rax
+  testq %rax, %rax
+  je L10
+  shrq $12, %rbx
+  shlq $12, %rbx
+  orq  %rax, %rbx
+  movq $1,  %r14
+  shlq $63, %r14
+  orq  %r14, %r15
+  movq %rbx, %cr3
+
+L10:   
   /*
    * Copy the registers from the interrupt context back on to the processor.
    */
@@ -594,6 +651,14 @@ SVAsyscall:
   xorq %rdi, %rdi
 #endif
 
+  movq %cr3, %r15
+  shrq $12,  %r15
+  shlq $12,  %r15
+  orq  $1,   %r15
+  movq $1,   %r14
+  shlq $63,  %r14
+  orq  %r14, %r15
+  movq %r15, %cr3
   /*
    * Call the system software system call handler.
    */
@@ -605,6 +670,14 @@ sc_ret:
    * Disable interrupts.
    */
   cli
+
+  movq %cr3, %r15
+  shrq $12,  %r15
+  shlq $12,  %r15
+  movq $1,   %r14
+  shlq $63,  %r14
+  orq  %r14, %r15
+  movq %r15, %cr3   
 
   /*
    * Switch the stack pointer back to the interrupt context.

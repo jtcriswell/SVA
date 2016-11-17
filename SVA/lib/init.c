@@ -596,6 +596,7 @@ sva_init_primary () {
   if(tsc_read_enable_sva)
    	tsc_tmp = sva_read_tsc();
 
+
   /* Initialize the processor ID */
   init_procID();
 
@@ -614,6 +615,8 @@ sva_init_primary () {
   llva_reset_counters();
   llva_reset_local_counters();
 #endif
+
+
   record_tsc(sva_init_primary_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
