@@ -64,11 +64,14 @@ static inline uintptr_t get_pdptePaddr (pml4e_t * pml4e, uintptr_t vaddr);
 static inline uintptr_t get_pdePaddr (pdpte_t * pdpte, uintptr_t vaddr);
 static inline uintptr_t get_ptePaddr (pde_t * pde, uintptr_t vaddr);
 
+#ifdef SVA_DMAP
 /*
  * SVA direct mapping related functions
  */
 static inline uintptr_t getPhysicalAddrKDMAP (void * v);
 static inline uintptr_t getPhysicalAddrSVADMAP (void * v);
+#endif
+
 /*
  * Mapping update function prototypes.
  */
@@ -191,6 +194,7 @@ page_entry_store (unsigned long *page_entry, page_entry_t newVal) {
   if(tsc_read_enable_sva)
      tsc_tmp = sva_read_tsc();
 
+#ifdef SVA_DMAP
   uintptr_t phys;
   uintptr_t* page_entry_svadm;
   page_desc_t * pgDescPtr; 
@@ -204,8 +208,6 @@ page_entry_store (unsigned long *page_entry, page_entry_t newVal) {
 	newVal |= PG_RW;
   }
 
-  /* Disable page protection so we can write to the referencing table entry */
-  //unprotect_paging();
     
   /* Write the new value to the page_entry */
   *page_entry_svadm = newVal;
@@ -221,10 +223,21 @@ page_entry_store (unsigned long *page_entry, page_entry_t newVal) {
    	}	
    
    }
-  /* Reenable page protection */
-  //protect_paging();
 
-  record_tsc(page_entry_store_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
+
+
+#else
+  /* Disable page protection so we can write to the referencing table entry */
+  unprotect_paging();
+  
+  /* Write the new value to the page_entry */
+  *page_entry = newVal;
+
+  /* Reenable page protection */
+  protect_paging();    
+#endif
+
+    record_tsc(page_entry_store_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
 /*
@@ -880,7 +893,7 @@ getPhysicalAddrKDMAP (void * v) {
 
 
 
-
+#ifdef SVA_DMAP
 /*
  * Function: getPhysicalAddrSVADMAP()
  *
@@ -892,7 +905,7 @@ static inline uintptr_t
 getPhysicalAddrSVADMAP (void * v) {
  return  ((uintptr_t) v & ~SVADMAPSTART);
 }
-
+#endif
 
 /*
  * Function: getPhysicalAddr()
@@ -1976,6 +1989,7 @@ remap_internal_memory (uintptr_t * firstpaddr) {
   return;
 }
 
+#ifdef SVA_DMAP
 /*
  * Function: sva_create_dmap()
  *
@@ -2038,7 +2052,6 @@ void * DMPDphys, int ndmpdp, int ndm1g)
 }
 
 
-
 /*
  * Instrinsic: sva_update_l4_dmap
  *
@@ -2056,6 +2069,8 @@ void sva_update_l4_dmap(void * pml4pg, int index, page_entry_t val)
   if(index < NDMPML4E)
   sva_update_l4_mapping(&(((pdpte_t *)pml4pg)[DMPML4I + index]), val);
 }
+
+#endif
 
 /*
  * Function: sva_mmu_init
@@ -2187,8 +2202,13 @@ sva_declare_l1_page (uintptr_t frameAddr) {
       break;
   }
 
-  /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
+#ifdef SVA_DMAP
+  /* A page can only be declared as a page table page if its reference count is less than 2.*/
   SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l1_page: more than one virtual addresses are still using this page!");
+#else
+  /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
+  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l1_page: more than one virtual addresses are still using this page!");
+#endif
 
   /* 
    * Declare the page as an L1 page (unless it is already an L1 page).
@@ -2262,8 +2282,13 @@ sva_declare_l2_page (uintptr_t frameAddr) {
       break;
   }
 
- /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
+#ifdef SVA_DMAP
+ /* A page can only be declared as a page table page if its reference count is less than 2.*/
   SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l2_page: more than one virtual addresses are still using this page!");
+#else
+  /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
+  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l2_page: more than one virtual addresses are still using this page!");
+#endif
 
   /* 
    * Declare the page as an L2 page (unless it is already an L2 page).
@@ -2332,9 +2357,14 @@ sva_declare_l3_page (uintptr_t frameAddr) {
       break;
   }
 
-
- /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
+#ifdef SVA_DMAP
+ /* A page can only be declared as a page table page if its reference count is less than 2.*/
   SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l3_page: more than one virtual addresses are still using this page!");
+#else
+   /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
+  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l3_page: more than one virtual addresses are still using this page!");
+#endif
+
   /* 
    * Declare the page as an L3 page (unless it is already an L3 page).
    */
@@ -2411,8 +2441,13 @@ sva_declare_l4_page (uintptr_t frameAddr) {
       break;
   }
 
+#ifdef SVA_DMAP
  /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
-  SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l1_page: more than one virtual addresses are still using this page!");
+  SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l4_page: more than one virtual addresses are still using this page!");
+#else
+ /* A page can only be declared as a page table page if its reference count is less than 2.*/
+  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l4_page: more than one virtual addresses are still using this page!");
+#endif
   /* 
    * Declare the page as an L4 page (unless it is already an L4 page).
    */
@@ -2439,6 +2474,7 @@ sva_declare_l4_page (uintptr_t frameAddr) {
   record_tsc(sva_declare_l4_page_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
+#ifdef SVA_DMAP
 /*
  * Function: sva_declare_dmap_page()
  *
@@ -2452,6 +2488,7 @@ void sva_declare_dmap_page(uintptr_t frameAddr)
  {
     getPageDescPtr(frameAddr)->dmap = 1;
  }
+#endif
 
 static inline page_entry_t * 
 printPTES (uintptr_t vaddr) {
@@ -2557,8 +2594,11 @@ sva_remove_page (uintptr_t paddr) {
    * Note that we check for a reference count of 1 because the page is always
    * mapped into the direct map.
    */
+#ifdef SVA_DMAP
   if ((pgDesc->count == 2) || (pgDesc->count == 1) || (pgDesc->count == 0)) {
-
+#else
+  if ((pgDesc->count == 1) || (pgDesc->count == 0)) {
+#endif
 
     if(pgDesc->type == PG_L4)
     {
