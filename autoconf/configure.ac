@@ -54,7 +54,7 @@ AC_ARG_ENABLE([targets], [], [], [])
 dnl
 dnl Specify header files that need to be configured by configure
 dnl
-AC_CONFIG_HEADERS([SVA/include/sva/config.h])
+AC_CONFIG_HEADERS([SVA/include/sva/asmconfig.h])
 
 dnl
 dnl Specify the files that will need to be configured

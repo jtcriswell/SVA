@@ -17,15 +17,7 @@
 #define _SVA_CONFIG_H
 
 #include <limits.h>
-
-/* Let the configure script determine if we enable Virtual Ghost */
-#undef VG
-
-/* Let the configure script determine if we enable MPX support for SFI */
-#undef MPX
-
-/* Let the configure script determine if we enable SVA MMU Checks */
-#undef CHECKMMU
+#include <sva/asmconfig.h>
 
 /* Determine whether the virtual ghost features are enabled */
 #ifdef VG

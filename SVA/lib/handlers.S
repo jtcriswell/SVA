@@ -20,6 +20,7 @@
 
 #include "offsets.h"
 #include <sva/cfi.h>
+#include <sva/asmconfig.h>
 
 /* FreeBSD segment selector for kernel code segment */
 #define USERCS 0x43
