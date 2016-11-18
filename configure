@@ -1715,7 +1715,7 @@ if test "${enable_targets+set}" = set; then :
 fi
 
 
-ac_config_headers="$ac_config_headers SVA/include/sva/config.h"
+ac_config_headers="$ac_config_headers SVA/include/sva/asmconfig.h"
 
 
 ac_config_files="$ac_config_files make.conf"
@@ -2444,7 +2444,7 @@ cat >>$CONFIG_STATUS <<\_ACEOF || ac_write_fail=1
 for ac_config_target in $ac_config_targets
 do
   case $ac_config_target in
-    "SVA/include/sva/config.h") CONFIG_HEADERS="$CONFIG_HEADERS SVA/include/sva/config.h" ;;
+    "SVA/include/sva/asmconfig.h") CONFIG_HEADERS="$CONFIG_HEADERS SVA/include/sva/asmconfig.h" ;;
     "make.conf") CONFIG_FILES="$CONFIG_FILES make.conf" ;;
 
   *) as_fn_error $? "invalid argument: \`$ac_config_target'" "$LINENO" 5;;
