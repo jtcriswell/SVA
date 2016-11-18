@@ -25,4 +25,10 @@
 /* Let the configure script determine if we enable SVA MMU Checks */
 #undef CHECKMMU
 
+/* Let the configure script determine if we enable the SVA Direct Map */
+#undef SVA_DMAP
+
+/* Let the configure script determine if we enable the SVA ASID Feature */
+#undef SVA_ASID_PG
+
 #endif

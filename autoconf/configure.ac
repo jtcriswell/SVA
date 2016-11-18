@@ -46,6 +46,28 @@ case "$enableval" in
   *) AC_MSG_ERROR([Invalid setting for --enable-mmuchecks. Use "yes" or "no"]) ;;
 esac
 
+dnl Enable SVA Direct Map Enhancement
+AC_ARG_ENABLE(sva-dmap,
+              AS_HELP_STRING([--enable-sva-dmap],
+                             [Enable SVA Direct Map Feature (default is YES)]),,
+                             enableval=default)
+case "$enableval" in
+  yes) AC_DEFINE(SVA_DMAP) ;;
+  no) AC_DEFINE(NOSVA_DMAP) ;;
+  *) AC_MSG_ERROR([Invalid setting for --enable-sva-dmap. Use "yes" or "no"]) ;;
+esac
+
+dnl Enable SVA ASID Feature
+AC_ARG_ENABLE(asid,
+              AS_HELP_STRING([--enable-asid],
+                             [Enable SVA ASID Feature (default is YES)]),,
+                             enableval=default)
+case "$enableval" in
+  yes) AC_DEFINE(SVA_ASID_PG) ;;
+  no) AC_DEFINE(NOSVA_ASID_PG) ;;
+  *) AC_MSG_ERROR([Invalid setting for --enable-asid. Use "yes" or "no"]) ;;
+esac
+
 dnl
 dnl Include the command-line option to configure the targets used by LLVM
 dnl

@@ -633,6 +633,8 @@ enable_option_checking
 enable_vg
 enable_mpx
 enable_mmuchecks
+enable_sva_dmap
+enable_asid
 enable_targets
 '
       ac_precious_vars='build_alias
@@ -1250,6 +1252,8 @@ Optional Features:
   --enable-vg             Enable Virtual Ghost (default is NO)
   --enable-mpx            Enable MPX for SFI (default is NO)
   --enable-mmuchecks      Enable SVA MMU Checks (default is YES)
+  --enable-sva-dmap       Enable SVA Direct Map Feature (default is YES)
+  --enable-asid           Enable SVA ASID Feature (default is YES)
 
 
 Report bugs to <jtcriswel@gmail.com>.
@@ -1733,6 +1737,36 @@ case "$enableval" in
   no) $as_echo "#define NOCHECKMMU 1" >>confdefs.h
  ;;
   *) as_fn_error $? "Invalid setting for --enable-mmuchecks. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
+esac
+
+# Check whether --enable-sva-dmap was given.
+if test "${enable_sva_dmap+set}" = set; then :
+  enableval=$enable_sva_dmap;
+else
+  enableval=default
+fi
+
+case "$enableval" in
+  yes) $as_echo "#define SVA_DMAP 1" >>confdefs.h
+ ;;
+  no) $as_echo "#define NOSVA_DMAP 1" >>confdefs.h
+ ;;
+  *) as_fn_error $? "Invalid setting for --enable-sva-dmap. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
+esac
+
+# Check whether --enable-asid was given.
+if test "${enable_asid+set}" = set; then :
+  enableval=$enable_asid;
+else
+  enableval=default
+fi
+
+case "$enableval" in
+  yes) $as_echo "#define SVA_ASID_PG 1" >>confdefs.h
+ ;;
+  no) $as_echo "#define NOSVA_ASID_PG 1" >>confdefs.h
+ ;;
+  *) as_fn_error $? "Invalid setting for --enable-asid. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
 esac
 
 # Check whether --enable-targets was given.
