@@ -208,9 +208,6 @@ typedef struct page_desc_t {
     uintptr_t other_pgPaddr; 
 } page_desc_t;
 
-/* Array describing the physical pages */
-/* The index is the physical page number */
-static page_desc_t page_desc[numPageDescEntries];
 
 /*
  * ===========================================================================
@@ -282,6 +279,8 @@ static page_desc_t page_desc[numPageDescEntries];
 #define DMPML4I     (KPML4I - NDMPML4E)/NDMPML4E * NDMPML4E /* the index of SVA direct mapping on pml4*/
 #endif
 
+#define PML4PML4I   (NPML4EPG/2)    /* Index of recursive pml4 mapping */
+#define PML4_SWITCH_DISABLE 0x10    /*Disable pmle4 page table page switch in Trap() handler*/
 /*
  * ===========================================================================
  * END FreeBSD CODE BLOCK
@@ -448,6 +447,16 @@ invltlb(void)
 {
     
     load_cr3(_rcr3());
+}
+
+
+/*
+ * Flush userspace TLB entries with kernel PCID (PCID 1)
+ */
+static inline void
+invltlb_kernel(void)
+{
+    load_cr3(_rcr3() | 0x1);
 }
 
 /*
@@ -716,5 +725,8 @@ unprotect_paging(void) {
   __asm__ __volatile("movq %0,%%cr0\n": : "r"(value));
 }
 
+/* functions to change PCID and page table during user/sva and kernel switch*/
+void usersva_to_kernel_pcid(void);
+void kernel_to_usersva_pcid(void);
 
 #endif

@@ -82,6 +82,7 @@ extern void sva_update_l4_mapping (pml4e_t * pml4ePtr, page_entry_t val);
 #ifdef SVA_DMAP
 extern void sva_update_l4_dmap(void * pml4pg, int index, page_entry_t val);
 #endif
+extern void sva_set_kernel_pml4pg_ready(uintptr_t orig_phys);
 extern void sva_remove_mapping (page_entry_t * ptePtr);
 extern void sva_mmu_init(pml4e_t * kpml4Mapping,
                          unsigned long nkpml4e,

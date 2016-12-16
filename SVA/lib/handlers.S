@@ -236,20 +236,29 @@ Trap:
   orq  %r13, %r14
   movq %r14, IC_VALID(%rsp)
   testq %r13, %r13 //if PCID = 0, it is already SVA PCID. Do nothing.
-  je   L9   
+  je   L10   
 
-  movq %gs:0x260, %r14
-  movq CPU_THREAD(%r14), %r14
-  movq THREAD_SVACR3(%r14), %r14
-  testq %r14, %r14
+  movq %r15, %r13
+  shrq $12, %r13
+  movq $0xffffffffff, %r14
+  andq %r14, %r13
+  shlq $5, %r13
+  addq $24, %r13
+  movq page_desc(%r13), %r14
+  movq $0x10, %r13   //check whether PML4_SWITCH_DISABLE is set. If set, stop switching pml4 ptp
+  andq %r14, %r13 
+  testq %r13, %r13
+  jne L9
   cmovneq %r14, %r15  
+
+L9:
   shrq $12, %r15  //change PCID from 1 (kernel) to 0 (SVA/PCID)
   shlq $12, %r15
-  movq $1,  %r14
-  shlq $63, %r14
+  movq $0x8000000000000000,  %r14
   orq  %r14, %r15
   movq %r15, %cr3 
-L9:
+
+L10:
   /*
    * Configure the process to trigger a floating point fault while in
    * kernel mode.  This requires disabling the EM bit and enabling the MP and
@@ -341,16 +350,24 @@ L9:
 #endif
   
  movq %cr3, %r15  //change PCID from 0 (SVA) to 1 (kernel)
- movq %gs:0x260, %r14
- movq CPU_THREAD(%r14), %r14
- movq THREAD_KERNELCR3(%r14), %r14
- testq %r14, %r14
- cmovneq %r14, %r15
+ movq %r15, %r13
+ shrq $12, %r13
+ movq $0xffffffffff, %r14
+ andq %r14, %r13
+ shlq $5, %r13
+ addq $24, %r13
+ movq page_desc(%r13), %r14
+ movq $0x10, %r13
+ andq %r14, %r13
+ testq %r13, %r13
+ jne L11
+ cmovneq %r14, %r15  
+
+L11:
  shrq $12,  %r15
  shlq $12,  %r15
  orq  $1,   %r15
- movq $1,  %r14
- shlq $63, %r14
+ movq $0x8000000000000000,  %r14
  orq  %r14, %r15
  movq %r15, %cr3 
 
@@ -368,15 +385,23 @@ L9:
   cli
  
   movq %cr3, %r15  //change PCID from 1 (kernel) to 0 (SVA)
-  movq %gs:0x260, %r14
-  movq CPU_THREAD(%r14), %r14
-  movq THREAD_SVACR3(%r14), %r14
-  testq %r14, %r14
-  cmovneq %r14, %r15
+  movq %r15, %r13
+  shrq $12, %r13
+  movq $0xffffffffff, %r14
+  andq %r14, %r13
+  shlq $5, %r13
+  addq $24, %r13
+  movq page_desc(%r13), %r14
+  movq $0x10, %r13
+  andq %r14, %r13
+  testq %r13, %r13
+  jne L12
+  cmovneq %r14, %r15  
+
+L12:
   shrq $12,  %r15
   shlq $12,  %r15
-  movq $1,   %r14
-  shlq $63,  %r14
+  movq $0x8000000000000000,   %r14
   orq  %r14, %r15
   movq %r15, %cr3
  
@@ -416,22 +441,30 @@ L9:
   andq %rbx, %rcx
   subq %rcx, %rax
   testq %rax, %rax
-  je L10
+  je L14
 
-  movq %gs:0x260, %rcx
-  movq CPU_THREAD(%rcx), %rcx
-  movq THREAD_KERNELCR3(%rcx), %rcx
+  movq %rbx, %rcx
+  shrq $12, %rcx
+  movq $0xffffffffff, %r14
+  andq %r14, %rcx
+  shlq $5, %rcx
+  addq $24, %rcx
+  movq page_desc(%rcx), %r14
+  movq $0x10, %rcx
+  andq %r14, %rcx
   testq %rcx, %rcx
-  cmovneq %rcx, %rbx  
+  jne L13
+  cmovneq %r14, %rbx  
+
+L13:
   shrq $12, %rbx
   shlq $12, %rbx
   orq  %rax, %rbx
-  movq $1,  %r14
-  shlq $63, %r14
-  orq  %r14, %r15
+  movq $0x8000000000000000,  %r14
+  orq  %r14, %rbx
   movq %rbx, %cr3
 
-L10:   
+L14:   
   /*
    * Copy the registers from the interrupt context back on to the processor.
    */
@@ -677,16 +710,18 @@ SVAsyscall:
  
   //change PCID from 0 (SVA) to 1 (kernel)
   movq %cr3, %r15
-  movq %gs:0x260, %r14
-  movq CPU_THREAD(%r14), %r14
-  movq THREAD_KERNELCR3(%r14), %r14
-  testq %r14, %r14
-  cmovneq %r14, %r15
+  movq %r15, %r13
+  shrq $12, %r13
+  movq $0xffffffffff, %r14
+  andq %r14, %r13
+  shlq $5, %r13
+  addq $24, %r13
+  movq page_desc(%r13), %r14
+  cmovneq %r14, %r15  
   shrq $12,  %r15
   shlq $12,  %r15
   orq  $1,   %r15
-  movq $1,   %r14
-  shlq $63,  %r14
+  movq $0x8000000000000000,   %r14
   orq  %r14, %r15
   movq %r15, %cr3
   /*
@@ -703,15 +738,17 @@ sc_ret:
 
   //change PCID from 1 (kernel) to 0 (SVA)
   movq %cr3, %r15
-  movq %gs:0x260, %r14
-  movq CPU_THREAD(%r14), %r14
-  movq THREAD_SVACR3(%r14), %r14
-  testq %r14, %r14
-  cmovneq %r14, %r15
+  movq %r15, %r13
+  shrq $12, %r13
+  movq $0xffffffffff, %r14
+  andq %r14, %r13
+  shlq $5, %r13
+  addq $24, %r13
+  movq page_desc(%r13), %r14
+  cmovneq %r14, %r15 
   shrq $12,  %r15
   shlq $12,  %r15
-  movq $1,   %r14
-  shlq $63,  %r14
+  movq $0x8000000000000000,   %r14
   orq  %r14, %r15
   movq %r15, %cr3   
 

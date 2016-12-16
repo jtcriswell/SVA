@@ -61,15 +61,17 @@ sva_invoke:
 
   //change PCID from 1(kernel) to 0(SVA)
   movq %cr3, %r15
-  movq %gs:0x260, %r14
-  movq CPU_THREAD(%r14), %r14
-  movq THREAD_SVACR3(%r14), %r14
-  testq %r14, %r14
+  movq %r15, %r13
+  shrq $12, %r13
+  movq $0xffffffffff, %r14
+  andq %r14, %r13
+  shlq $5, %r13
+  addq $24, %r13
+  movq page_desc(%r13), %r14
   cmovneq %r14, %r15
   shrq $12,  %r15  
   shlq $12,  %r15
-  movq $1,   %r14
-  shlq $63,  %r14
+  movq $0x8000000000000000,   %r14
   orq  %r14, %r15
   movq %r15, %cr3
 
@@ -86,16 +88,18 @@ sva_invoke:
 
   //change PCID from 0(SVA) to 1(kernel)
   movq %cr3, %r15
-  movq %gs:0x260, %r14
-  movq CPU_THREAD(%r14), %r14
-  movq THREAD_KERNELCR3(%r14), %r14
-  testq %r14, %r14
-  cmovneq %r14, %r15
+  movq %r15, %r13
+  shrq $12, %r13
+  movq $0xffffffffff, %r14
+  andq %r14, %r13
+  shlq $5, %r13
+  addq $24, %r13
+  movq page_desc(%r13), %r14
+  cmovneq %r14, %r15 
   shrq $12,  %r15
   shlq $12,  %r15
   orq $1,    %r15
-  movq $1,   %r14
-  shlq $63,  %r14
+  movq $0x8000000000000000,   %r14
   orq  %r14, %r15
   movq %r15, %cr3
 
@@ -110,15 +114,17 @@ sva_invoke:
 
   //change PCID from 1(kernel) to 0(SVA)
   movq %cr3, %r15
-  movq %gs:0x260, %r14
-  movq CPU_THREAD(%r14), %r14
-  movq THREAD_SVACR3(%r14), %r14
-  testq %r14, %r14
-  cmovneq %r14, %r15
+  movq %r15, %r13
+  shrq $12, %r13
+  movq $0xffffffffff, %r14
+  andq %r14, %r13
+  shlq $5, %r13
+  addq $24, %r13
+  movq page_desc(%r13), %r14
+  cmovneq %r14, %r15 
   shrq $12, %r15
   shlq $12, %r15
-  movq $1,   %r14
-  shlq $63,  %r14
+  movq $0x8000000000000000,   %r14
   orq  %r14, %r15
   movq %r15, %cr3  
 
@@ -132,17 +138,19 @@ sva_invoke:
 
   //change PCID from 0(SVA) to 1(kernel)
   movq %cr3, %rbp
-  movq %gs:0x260, %rbx
-  movq CPU_THREAD(%rbx), %rbx
-  movq THREAD_KERNELCR3(%rbx), %rbx
-  testq %rbx, %rbx
-  cmovneq %rbx, %rbp
+  movq %rbp, %r13
+  shrq $12, %r13
+  movq $0xffffffffff, %r14
+  andq %r14, %r13
+  shlq $5, %r13
+  addq $24, %r13
+  movq page_desc(%r13), %r14
+  cmovneq %r14, %rbp 
   shrq $12, %rbp
   shlq $12, %rbp
   orq $1, %rbp
-  //movq $1, %rbx
-  //shlq $63, %rbx
-  //orq  %rbx, %rbp
+  movq $0x8000000000000000, %rbx
+  orq  %rbx, %rbp
   movq %rbp, %cr3
 
   /* Restore the saved registers */

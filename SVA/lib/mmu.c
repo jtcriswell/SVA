@@ -118,6 +118,10 @@ struct PTInfo {
  */
 struct PTInfo PTPages[1024] __attribute__ ((section ("svamem")));
 
+/* Array describing the physical pages */
+/* The index is the physical page number */
+page_desc_t page_desc[numPageDescEntries];
+
 /*
  * Description:
  *  Given a page table entry value, return the page description associate with
@@ -211,20 +215,6 @@ page_entry_store (unsigned long *page_entry, page_entry_t newVal) {
     
   /* Write the new value to the page_entry */
   *page_entry_svadm = newVal;
-
-  if(pgDescPtr->type == PG_L4)
-  {
-  	uintptr_t other_cr3 = pgDescPtr->other_pgPaddr;
-  	if(other_cr3)
-  	{
-		uintptr_t other_phys = other_cr3 | (phys & 0xfff);
-		uintptr_t * other_page_entry_svadm = (uintptr_t *) getVirtualSVADMAP(other_phys);
-		* other_page_entry_svadm = newVal;
-   	}	
-   
-   }
-
-
 
 #else
   /* Disable page protection so we can write to the referencing table entry */
@@ -1431,6 +1421,7 @@ sva_mm_load_pgtable (void * pg) {
     panic ("SVA: Loading non-L4 page into CR3: %lx %x\n", pg, getPageDescPtr (pg)->type);
   }
 
+  invltlb_kernel();
   pg = ((unsigned long) pg & ~((unsigned long)1 << 63)) & ~0xfff;
   /*
    * Load the new page table and enable paging in the CR0 register.
@@ -1849,6 +1840,44 @@ makePTReadOnly (void) {
 
   /* Re-enable page protection */
   //protect_paging();
+}
+
+/* PCID-related functions: 
+ * kernel pcid is 1, and user/SVA pcid is 0
+ */
+
+void usersva_to_kernel_pcid(void)
+{
+  unsigned long cr3;
+  struct SVAThread * curThread;
+  unsigned long pg = 0;
+
+  __asm __volatile("movq %%cr3,%0" : "=r" (cr3));
+  if(!(cr3 & 0x1))
+  {
+        page_desc_t * ptDesc = getPageDescPtr(cr3);
+        pg = ptDesc->other_pgPaddr;
+        pg = (pg == 0)? cr3 : pg;
+        cr3 = (pg & ~0xfff) | 0x1 | ((unsigned long)1 << 63);
+        __asm __volatile("movq %0,%%cr3" : : "r" (cr3) : "memory");
+  }
+}
+
+void kernel_to_usersva_pcid(void)
+{
+  unsigned long cr3;
+  struct SVAThread * curThread;
+  unsigned long pg = 0;
+
+  __asm __volatile("movq %%cr3,%0" : "=r" (cr3));
+  if(cr3 & 0x1)
+  {
+        page_desc_t * ptDesc = getPageDescPtr(cr3);
+        pg = ptDesc->other_pgPaddr;
+        pg = (pg == 0)? cr3 : pg;
+        cr3 = (pg & ~0xfff) | ((unsigned long)1 << 63);
+        __asm __volatile("movq %0,%%cr3" : : "r" (cr3) : "memory");
+  }
 }
 
 /*
@@ -2595,21 +2624,24 @@ sva_remove_page (uintptr_t paddr) {
    * mapped into the direct map.
    */
 #ifdef SVA_DMAP
-  if ((pgDesc->count == 2) || (pgDesc->count == 1) || (pgDesc->count == 0)) {
+  if (pgDesc->count <= 2) {
 #else
-  if ((pgDesc->count == 1) || (pgDesc->count == 0)) {
+  if (pgDesc->count <= 1) {
 #endif
 
     if(pgDesc->type == PG_L4)
     {
-	uintptr_t other_cr3 = pgDesc->other_pgPaddr;
+	uintptr_t other_cr3 = pgDesc->other_pgPaddr & ~PML4_SWITCH_DISABLE;
 	
 	if(other_cr3)
 	{  
 		page_desc_t *other_pgDesc = getPageDescPtr(other_cr3);
-		SVA_ASSERT(((other_pgDesc->count == 2) || (other_pgDesc->count == 1) || (other_pgDesc->count == 0)),
+		SVA_ASSERT((other_pgDesc->count <= 2),
 			    "the kernel or usersva version pml4 page table page still has reference.\n" );
 		other_pgDesc->type = PG_UNUSED;
+		page_entry_t *other_pte = get_pgeVaddr(getVirtual (other_cr3));
+	        page_entry_store ((page_entry_t *) other_pte, setMappingReadWrite (*other_pte));
+		sva_mm_flush_tlb(getVirtual(other_cr3));
 		other_pgDesc->other_pgPaddr = 0;
 		pgDesc->other_pgPaddr = 0;
 	}
@@ -2648,7 +2680,7 @@ sva_remove_page (uintptr_t paddr) {
 uintptr_t sva_get_kernel_pml4pg(uintptr_t paddr)
 {
 	page_desc_t *pgDesc = getPageDescPtr(paddr);
-	uintptr_t other_paddr = pgDesc->other_pgPaddr;
+	uintptr_t other_paddr = pgDesc->other_pgPaddr & ~PML4_SWITCH_DISABLE;
 	return other_paddr;		
 }
 
@@ -2683,6 +2715,20 @@ sva_remove_mapping(page_entry_t * pteptr) {
 
   /* Update the page table mapping to zero */
   __update_mapping (pteptr, ZERO_MAPPING);
+
+
+  uintptr_t phys = getPhysicalAddr(pteptr);
+  page_desc_t * cur_pgDesc = getPageDescPtr(phys);
+  if(cur_pgDesc->type == PG_L4)
+  {
+   uintptr_t other_cr3 = cur_pgDesc->other_pgPaddr & ~PML4_SWITCH_DISABLE;
+   if(other_cr3)
+   {
+        page_entry_t * other_pteptr = (page_entry_t *) ((unsigned long) getVirtual(other_cr3) | ((unsigned long) pteptr & vmask));
+        __update_mapping (other_pteptr, ZERO_MAPPING);
+   }
+  }
+  
 
   /* Restore interrupts */
   sva_exit_critical (rflags);
@@ -2898,6 +2944,23 @@ void sva_update_l4_mapping (pml4e_t * pml4ePtr, page_entry_t val) {
 
   __update_mapping(pml4ePtr, val);
 
+ 
+  uintptr_t other_cr3 = ptDesc->other_pgPaddr & ~PML4_SWITCH_DISABLE;
+  if(other_cr3)
+  {
+    uintptr_t index = (uintptr_t)pml4ePtr & vmask;
+    pml4e_t * kernel_pml4ePtr = (pml4e_t *)((uintptr_t) getVirtual(other_cr3) | index); 
+    page_desc_t * kernel_ptDesc = getPageDescPtr(other_cr3);
+    if((kernel_ptDesc->type != PG_L4) && (!disableMMUChecks)){
+           panic ("SVA: MMU: update_l4 kernel or sva version pte not an L4: %lx %lx: %lx\n", kernel_pml4ePtr, val, kernel_ptDesc->type);
+    }
+
+    if(((index >> 3) == PML4PML4I) && ((val & PG_FRAME) == (getPhysicalAddr(pml4ePtr) & PG_FRAME)))
+        val = other_cr3 | (val & 0xfff);
+    __update_mapping(kernel_pml4ePtr, val);
+  }
+
+
   /* Restore interrupts */
   sva_exit_critical (rflags);
 
@@ -2912,34 +2975,32 @@ void sva_update_l4_mapping (pml4e_t * pml4ePtr, page_entry_t val) {
  * Function: sva_create_kernel_pml4pg
  *
  * Description:
- *   Create a kernel version pml4 page table page that does not have the mappings 
- * of ghost memory and SVA internal memory. Currently, for the pure purpose of 
- * measuring the overhead of ASID and page table manipulation, this kernel version 
- * pml4 page table page is entirely the same as the user/sva version to walk around a problem 
+ *   Record the kernel version pml4 page table page in the page descriptor
+ * of the orignal (user/sva version) pml4 page table page. The kernel version 
+ * does not have the mappings of ghost memory and SVA internal memory. 
+ * Currently, for the pure purpose of measuring the overhead of ASID and 
+ * page table manipulation, this kernel version pml4 page table page is entirely 
+ * the same as the user/sva version to walk around a problem 
  * due to the feature of x86, which automatically saves interrupt context on one stack upon trap/interrupt.
  *
  * Input:
- *   curthread - svaThread of the process
- *   pml4_orig - the original pml4 page table page
- *   pml4_new  - the kernel version pml4 page table page
+ *   orig_phys - the original pml4 page table page
+ *   kernel_phys  - the kernel version pml4 page table page
  */
 
-void sva_create_kernel_pml4pg(uintptr_t curthread, pml4e_t * pml4_orig, pml4e_t * pml4_kernel)
+void sva_create_kernel_pml4pg(uintptr_t orig_phys, uintptr_t kernel_phys)
 {
-   for(int i = 0; i < NPML4EPG; i ++)
-   {
-	sva_update_l4_mapping(pml4_kernel + i,  pml4_orig[i]);
-   }
+   page_desc_t * kernel_ptDesc = getPageDescPtr(kernel_phys);
+   page_desc_t * usersva_ptDesc = getPageDescPtr(orig_phys);
 
-   uintptr_t kernelPml4Phys = getPhysicalAddrKDMAP(pml4_kernel);
-   uintptr_t usersvaPml4Phys = getPhysicalAddrKDMAP(pml4_orig);
+   kernel_ptDesc->other_pgPaddr = orig_phys;
+   usersva_ptDesc->other_pgPaddr = kernel_phys | PML4_SWITCH_DISABLE;
 
-   ((struct SVAThread *)curthread)->kernel_cr3 = kernelPml4Phys;
-   ((struct SVAThread *)curthread)->usersva_cr3 = usersvaPml4Phys;
+}
 
-   page_desc_t * kernel_ptDesc = getPageDescPtr(kernelPml4Phys);  
-   page_desc_t * usersva_ptDesc = getPageDescPtr(usersvaPml4Phys);
+void sva_set_kernel_pml4pg_ready(uintptr_t orig_phys)
+{
+  page_desc_t * usersva_ptDesc = getPageDescPtr(orig_phys);
+  usersva_ptDesc->other_pgPaddr = usersva_ptDesc->other_pgPaddr & ~PML4_SWITCH_DISABLE;
 
-   kernel_ptDesc->other_pgPaddr = usersvaPml4Phys;
-   usersva_ptDesc->other_pgPaddr = kernelPml4Phys;
 }
