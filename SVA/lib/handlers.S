@@ -227,6 +227,7 @@ Trap:
   /* Flag the interrupt context as valid */
   movq $1, IC_VALID(%rsp)
 
+#ifdef SVA_ASID_PG
   movq %cr3, %r15
   movq $0xfff, %r14
   movq %r15, %r13
@@ -259,6 +260,7 @@ L9:
   movq %r15, %cr3 
 
 L10:
+#endif
   /*
    * Configure the process to trigger a floating point fault while in
    * kernel mode.  This requires disabling the EM bit and enabling the MP and
@@ -348,7 +350,8 @@ L10:
   xorq %rdx, %rdx
   xorq %rcx, %rcx
 #endif
-  
+ 
+#ifdef SVA_ASID_PG 
  movq %cr3, %r15  //change PCID from 0 (SVA) to 1 (kernel)
  movq %r15, %r13
  shrq $12, %r13
@@ -370,7 +373,7 @@ L11:
  movq $0x8000000000000000,  %r14
  orq  %r14, %r15
  movq %r15, %cr3 
-
+#endif
  
   /*
    * Call the trap handler registered by the OS for this trap.
@@ -383,7 +386,8 @@ L11:
    * Disable interrupts.
    */
   cli
- 
+
+#ifdef SVA_ASID_PG 
   movq %cr3, %r15  //change PCID from 1 (kernel) to 0 (SVA)
   movq %r15, %r13
   shrq $12, %r13
@@ -404,6 +408,7 @@ L12:
   movq $0x8000000000000000,   %r14
   orq  %r14, %r15
   movq %r15, %cr3
+#endif
  
   /*
    * Switch the stack pointer back to the interrupt context.
@@ -416,9 +421,13 @@ L12:
    * performed without a subsequent sva_ipush_function).
    */
   movq $1, %rdi
+#ifdef SVA_ASID_PG
   movq IC_VALID(%rsp), %rbx
   andq $1, %rbx
   testq $1, %rbx
+#else
+  testq $1, IC_VALID(%rsp)
+#endif
   je invalidIC
 
   /*
@@ -430,6 +439,7 @@ L12:
   movq CPU_TSSP(%rbp), %rbx
   addq $IC_SIZE, TSS_IST3(%rbx)
 
+#ifdef SVA_ASID_PG
   movq IC_VALID(%rsp), %rax //restore the PCID where the trap occurs
   movq %rax, %rbx
   movq $0x3, %rcx
@@ -465,6 +475,7 @@ L13:
   movq %rbx, %cr3
 
 L14:   
+#endif
   /*
    * Copy the registers from the interrupt context back on to the processor.
    */
@@ -707,7 +718,8 @@ SVAsyscall:
   xorq %r10, %r10
   xorq %rdi, %rdi
 #endif
- 
+
+#ifdef SVA_ASID_PG 
   //change PCID from 0 (SVA) to 1 (kernel)
   movq %cr3, %r15
   movq %r15, %r13
@@ -724,6 +736,7 @@ SVAsyscall:
   movq $0x8000000000000000,   %r14
   orq  %r14, %r15
   movq %r15, %cr3
+#endif
   /*
    * Call the system software system call handler.
    */
@@ -736,6 +749,7 @@ sc_ret:
    */
   cli
 
+#ifdef SVA_ASID_PG
   //change PCID from 1 (kernel) to 0 (SVA)
   movq %cr3, %r15
   movq %r15, %r13
@@ -751,6 +765,7 @@ sc_ret:
   movq $0x8000000000000000,   %r14
   orq  %r14, %r15
   movq %r15, %cr3   
+#endif
 
   /*
    * Switch the stack pointer back to the interrupt context.

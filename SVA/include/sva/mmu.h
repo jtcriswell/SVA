@@ -78,11 +78,11 @@ static const unsigned long numPageDescEntries = memSize / pageSize;
 #define SECMEMEND   0xffffff8000000000u
 #else
 #define SECMEMEND   0xffffff6000000000u
+#endif
 
 /* Start and end addresses of the SVA direct mapping */
 #define SVADMAPSTART 0xffffff6000000000u
 #define SVADMAPEND   0xffffff7fffffffffu
-#endif
 
 /* Start and end addresses of user memory */
 static const uintptr_t USERSTART = 0x0000000000000000u;
@@ -199,10 +199,8 @@ typedef struct page_desc_t {
     /* Is this page a user page? */
     unsigned user : 1;
 
-#ifdef SVA_DMAP
     /* Is this page for SVA direct mapping? */
     unsigned dmap : 1;   
-#endif
 
     /* the physical adddress of the other (kernel or user/SVA) version pml4 page table page*/
     uintptr_t other_pgPaddr; 
@@ -267,7 +265,6 @@ typedef struct page_desc_t {
 #define NBPML4      (1UL<<PML4SHIFT)/* bytes/page map lev4 table */
 #define PML4MASK    (NBPML4-1)
 
-#ifdef SVA_DMAP
 /* SVA direct mapping */
 
 /*
@@ -277,8 +274,9 @@ typedef struct page_desc_t {
 #define NDMPML4E    1 
 #define KPML4I      (NPML4EPG - 1)    /* Top 512GB for KVM */
 #define DMPML4I     (KPML4I - NDMPML4E)/NDMPML4E * NDMPML4E /* the index of SVA direct mapping on pml4*/
-#endif
 
+
+/* ASID/page table switch*/
 #define PML4PML4I   (NPML4EPG/2)    /* Index of recursive pml4 mapping */
 #define PML4_SWITCH_DISABLE 0x10    /*Disable pmle4 page table page switch in Trap() handler*/
 /*
@@ -330,7 +328,6 @@ getVirtual (uintptr_t physical) {
   return (unsigned char *)(physical | 0xfffffe0000000000u);
 }
 
-#ifdef SVA_DMAP
 /*
  * Function: getVirtualSVADMAP()
  *
@@ -343,7 +340,6 @@ static inline unsigned char *
 getVirtualSVADMAP (uintptr_t physical) {
   return (unsigned char *)(physical | SVADMAPSTART);
 }
-#endif
 
 /*
  * Function: get_pagetable()

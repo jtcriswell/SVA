@@ -64,13 +64,11 @@ static inline uintptr_t get_pdptePaddr (pml4e_t * pml4e, uintptr_t vaddr);
 static inline uintptr_t get_pdePaddr (pdpte_t * pdpte, uintptr_t vaddr);
 static inline uintptr_t get_ptePaddr (pde_t * pde, uintptr_t vaddr);
 
-#ifdef SVA_DMAP
 /*
  * SVA direct mapping related functions
  */
 static inline uintptr_t getPhysicalAddrKDMAP (void * v);
 static inline uintptr_t getPhysicalAddrSVADMAP (void * v);
-#endif
 
 /*
  * Mapping update function prototypes.
@@ -883,7 +881,6 @@ getPhysicalAddrKDMAP (void * v) {
 
 
 
-#ifdef SVA_DMAP
 /*
  * Function: getPhysicalAddrSVADMAP()
  *
@@ -895,7 +892,6 @@ static inline uintptr_t
 getPhysicalAddrSVADMAP (void * v) {
  return  ((uintptr_t) v & ~SVADMAPSTART);
 }
-#endif
 
 /*
  * Function: getPhysicalAddr()
@@ -1420,9 +1416,10 @@ sva_mm_load_pgtable (void * pg) {
   if ((mmuIsInitialized) && (!disableMMUChecks) && (getPageDescPtr(pg)->type != PG_L4)) {
     panic ("SVA: Loading non-L4 page into CR3: %lx %x\n", pg, getPageDescPtr (pg)->type);
   }
-
+#ifdef SVA_ASID_PG
   invltlb_kernel();
   pg = ((unsigned long) pg & ~((unsigned long)1 << 63)) & ~0xfff;
+#endif
   /*
    * Load the new page table and enable paging in the CR0 register.
    */
@@ -1848,6 +1845,7 @@ makePTReadOnly (void) {
 
 void usersva_to_kernel_pcid(void)
 {
+#ifdef SVA_ASID_PG
   unsigned long cr3;
   struct SVAThread * curThread;
   unsigned long pg = 0;
@@ -1861,10 +1859,12 @@ void usersva_to_kernel_pcid(void)
         cr3 = (pg & ~0xfff) | 0x1 | ((unsigned long)1 << 63);
         __asm __volatile("movq %0,%%cr3" : : "r" (cr3) : "memory");
   }
+#endif
 }
 
 void kernel_to_usersva_pcid(void)
 {
+#ifdef SVA_ASID_PG
   unsigned long cr3;
   struct SVAThread * curThread;
   unsigned long pg = 0;
@@ -1878,6 +1878,7 @@ void kernel_to_usersva_pcid(void)
         cr3 = (pg & ~0xfff) | ((unsigned long)1 << 63);
         __asm __volatile("movq %0,%%cr3" : : "r" (cr3) : "memory");
   }
+#endif
 }
 
 /*
@@ -2018,7 +2019,6 @@ remap_internal_memory (uintptr_t * firstpaddr) {
   return;
 }
 
-#ifdef SVA_DMAP
 /*
  * Function: sva_create_dmap()
  *
@@ -2043,14 +2043,22 @@ void * DMPDphys, int ndmpdp, int ndm1g)
                 ((pde_t *)DMPDphys)[j] = (uintptr_t)i << PDRSHIFT;
                 /* Preset PG_M and PG_A because demotion expects it. */
                 ((pde_t *)DMPDphys)[j] |= PG_RW | PG_V | PG_PS | 
+#ifdef SVA_ASID_PG
                     PG_M | PG_A;
+#else	
+		    PG_G | PG_M | PG_A;
+#endif
   }
 
   for (i = 384; i < 384 + ndm1g; i++) {
                 ((pdpte_t *)DMPDPphys)[i] = (uintptr_t)(i - 384) << PDPSHIFT;
                 /* Preset PG_M and PG_A because demotion expects it. */
                 ((pdpte_t *)DMPDPphys)[i] |= PG_RW | PG_V | PG_PS | 
+#ifdef SVA_ASID_PG
                     PG_M | PG_A;
+#else	
+		    PG_G | PG_M | PG_A;
+#endif
   }
   for (j = 0; i < 384 + ndmpdp; i++, j++) {
                 ((pdpte_t *)DMPDPphys)[i] = DMPDphys + (j << PAGE_SHIFT);
@@ -2099,7 +2107,6 @@ void sva_update_l4_dmap(void * pml4pg, int index, page_entry_t val)
   sva_update_l4_mapping(&(((pdpte_t *)pml4pg)[DMPML4I + index]), val);
 }
 
-#endif
 
 /*
  * Function: sva_mmu_init
@@ -2161,12 +2168,18 @@ sva_mmu_init (pml4e_t * kpml4Mapping,
   /* Identify kernel code pages and intialize the descriptors */
   declare_kernel_code_pages(btext, etext);
 
+#ifdef SVA_ASID_PG
   load_cr4(_rcr4()|CR4_PCIDE);
   /* Now load the initial value of the cr3 to complete kernel init */
   unsigned long kernel_pg = *kpml4Mapping & PG_FRAME;
   kernel_pg = (kernel_pg & ~0xfff) | 0x1;
+#endif
   unprotect_paging();
+#ifdef SVA_ASID_PG
   load_cr3(kernel_pg);
+#else
+  load_cr3(*kpml4Mapping & PG_FRAME);
+#endif
   protect_paging();
 
   /*
@@ -2503,7 +2516,6 @@ sva_declare_l4_page (uintptr_t frameAddr) {
   record_tsc(sva_declare_l4_page_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
-#ifdef SVA_DMAP
 /*
  * Function: sva_declare_dmap_page()
  *
@@ -2517,7 +2529,6 @@ void sva_declare_dmap_page(uintptr_t frameAddr)
  {
     getPageDescPtr(frameAddr)->dmap = 1;
  }
-#endif
 
 static inline page_entry_t * 
 printPTES (uintptr_t vaddr) {
@@ -2629,6 +2640,7 @@ sva_remove_page (uintptr_t paddr) {
   if (pgDesc->count <= 1) {
 #endif
 
+#ifdef SVA_ASID_PG
     if(pgDesc->type == PG_L4)
     {
 	uintptr_t other_cr3 = pgDesc->other_pgPaddr & ~PML4_SWITCH_DISABLE;
@@ -2646,6 +2658,7 @@ sva_remove_page (uintptr_t paddr) {
 		pgDesc->other_pgPaddr = 0;
 	}
     }
+#endif
     /*
      * Mark the page frame as an unused page.
      */
@@ -2716,7 +2729,7 @@ sva_remove_mapping(page_entry_t * pteptr) {
   /* Update the page table mapping to zero */
   __update_mapping (pteptr, ZERO_MAPPING);
 
-
+#ifdef SVA_ASID_PG
   uintptr_t phys = getPhysicalAddr(pteptr);
   page_desc_t * cur_pgDesc = getPageDescPtr(phys);
   if(cur_pgDesc->type == PG_L4)
@@ -2728,6 +2741,7 @@ sva_remove_mapping(page_entry_t * pteptr) {
         __update_mapping (other_pteptr, ZERO_MAPPING);
    }
   }
+#endif
   
 
   /* Restore interrupts */
@@ -2944,7 +2958,7 @@ void sva_update_l4_mapping (pml4e_t * pml4ePtr, page_entry_t val) {
 
   __update_mapping(pml4ePtr, val);
 
- 
+#ifdef SVA_ASID_PG 
   uintptr_t other_cr3 = ptDesc->other_pgPaddr & ~PML4_SWITCH_DISABLE;
   if(other_cr3)
   {
@@ -2959,7 +2973,7 @@ void sva_update_l4_mapping (pml4e_t * pml4ePtr, page_entry_t val) {
         val = other_cr3 | (val & 0xfff);
     __update_mapping(kernel_pml4ePtr, val);
   }
-
+#endif
 
   /* Restore interrupts */
   sva_exit_critical (rflags);
