@@ -227,6 +227,13 @@ Trap:
   /* Flag the interrupt context as valid */
   movq $1, IC_VALID(%rsp)
 
+#ifdef MPX
+  /* Reset the MPX bounds register for SFI checks */
+  movabsq $412316860416, %rax     # imm = 0x6000000000
+  movabsq $-412316860417, %rdx    # imm = 0xFFFFFF9FFFFFFFFF
+  bndmk (%rax,%rdx), %bnd0
+#endif
+
 #ifdef SVA_ASID_PG
   movq %cr3, %r15
   movq $0xfff, %r14
@@ -261,6 +268,7 @@ L9:
 
 L10:
 #endif
+
   /*
    * Configure the process to trigger a floating point fault while in
    * kernel mode.  This requires disabling the EM bit and enabling the MP and
@@ -649,6 +657,13 @@ SVAsyscall:
   cmpq $518, IC_RAX(%rsp)
   cmoveq %r13, %r12
   movq %r12, IC_VALID(%rsp)
+
+#ifdef MPX
+  /* Reset the MPX bounds register for SFI checks */
+  movabsq $412316860416, %rax     # imm = 0x6000000000
+  movabsq $-412316860417, %rbx    # imm = 0xFFFFFF9FFFFFFFFF
+  bndmk (%rax,%rbx), %bnd0
+#endif
 
   /*
    * Configure the process to trigger a floating point fault while in
