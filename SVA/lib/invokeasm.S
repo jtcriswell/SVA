@@ -16,6 +16,7 @@
 
 #include "offsets.h"
 #include "sva/cfi.h"
+#include "sva/asmconfig.h"
 
 .global sva_invoke
 .type sva_invoke, @function
