@@ -28,6 +28,7 @@
 
 #include <sva/state.h>
 #include <sva/util.h>
+#include <sva/callbacks.h>
 
 #include "offsets.h"
 
@@ -84,7 +85,7 @@ sva_iunwind (void) {
    */
   switch (gip->cpinvoke) {
     case INVOKE_NORMAL:
-      ip->rip = sva_invoke_except;
+      ip->rip = (uintptr_t) sva_invoke_except;
       break;
 
 #if 0
@@ -93,7 +94,7 @@ sva_iunwind (void) {
     case INVOKE_MEMCPY_B:
 #endif
     case INVOKE_STRNCPY:
-      ip->rip = (void *)(gip->rbx);
+      ip->rip = gip->rbx;
       break;
 
     default:

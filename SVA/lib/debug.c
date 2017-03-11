@@ -26,6 +26,8 @@
  * Assertion Code
  ****************************************************************************/
 
+int sva_print_icontext (char * s);
+
 void
 assertGoodIC (void) {
   /*
@@ -280,7 +282,7 @@ sva_print_icontext (char * s) {
                                        cpup->newCurrentIC,
                                        cpup->currentThread->interruptContexts + maxIC - 1);
   print_icontext (s, p);
-  pml4e_t * secmemp = (pml4e_t *) getVirtual (get_pagetable() + secmemOffset);
+  pml4e_t * secmemp = (pml4e_t *) getVirtual ((uintptr_t)(get_pagetable() + secmemOffset));
   printf ("SVA: secmem: %lx %lx\n", threadp->secmemPML4e, *secmemp);
   return 0;
 }
