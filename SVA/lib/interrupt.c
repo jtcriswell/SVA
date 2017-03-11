@@ -132,6 +132,7 @@ invalidIC (unsigned int v) {
   assertGoodIC();
 
   /* Print out the interrupt context */
+  extern int sva_print_icontext (char * s);
   if (v)
     sva_print_icontext ("invalidIC:trap");
   else
@@ -212,6 +213,7 @@ findNextFreeThread (void) {
      * decrypted with the VirtualGhost private key. 
      */
     if (vg) {
+      extern void init_thread_key (struct SVAThread * thread);
       init_thread_key(newThread);
     }
 

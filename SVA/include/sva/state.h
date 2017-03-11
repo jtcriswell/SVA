@@ -422,7 +422,7 @@ extern void sva_release_stack (uintptr_t id);
  * Individual State Components
  ****************************************************************************/
 
-extern void sva_ipush_function5 (void (*f)(uintptr_t, uintptr_t, uintptr_t),
+extern void sva_ipush_function5 (void *f,
                                  uintptr_t p1,
                                  uintptr_t p2,
                                  uintptr_t p3,

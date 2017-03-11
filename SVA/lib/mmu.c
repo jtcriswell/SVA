@@ -636,7 +636,7 @@ initDeclaredPage (unsigned long frameAddr) {
    * Get a pointer to the page table entry that maps the physical page into the
    * direct map.
    */
-  page_entry_t * page_entry = get_pgeVaddr (vaddr);
+  page_entry_t * page_entry = get_pgeVaddr ((uintptr_t)vaddr);
   if (page_entry) {
     /*
      * Make the direct map entry for the page read-only to ensure that the OS
@@ -717,12 +717,12 @@ get_pgeVaddr (uintptr_t vaddr) {
   page_entry_t *pge = 0;
 
   /* Get the base of the pml4 to traverse */
-  uintptr_t cr3 = get_pagetable();
+  uintptr_t cr3 = (uintptr_t) get_pagetable();
   if ((cr3 & 0xfffffffffffff000u) == 0)
     return 0;
 
   /* Get the VA of the pml4e for this vaddr */
-  pml4e_t *pml4e = get_pml4eVaddr (cr3, vaddr);
+  pml4e_t *pml4e = get_pml4eVaddr ((unsigned char *)cr3, vaddr);
 
   if (*pml4e & PG_V) {
     /* Get the VA of the pdpte for this vaddr */
@@ -1319,7 +1319,10 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
  *  pg - The physical address of the top-level page table page.
  */
 void
-sva_mm_load_pgtable (void * pg) {
+sva_mm_load_pgtable (void * pg_ptr) {
+  /* Cast the page table pointer to an integer */
+  uintptr_t pg = (uintptr_t) pg_ptr;
+
   /*
    * Disable interrupts so that we appear to execute as a single instruction.
    */
@@ -1361,7 +1364,7 @@ sva_mm_load_pgtable (void * pg) {
     /*
      * Get a pointer into the page tables for the secure memory region.
      */
-    pml4e_t * secmemp = (pml4e_t *) getVirtual (get_pagetable() + secmemOffset);
+    pml4e_t * secmemp = (pml4e_t *) getVirtual ((uintptr_t)get_pagetable() + secmemOffset);
 
     /*
      * Restore the PML4E entry for the secure memory region.
@@ -1471,7 +1474,7 @@ declare_ptp_and_walk_pt_entries(page_entry_t *pageEntry, unsigned long
   uintptr_t pagePhysAddr = pageMapping & PG_FRAME;
   pagePtr = (page_entry_t *) getVirtual(pagePhysAddr);
 #else
-  pagePtr = (uintptr_t)(pageMapping & PG_FRAME);
+  pagePtr = (page_entry_t *)(pageMapping & PG_FRAME);
 #endif
 
   /* Get the page_desc for this page */
@@ -1694,8 +1697,8 @@ void
 declare_kernel_code_pages (uintptr_t btext, uintptr_t etext) {
   /* Get pointers for the pages */
   uintptr_t page;
-  uintptr_t btextPage = getPhysicalAddr(btext) & PG_FRAME;
-  uintptr_t etextPage = getPhysicalAddr(etext) & PG_FRAME;
+  uintptr_t btextPage = getPhysicalAddr((void *)btext) & PG_FRAME;
+  uintptr_t etextPage = getPhysicalAddr((void *)etext) & PG_FRAME;
 
   /*
    * Scan through each page in the text segment.  Note that it is a code page,
@@ -1731,9 +1734,9 @@ makePTReadOnly (void) {
    */
   uintptr_t paddr;
   for (paddr = 0; paddr < memSize; paddr += pageSize) {
-    page_desc_t * pgType = getPageDescPtr(paddr)->type;
+    enum page_type_t pgType = getPageDescPtr(paddr)->type;
     if ((PG_L1 <= pgType) && (pgType <= PG_L4)) {
-      page_entry_t * pageEntry = get_pgeVaddr (getVirtual(paddr));
+      page_entry_t * pageEntry = get_pgeVaddr ((uintptr_t)getVirtual(paddr));
       page_entry_store (pageEntry, setMappingReadOnly(*pageEntry));
     }
   }
@@ -2222,8 +2225,8 @@ printPTES (uintptr_t vaddr) {
   page_entry_t *pge = 0;
 
   /* Get the base of the pml4 to traverse */
-  uintptr_t cr3 = get_pagetable();
-  if ((cr3 & 0xfffffffffffff000u) == 0)
+  unsigned char * cr3 = get_pagetable();
+  if ((((uintptr_t)(cr3)) & 0xfffffffffffff000u) == 0)
     return 0;
 
   /* Get the VA of the pml4e for this vaddr */
@@ -2280,7 +2283,7 @@ sva_remove_page (uintptr_t paddr) {
   unsigned long rflags = sva_enter_critical();
 
   /* Get the entry controlling the permissions for this pte PTP */
-  page_entry_t *pte = get_pgeVaddr(getVirtual (paddr));
+  page_entry_t *pte = get_pgeVaddr((uintptr_t)getVirtual (paddr));
 
   /* Get the page_desc for the l1 page frame */
   page_desc_t *pgDesc = getPageDescPtr(paddr);

@@ -84,6 +84,7 @@
 #include "sva/config.h"
 #include "sva/state.h"
 #include "sva/mmu.h"
+#include "sva/interrupt.h"
 
 #include <string.h>
 #include <limits.h>
@@ -947,11 +948,11 @@ init_dispatcher ()
   register_x86_interrupt (0x7d, trap125, 3);
   register_x86_interrupt (0x7e, trap126, 3);
   register_x86_interrupt (0x7f, trap127, 3);
-  sva_register_general_exception (0x7b, getThreadRID);
-  sva_register_general_exception (0x7c, getThreadSecret);
-  sva_register_general_exception (0x7d, installNewPushTarget);
-  sva_register_general_exception (0x7e, freeSecureMemory);
-  sva_register_general_exception (0x7f, allocSecureMemory);
+  register_hypercall     (0x7b, getThreadRID);
+  register_hypercall     (0x7c, getThreadSecret);
+  register_hypercall     (0x7d, installNewPushTarget);
+  register_hypercall     (0x7e, freeSecureMemory);
+  register_hypercall     (0x7f, allocSecureMemory);
 
   return;
 }
