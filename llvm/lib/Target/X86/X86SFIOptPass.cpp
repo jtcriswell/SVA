@@ -780,11 +780,10 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
   DebugLoc dl; //// FIXME, this is nowhere
   
   for(MachineFunction::iterator FI = F.begin(); FI != F.end(); ++FI){
-#if 0
 	MachineBasicBlock& MBB = *FI;
 	for(MachineBasicBlock::iterator I = MBB.begin(); I != MBB.end();){
 	  MachineInstr* MI = I++;
-	  const TargetInstrDesc& TID = MI->getDesc();
+	  const MCInstrDesc & TID = MI->getDesc();
 	  // if MI stores to data section, sandbox it
 	  // we sandbox only those store instructions on which onStack returns false
 	  // we also sandbox instructions that modify %esp or %ebp
@@ -793,6 +792,7 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 	  // many such instructions since few instructions store and change %esp
 	  // or %ebp at the same time
 	  if(TID.mayStore() && !TID.mayLoad()) { // store only
+#if 0
 		// these instructions only store, they do not load
 		switch(MI->getOpcode()){
 		case X86::EXTRACTPSmr:
@@ -994,7 +994,9 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  llvm::errs() << "inst unsupported at " << __FILE__ << ":" << __LINE__ << "\n";
 		  MI->dump(); abort();
 		}
+#endif
 	  } else if(sandboxLoads && TID.mayLoad() && !TID.mayStore()) { //  load only
+#if 0
 		// these instructions only load. they do not store
 		switch(MI->getOpcode()){
 		case X86::ADC16rm:
@@ -2086,7 +2088,9 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  llvm::errs() << "inst unsupported at ";
 		  abort();
 		}
+#endif
 	  } else if(TID.mayLoad() && TID.mayStore()){ // load and store
+#if 0
 		// these instructions load and store
 		switch(MI->getOpcode()){
 		case X86::ADC16mi:
@@ -2413,7 +2417,9 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  llvm::errs() << "inst unsupported\n";
 		  abort();
 		}
+#endif
 	  } else { // MI does not load or store
+#if 0
 		// no need to sandbox %ebp after movl %esp, %ebp
 		if(MI->getOpcode() == X86::MOV32rr && MI->getOperand(0).getReg() == X86::EBP &&
 		   MI->getOperand(1).getReg() == X86::ESP)
@@ -2424,9 +2430,9 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
 		if(MI->modifiesRegister(X86::ESP,TRI))
 		  insertMaskAfterReg(MBB,MI,dl,TII,X86::ESP);
+#endif
 	  }
 	}
-#endif
   }
   if(F.getFunction()->getName() == "FunGaloisCyc"){
 	llvm::errs() <<"after X86SFIOptPass\n";
