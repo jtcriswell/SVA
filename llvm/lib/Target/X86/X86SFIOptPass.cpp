@@ -770,15 +770,17 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 	for(MachineBasicBlock::iterator I = MBB.begin(); I != MBB.end();){
 	  MachineInstr* MI = I++;
 	  const MCInstrDesc & TID = MI->getDesc();
-	  // if MI stores to data section, sandbox it
+
+    //
+	  // If MI stores to data section, sandbox it
 	  // we sandbox only those store instructions on which onStack returns false
 	  // we also sandbox instructions that modify %esp or %ebp
 	  // if the instruction stores to memory and changes %esp or %ebp
 	  // we need to sandbox the store and %esp or %ebp. There are not
 	  // many such instructions since few instructions store and change %esp
 	  // or %ebp at the same time
+    //
 	  if(TID.mayStore() && !TID.mayLoad()) { // store only
-#if 0
 		// these instructions only store, they do not load
 		switch(MI->getOpcode()){
 		case X86::EXTRACTPSmr:
@@ -821,12 +823,15 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  if(MI->modifiesRegister(X86::EBP, TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
 		  break;
+
 		case X86::IST_Fp64m32:
 		case X86::IST_Fp64m64:
 		case X86::IST_Fp64m80:
 		case X86::MMX_MOVD64mr:
 		case X86::MMX_MOVQ64mr:
 		  abort();
+      break;
+
 		case X86::MOV16mi:
 		case X86::MOV16mr:
 		case X86::MOV32mi:
@@ -837,6 +842,9 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  if(MI->modifiesRegister(X86::EBP, TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
 		  break;
+
+#if 0
+    /* TODO: See how tail calls are implemented now */
 		case X86::MOV32mr_TC:
 		  insertMaskBeforeStore(MBB,MI,dl,TII,0);
 		  if(MI->modifiesRegister(X86::ESP,TRI))
@@ -844,10 +852,17 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  if(MI->modifiesRegister(X86::EBP, TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
 		  break;
+#endif
+
 		case X86::MOV64mi32:
 		case X86::MOV64mr:
+#if 0
+    /* TODO: See how tail calls are implemented now */
 		case X86::MOV64mr_TC:
+#endif
 		  abort();
+      break;
+
 		case X86::MOV8mi:
 		case X86::MOV8mr:
 		case X86::MOV8mr_NOREX:
@@ -859,7 +874,7 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::MOVHPSmr:
 		case X86::MOVLPDmr:
 		case X86::MOVLPSmr:
-		case X86::MOVNTDQ_64mr:
+		/* case X86::MOVNTDQ_64mr: Same as MOVNTI_64mr */
 		case X86::MOVNTDQmr:
 		case X86::MOVNTI_64mr:
 		case X86::MOVNTImr:
@@ -881,6 +896,7 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  if(MI->modifiesRegister(X86::EBP, TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
 		  break;
+
 		case X86::PUSH16r:
 		  break;
 		case X86::PUSH16rmm:
@@ -911,11 +927,18 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::PUSHi32:
 		case X86::PUSHi8:
 		  break;
-		case X86::REP_STOSB:
-		case X86::REP_STOSD:
-		case X86::REP_STOSQ:
-		case X86::REP_STOSW:
-		  MI->dump(); abort();
+
+		case X86::REP_STOSB_32:
+		case X86::REP_STOSW_32:
+		case X86::REP_STOSD_32:
+		case X86::REP_STOSB_64:
+		case X86::REP_STOSW_64:
+		case X86::REP_STOSD_64:
+		case X86::REP_STOSQ_64:
+		  MI->dump();
+      abort();
+      break;
+
 		case X86::SETAEm:
 		case X86::SETAm:
 		case X86::SETBEm:
@@ -957,7 +980,9 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::VMOVHPSmr:
 		case X86::VMOVLPDmr:
 		case X86::VMOVLPSmr:
+#if 0
 		case X86::VMOVNTDQ_64mr:
+#endif
 		case X86::VMOVNTDQmr:
 		case X86::VMOVNTPDmr:
 		case X86::VMOVNTPSmr:
@@ -980,7 +1005,6 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  llvm::errs() << "inst unsupported at " << __FILE__ << ":" << __LINE__ << "\n";
 		  MI->dump(); abort();
 		}
-#endif
 	  } else if(sandboxLoads && TID.mayLoad() && !TID.mayStore()) { //  load only
 #if 0
 		// these instructions only load. they do not store
