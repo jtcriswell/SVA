@@ -761,22 +761,8 @@ void X86SFIOptPass::insertMaskBeforeTAILJMPm(MachineBasicBlock& MBB, MachineInst
 // write outside the data region. We only mask store instructions
 // load can be masked too but it incurs too much overhead
 bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
-  if (F.getFunction()->getName() == "FunGaloisCyc"){
-    llvm::errs() << "before X86SFIOptPass\n";
-    F.getBlockNumbered(49)->dump();
-  }
-
   TII = F.getTarget().getInstrInfo();
   TRI = F.getTarget().getRegisterInfo();
-  //MFI = F.getFrameInfo();
-  //RegInfo = &F.getRegInfo();
-  //AllocatableSet = TRI->getAllocatableSet(F);
-
-  // get our loop information 
-  //MLI = &getAnalysis<MachineLoopInfo>();
-  //DT  = &getAnalysis<MachineDominatorTree>();
-  //AA  = &getAnalysis<AliasAnalysis>();
-  
   DebugLoc dl; //// FIXME, this is nowhere
   
   for(MachineFunction::iterator FI = F.begin(); FI != F.end(); ++FI){
@@ -2433,10 +2419,6 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 #endif
 	  }
 	}
-  }
-  if(F.getFunction()->getName() == "FunGaloisCyc"){
-	llvm::errs() <<"after X86SFIOptPass\n";
-	F.getBlockNumbered(49)->dump();
   }
   return true;
 }
