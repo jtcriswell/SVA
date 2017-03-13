@@ -474,6 +474,7 @@ void X86SFIOptPass::insertMaskAfterReg(MachineBasicBlock& MBB, MachineInstr* MI,
 									   const unsigned Reg){
   insertMaskAfterReg(MBB, MI, dl, TII, Reg, allPushf);  // use pushf
 }
+#endif
 
 void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* MI,
 										 DebugLoc& dl, const TargetInstrInfo* TII,
@@ -481,6 +482,7 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
   insertMaskBeforeStore(MBB,MI,dl,TII,memIndex,useDeadRegs,allPushf);
 }
 
+#if 0
 // insert sandboxing instructions right before MI
 void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* MI,
 										  DebugLoc& dl, const TargetInstrInfo* TII,
@@ -559,6 +561,7 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
   if(saved) BuildMI(MBB,MI,dl,TII->get(X86::POP32r),dead); // popl %dead
   MI->eraseFromParent();
 }
+#endif
 
 void X86SFIOptPass::insertMaskBeforeCheck(MachineBasicBlock& MBB, MachineInstr* MI,
 										  DebugLoc& dl, const TargetInstrInfo* TII,
@@ -660,6 +663,7 @@ void X86SFIOptPass::insertMaskBeforeLoad(MachineBasicBlock& MBB, MachineInstr* M
   MI->eraseFromParent();
 }
 
+#if 0
 void X86SFIOptPass::insertMaskBeforeJMP32m(MachineBasicBlock& MBB, MachineInstr* MI,
 										   DebugLoc& dl, const TargetInstrInfo* TII,
 										   const unsigned memIndex){
@@ -705,6 +709,7 @@ void X86SFIOptPass::insertMaskBeforeJMP32m(MachineBasicBlock& MBB, MachineInstr*
   BuildMI(MBB,MI,dl,MI->getDesc()).addReg(dead).addImm(1).addReg(0).addImm(0).addReg(0);
   MI->eraseFromParent();
 }
+#endif
 
 unsigned X86SFIOptPass::getMemIndex(const MachineInstr* const MI){
   return X86Inst::getMemIndex(*MI);
@@ -756,10 +761,9 @@ void X86SFIOptPass::insertMaskBeforeTAILJMPm(MachineBasicBlock& MBB, MachineInst
 // write outside the data region. We only mask store instructions
 // load can be masked too but it incurs too much overhead
 bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
-  //llvm::errs() << "X86SFIOptPass::runOnMachineFunction(" << F.getFunction()->getName() << ")\n";
-  if(F.getFunction()->getName() == "FunGaloisCyc"){
-	llvm::errs() << "before X86SFIOptPass\n";
-	F.getBlockNumbered(49)->dump();
+  if (F.getFunction()->getName() == "FunGaloisCyc"){
+    llvm::errs() << "before X86SFIOptPass\n";
+    F.getBlockNumbered(49)->dump();
   }
 
   TII = F.getTarget().getInstrInfo();
@@ -776,6 +780,7 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
   DebugLoc dl; //// FIXME, this is nowhere
   
   for(MachineFunction::iterator FI = F.begin(); FI != F.end(); ++FI){
+#if 0
 	MachineBasicBlock& MBB = *FI;
 	for(MachineBasicBlock::iterator I = MBB.begin(); I != MBB.end();){
 	  MachineInstr* MI = I++;
@@ -2421,6 +2426,7 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  insertMaskAfterReg(MBB,MI,dl,TII,X86::ESP);
 	  }
 	}
+#endif
   }
   if(F.getFunction()->getName() == "FunGaloisCyc"){
 	llvm::errs() <<"after X86SFIOptPass\n";
@@ -2429,7 +2435,8 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
   return true;
 }
 
-FunctionPass* llvm::createX86SFIOptPass(X86TargetMachine& tm){
-  return new X86SFIOptPass(tm);
+namespace llvm {
+  FunctionPass* createX86SFIOptPass(X86TargetMachine& tm){
+    return new X86SFIOptPass(tm);
+  }
 }
-#endif
