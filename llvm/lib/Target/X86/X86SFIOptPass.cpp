@@ -120,18 +120,6 @@ void X86SFIOptPass::getAnalysisUsage(AnalysisUsage &AU) const {
   MachineFunctionPass::getAnalysisUsage(AU);
 }
 
-// return true if MI is in this form:
-// CMP32mi 3(%reg), $CFI_ID
-bool
-X86SFIOptPass::isCFICMP (const MachineInstr& MI) {
-#if 0
-  return X86Inst::isCFICMP(MI);
-#else
-  /* TODO: It appears that this function somehow disappeared */
-  return false;
-#endif
-}  
-
 // Registers to check for 32-bit systems
 static const unsigned Regs32[] = {X86::EAX, X86::ECX, X86::EDX,
                                   X86::EBX, X86::ESI, X86::EDI, 0};
@@ -1161,15 +1149,11 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
 		  break;
 		case X86::CMP32mi:
-		  if(isCFICMP(*MI))
-			insertMaskBeforeCheck(MBB,MI,dl,TII,getMemIndex(MI));
-		  else {
 			insertMaskBeforeLoad(MBB,MI,dl,TII,getMemIndex(MI));
 		  if(MI->modifiesRegister(X86::ESP, TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::ESP);
 		  if(MI->modifiesRegister(X86::EBP, TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
-		  }
 		  break;
 		case X86::CMP32mi8:
 		case X86::CMP32mr:

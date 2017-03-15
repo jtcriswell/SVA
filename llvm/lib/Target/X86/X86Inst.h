@@ -19,10 +19,6 @@
 namespace llvm{
   
   struct X86Inst{
-	// returns true if MI is in this form:
-	// CMP32mi 3(%reg), $(X86SFIOptPass::CFI_ID)
-	static bool isCFICMP(const MachineInstr& MI);
-
 #if 0
 	// return true if MI is in this form:
 	// PREFETCHNTA %reg0, 0, %reg0, $CFI_ID, %reg0
