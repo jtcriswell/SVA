@@ -23,6 +23,7 @@ namespace llvm{
 	// CMP32mi 3(%reg), $(X86SFIOptPass::CFI_ID)
 	static bool isCFICMP(const MachineInstr& MI);
 
+#if 0
 	// return true if MI is in this form:
 	// PREFETCHNTA %reg0, 0, %reg0, $CFI_ID, %reg0
 	static bool isCFIID(const MachineInstr& MI);
@@ -50,12 +51,17 @@ namespace llvm{
 	// returns true if MI is in this form:
 	// AND32ri %reg, $CODE_MASK
 	static bool isCodeMask(const MachineInstr& MI);
+#endif
 
 	// return the index of the first MachineOperand
 	// that constitues the memory location of MI
 	// if there is no such MachineOperand, return -1
-	static int getMemIndex(const MachineInstr& MI);
+	static int getMemIndex(const MachineInstr& MI) {
+    // TODO: This is only here to fix compilation.  It is not correct.
+    return -1;
+  }
 
+#if 0
 	// return true if MI is a push or pop instruction
 	static bool isPushPop(const MachineInstr& MI);
 	
@@ -76,6 +82,7 @@ namespace llvm{
 	// pops from stack to a memory location such as:
 	// POP16rmm, POP32rmm and so on
 	static bool isPopMem(const MachineInstr& MI);
+#endif
 
 	// returns true if MI only loads and it does not
 	// store to a memory location
@@ -93,12 +100,18 @@ namespace llvm{
 	// memIndex is the index of the first MachineOperand that
 	// constitues a memory location
 	static bool indirectLoadStore(const MachineInstr& MI,
-								  const int memIndex);
+								  const int memIndex) {
+    // TODO: This is on here to fix compilation.
+    return true;
+  }
+
+#if 0
 	// print out the OperandInfo of MI
 	static void printOperandInfo(const MachineInstr& MI);
 	
 	// return the super register of X86 register reg
 	static unsigned getSuperReg(const unsigned reg, const TargetRegisterInfo* TRI);
+#endif
 
 	// returns true if MI1 and MI2 are indepent. i.e. they can be reordered
 	// if one of them loads from memory and the other stores to memory
@@ -107,6 +120,7 @@ namespace llvm{
 	// then return false; else return true;
 	static bool independent(const MachineInstr& MI1, const MachineInstr& MI2);
 
+#if 0
 	// return true if MachineLoop ML has subLoops
 	static bool hasSubLoops(const MachineLoop& ML);
 
@@ -116,6 +130,7 @@ namespace llvm{
 	// return the index of the first non-zero bit in a
 	// e.g. 1 returns 0. 2 returns 1. 0 returns -1
 	static int getFirstNonZeroBit(unsigned a);
+#endif
   };
 }
 

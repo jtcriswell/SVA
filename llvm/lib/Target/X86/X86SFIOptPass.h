@@ -114,7 +114,7 @@ namespace llvm {
 
 	BitVector AllocatableSet;
 
-	static bool isCFICMP(const MachineInstr& MI);
+	bool isCFICMP(const MachineInstr& MI);
 	
   X86SFIOptPass(X86TargetMachine &tm) : MachineFunctionPass(ID), TM(tm),
 	  numPushf(0), numPushs(0), numAnds(0) {}
@@ -175,7 +175,7 @@ namespace llvm {
 	// insert sandboxing instructions right after MI to sandbox %esp
 	// MI must modify %esp. we only sandbox the change to %esp so that
 	// there is no need to sandbox all the uses of %esp
-	static void insertMaskAfterReg(MachineBasicBlock& MBB, MachineInstr* MI,
+	void insertMaskAfterReg(MachineBasicBlock& MBB, MachineInstr* MI,
 								   DebugLoc& dl, const TargetInstrInfo* TII,
 								   const unsigned Reg);
 	

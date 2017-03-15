@@ -122,8 +122,14 @@ void X86SFIOptPass::getAnalysisUsage(AnalysisUsage &AU) const {
 
 // return true if MI is in this form:
 // CMP32mi 3(%reg), $CFI_ID
-bool X86SFIOptPass::isCFICMP(const MachineInstr& MI){
+bool
+X86SFIOptPass::isCFICMP (const MachineInstr& MI) {
+#if 0
   return X86Inst::isCFICMP(MI);
+#else
+  /* TODO: It appears that this function somehow disappeared */
+  return false;
+#endif
 }  
 
 // Registers to check for 32-bit systems
@@ -136,11 +142,25 @@ static const unsigned Regs64[] = {X86::RAX, X86::RCX, X86::RDX, X86::RBX,
                                   X86::R10, X86::R11, X86::R12, X86::R13,
                                   X86::R14, X86::R15, 0};
 
-// Idx is the index of the first MachineOperand that constitutes the memory
-// location the instruction MI will store to
-// e.g. movl %eax, 4(%ebx, %ecx, 4)
-// if this instruction kills %ecx, then we can use %ecx for sandboxing
-unsigned X86SFIOptPass::findDeadReg (const MachineInstr* MI, unsigned Idx) {
+//
+// Method: findDeadReg()
+//
+// Description:
+//  Find a dead register for use with sandboxing.
+//
+// Inputs:
+//  MI  - The machine instrution which needs to be sandboxed
+//  Idx - The index of the first MachineOperand that constitutes the memory
+//        location to which the instruction MI will store
+//        e.g. movl %eax, 4(%ebx, %ecx, 4)
+//        if this instruction kills %ecx, then we can use %ecx for sandboxing
+//
+// Return value:
+//  0 - No dead register was found.
+//  Otherwises, an integer representing the dead register is returned.
+//
+unsigned
+X86SFIOptPass::findDeadReg (const MachineInstr* MI, unsigned Idx) {
   const TargetRegisterInfo* TRI = MI->getParent()->getParent()->getTarget().getRegisterInfo();
   unsigned dead = 0;
 
@@ -397,6 +417,13 @@ void X86SFIOptPass::insertMaskAfterReg (MachineBasicBlock& MBB,
   //
   bool saveFlags = (NXT == end) ?  false : needsPushf(nextMI, TRI);
 
+#if 0
+  //
+  // TODO: This code inserts SFI instrumentation on the stack pointer.  For
+  // some reason, it moves the instruction that defines the EFLAGS register
+  // as part of this process (for reasons currently unclear).  The reason for
+  // performing this change must be determined and this code re-enabled.
+  //
   if (isStackPointer(Reg) && saveFlags) {
     MachineInstr* Def = getDefInst(*MI, X86::EFLAGS);
     assert (Def && "Error can not find the instruction which defines eflags\n");
@@ -450,6 +477,7 @@ void X86SFIOptPass::insertMaskAfterReg (MachineBasicBlock& MBB,
     Def->eraseFromParent(); // delete Def
     return;
   }
+#endif
 
   //
   // Insert code to save the processor status flags if needed.
@@ -468,13 +496,11 @@ void X86SFIOptPass::insertMaskAfterReg (MachineBasicBlock& MBB,
   return;
 }
 
-#if 0
 void X86SFIOptPass::insertMaskAfterReg(MachineBasicBlock& MBB, MachineInstr* MI,
 									   DebugLoc& dl, const TargetInstrInfo* TII,
 									   const unsigned Reg){
-  insertMaskAfterReg(MBB, MI, dl, TII, Reg, allPushf);  // use pushf
+  insertMaskAfterReg (MBB, MI, dl, TII, Reg, allPushf);  // use pushf
 }
-#endif
 
 void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* MI,
 										 DebugLoc& dl, const TargetInstrInfo* TII,
@@ -482,7 +508,6 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
   insertMaskBeforeStore(MBB,MI,dl,TII,memIndex,useDeadRegs,allPushf);
 }
 
-#if 0
 // insert sandboxing instructions right before MI
 void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* MI,
 										  DebugLoc& dl, const TargetInstrInfo* TII,
@@ -561,7 +586,6 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
   if(saved) BuildMI(MBB,MI,dl,TII->get(X86::POP32r),dead); // popl %dead
   MI->eraseFromParent();
 }
-#endif
 
 void X86SFIOptPass::insertMaskBeforeCheck(MachineBasicBlock& MBB, MachineInstr* MI,
 										  DebugLoc& dl, const TargetInstrInfo* TII,
