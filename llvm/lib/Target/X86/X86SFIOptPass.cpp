@@ -134,7 +134,7 @@ static const unsigned Regs64[] = {X86::RAX, X86::RCX, X86::RDX, X86::RBX,
 // Method: findDeadReg()
 //
 // Description:
-//  Find a dead register for use with sandboxing.
+//  Find a dead register to use for sandboxing.
 //
 // Inputs:
 //  MI  - The machine instrution which needs to be sandboxed
@@ -166,17 +166,18 @@ X86SFIOptPass::findDeadReg (const MachineInstr* MI, unsigned Idx) {
       return (RegsToCheck[index]);
   }
 
-#if 0
-	// find a Reg that lives in to MI and is only used to calculate the
-	// memory location and it is killed by MI.e.g. movl %eax, 4(%ebx, %ecx, 4)
+  //
+	// Find a register that lives in to MI and is only used to calculate the
+	// memory location and it is killed by MI e.g. movl %eax, 4(%ebx, %ecx, 4)
 	// if %ebx is killed by movl and only used to calculate the memory location
 	// we can use it for sandboxing
-	BitVector kills = MI->getKills();
+  //
 	unsigned BaseReg = MI->getOperand(Idx).getReg();
-	if(BaseReg && kills[BaseReg]){ // test whether BaseReg is used twice
+	if (BaseReg && (MI->killsRegister(BaseReg))) {
+    // test whether BaseReg is used twice
 	  // there are some corner cases like this:
 	  // mov %eax, 24(%eax, %ecx)
-	  // even if %eax is skill by mov, it still can not be used for sandboxing
+	  // even if %eax is killed by mov, it still can not be used for sandboxing
 	  // because its value will be changed if we use it for sandboxing
 	  bool useTwice = false;
 	  for(unsigned index=0; index < Idx; ++index){
@@ -203,14 +204,14 @@ X86SFIOptPass::findDeadReg (const MachineInstr* MI, unsigned Idx) {
 	  // test whether any of BaseReg's subregisters are killed also
 		if(!useTwice){
 		  unsigned SubReg;
-		for(const unsigned *SubRegs = TRI->getSubRegisters(BaseReg);
+		for(const unsigned short *SubRegs = TRI->getSubRegisters(BaseReg);
 			(SubReg = *SubRegs); ++SubRegs)
-		  if(!kills[SubReg]) abort(); // if BaseReg is skilled, so should its subReg
+		  if(!(MI->killsRegister(SubReg, TRI))) abort(); // if BaseReg is killed, so should its subReg
 		if(!SubReg) dead = BaseReg;
 	  }
 	} else { // test whether IndexReg is used twice
 	  unsigned IndexReg = MI->getOperand(Idx+2).getReg();
-	  if(IndexReg && kills[IndexReg]){
+	  if(IndexReg && MI->killsRegister(IndexReg)){
 		bool useTwice = false;
 		for(unsigned index=0; index < Idx; ++index){
 		  const MachineOperand& MO = MI->getOperand(index);
@@ -237,15 +238,14 @@ X86SFIOptPass::findDeadReg (const MachineInstr* MI, unsigned Idx) {
 		// if(!useTwice) dead = IndexReg;
 		if(!useTwice){
 		  unsigned SubReg;
-		  for(const unsigned *SubRegs = TRI->getSubRegisters(IndexReg);
+		  for(const unsigned short *SubRegs = TRI->getSubRegisters(IndexReg);
 			  (SubReg = *SubRegs); ++SubRegs)
-			if(!kills[SubReg]) abort();
+			if(!(MI->killsRegister(SubReg))) abort();
 		  if(!SubReg) dead = IndexReg;
 		}
 	  }
 	}
-  }
-#endif
+
   return dead;
 }
 
@@ -549,15 +549,18 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
 	++numPushs;
   }
   // leal mem_loc, %dead
+#if 1
+  // JTC: Disabled for testing: This is the one causing problems
   const MachineInstrBuilder& LEA =
 	BuildMI(MBB,MI,dl,TII->get(X86::LEA32r),dead)
 	.addOperand(MI->getOperand(memIndex+0))
 	.addOperand(MI->getOperand(memIndex+1))
 	.addOperand(MI->getOperand(memIndex+2))
-	.addOperand(MI->getOperand(memIndex+3)); 
+	.addOperand(MI->getOperand(memIndex+3));
   for(MachineInstr::mmo_iterator MMI = MI->memoperands_begin(),
 		MME = MI->memoperands_end(); MMI != MME; ++MMI)
 	LEA.addMemOperand(*MMI);
+#endif
   bool saveFlags = needsPushf(MI,TRI);
   if(pushf || saveFlags) { ++numPushf; BuildMI(MBB,MI,dl,TII->get(X86::PUSHF32)); }
   //andl &DATA_MASK, %dead
@@ -649,6 +652,8 @@ void X86SFIOptPass::insertMaskBeforeLoad(MachineBasicBlock& MBB, MachineInstr* M
 	++numPushs;
   }
   // leal mem_loc, %dead
+#if 0
+  // JTC: Disabled for testing
   const MachineInstrBuilder& LEA =
 	BuildMI(MBB,MI,dl,TII->get(X86::LEA32r),dead)
 	.addOperand(MI->getOperand(memIndex+0))
@@ -658,6 +663,7 @@ void X86SFIOptPass::insertMaskBeforeLoad(MachineBasicBlock& MBB, MachineInstr* M
   for(MachineInstr::mmo_iterator MMI = MI->memoperands_begin(),
 		MME = MI->memoperands_end(); MMI != MME; ++MMI)
 	LEA.addMemOperand(*MMI);
+#endif
   bool saveFlags = needsPushf(MI,TRI);
   if(pushf || saveFlags) { ++numPushf; BuildMI(MBB,MI,dl,TII->get(X86::PUSHF32)); }
   //andl &DATA_MASK, %dead
@@ -723,8 +729,31 @@ void X86SFIOptPass::insertMaskBeforeJMP32m(MachineBasicBlock& MBB, MachineInstr*
 }
 #endif
 
+//
+// Method: getMemIndex()
+//
+// Description:
+//  Determine whether the specified instruction accesses a memory location.
+//  If it does, return the index of the first operand that is used to represent
+//  the memory location that the instruction will read and/or write.
+//
 unsigned X86SFIOptPass::getMemIndex(const MachineInstr* const MI){
-  return X86Inst::getMemIndex(*MI);
+  //
+  // Scan through all of the operands and see if the existing functions within
+  // the LLVM Code Generator consider them to get a memory operand.
+  // 
+  const unsigned totalOperands = MI->getNumOperands();
+  for (unsigned opIndex = 0; opIndex < totalOperands; ++opIndex) {
+    if (MI->getOperand(opIndex).isFI()) {
+      llvm::errs() << "JTC: " << opIndex << " is a frame index!\n";
+    }
+    if (isLeaMem (MI, opIndex)) {
+      return opIndex;
+    }
+  }
+
+  MI->dump();
+  assert (0 && "getMemIndex: MI does not access memory!\n");
 }
 
 void X86SFIOptPass::insertMaskBeforeREP_MOVSX(MachineBasicBlock& MBB, MachineInstr* MI,
@@ -746,6 +775,8 @@ void X86SFIOptPass::insertMaskBeforeCALL32m(MachineBasicBlock& MBB, MachineInstr
   // use %eax to sandbox MI
   const unsigned dead = X86::EAX;
   // leal mem_loc, %dead
+#if 0
+  // JTC: Disabled for testing
   const MachineInstrBuilder& LEA =
 	BuildMI(MBB,MI,dl,TII->get(X86::LEA32r),dead)
 	.addOperand(MI->getOperand(memIndex+0))
@@ -755,6 +786,7 @@ void X86SFIOptPass::insertMaskBeforeCALL32m(MachineBasicBlock& MBB, MachineInstr
   for(MachineInstr::mmo_iterator MMI = MI->memoperands_begin(),
 		MME = MI->memoperands_end(); MMI != MME; ++MMI)
 	LEA.addMemOperand(*MMI);
+#endif
   // andl &DATA_MASK, %dead
   BuildMI(MBB, MI, dl, TII->get(X86::AND32ri),dead).addReg(dead).addImm(DATA_MASK);
   ++numAnds;
@@ -872,7 +904,11 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
     /* TODO: See how tail calls are implemented now */
 		case X86::MOV64mr_TC:
 #endif
-		  abort();
+		  insertMaskBeforeStore(MBB,MI,dl,TII,getMemIndex(MI));
+		  if (MI->modifiesRegister(X86::ESP,TRI))
+        insertMaskAfterReg(MBB,MI,dl,TII,X86::ESP);
+		  if (MI->modifiesRegister(X86::EBP, TRI))
+        insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
       break;
 
 		case X86::MOV8mi:
@@ -914,20 +950,21 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::PUSH16rmm:
 		  insertMaskBeforeStore(MBB,MI,dl,TII,getMemIndex(MI));
 		  break;
+
 		case X86::PUSH16rmr:
 		case X86::PUSH32r:
+		case X86::PUSH64r:
 		  break;
 		case X86::PUSH32rmm:
+		case X86::PUSH64rmm:
 		  insertMaskBeforeStore(MBB,MI,dl,TII,getMemIndex(MI));
 		  break;
 		case X86::PUSH32rmr:
+		case X86::PUSH64rmr:
 		  break;
 		case X86::PUSH64i16:
 		case X86::PUSH64i32:
 		case X86::PUSH64i8:
-		case X86::PUSH64r:
-		case X86::PUSH64rmm:
-		case X86::PUSH64rmr:
 		  abort();
 		case X86::PUSHA32:
 		case X86::PUSHF16:
