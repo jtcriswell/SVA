@@ -518,7 +518,8 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
     //
     // Create an AND operation that will turn on the needed bits.  For 64-bit,
     // we must move the upper 32-bits into the lower 32-bits so that our mask
-    // fits within 32-bits.
+    // fits within 32-bits.  The rotate instruction allows us to do this
+    // without modifying processor status flags or memory.
     //
     if (is64Bit()) {
       BuildMI(MBB,MI,dl,TII->get(X86::ROR64ri),base).addReg(base).addImm(72);
