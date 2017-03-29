@@ -503,18 +503,38 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
 										  const bool useDead, const bool pushf){
   assert(MI->getDesc().mayStore() && "store instruction expected");
   const TargetRegisterInfo* TRI = MI->getParent()->getParent()->getTarget().getRegisterInfo();
+
   if(!X86Inst::indirectLoadStore(*MI, memIndex)) return;
   if(onStack(MI, memIndex)) return;
-  // if MI is in this form: movl %eax, (%ebx),sandbox %ebx
-  if(onsiteSandbox && baseReg2Mem(MI, memIndex)) {
-	unsigned base = MI->getOperand(memIndex).getReg();
-	bool saveFlags = needsPushf(MI,TRI);
-	if(pushf || saveFlags) BuildMI(MBB,MI,dl,TII->get(X86::PUSHF32)); // PUSHF32
-	//andl &DATA_MASK, %base
-	BuildMI(MBB,MI,dl,TII->get(X86::AND32ri),base).addReg(base).addImm(DATA_MASK);
-	if(pushf || saveFlags) BuildMI(MBB,MI,dl,TII->get(X86::POPF32)); // POPF32
-	++numAnds; return;
+
+  // If MI is in this form: movl %eax, (%ebx),sandbox %ebx
+  if (onsiteSandbox && baseReg2Mem(MI, memIndex)) {
+    unsigned base = MI->getOperand(memIndex).getReg();
+    bool saveFlags = needsPushf(MI,TRI);
+    if (pushf || saveFlags) {
+      BuildMI(MBB,MI,dl,TII->get(X86::PUSHF32)); // PUSHF32
+    }
+
+    //
+    // Create an AND operation that will turn on the needed bits.  For 64-bit,
+    // we must move the upper 32-bits into the lower 32-bits so that our mask
+    // fits within 32-bits.
+    //
+    if (is64Bit()) {
+      BuildMI(MBB,MI,dl,TII->get(X86::ROR64ri),base).addReg(base).addImm(72);
+      BuildMI(MBB,MI,dl,TII->get(X86::OR64ri32),base).addReg(base).addImm(0x8u);
+      BuildMI(MBB,MI,dl,TII->get(X86::ROL64ri),base).addReg(base).addImm(72);
+    } else {
+      BuildMI(MBB,MI,dl,TII->get(X86::AND32ri),base).addReg(base).addImm(0x0000008000000000u);
+    }
+
+    if (pushf || saveFlags) {
+      BuildMI(MBB,MI,dl,TII->get(X86::POPF32)); // POPF32
+    }
+    ++numAnds;
+    return;
   }
+
   bool saved = false;
   unsigned dead = 0;
   if(useDead) dead = findDeadReg(MI, memIndex);
