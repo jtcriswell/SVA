@@ -204,10 +204,19 @@ X86SFIOptPass::findDeadReg (const MachineInstr* MI, unsigned Idx) {
 	  // test whether any of BaseReg's subregisters are killed also
 		if(!useTwice){
 		  unsigned SubReg;
+#if 0
 		for(const unsigned short *SubRegs = TRI->getSubRegisters(BaseReg);
 			(SubReg = *SubRegs); ++SubRegs)
+      assert ((MI->killsRegister(SubReg, TRI)));
 		  if(!(MI->killsRegister(SubReg, TRI))) abort(); // if BaseReg is killed, so should its subReg
 		if(!SubReg) dead = BaseReg;
+#else
+    // JTC: I think the code above assumes that the MI will explicitly kill all
+    // subregs of a killed register.  However, perhaps that assumption no
+    // longer holds in LLVM IR.  This looks more like a sanity check; we should
+    // investigate later if this is really needed.
+		dead = BaseReg;
+#endif
 	  }
 	} else { // test whether IndexReg is used twice
 	  unsigned IndexReg = MI->getOperand(Idx+2).getReg();
@@ -236,13 +245,26 @@ X86SFIOptPass::findDeadReg (const MachineInstr* MI, unsigned Idx) {
 		  }
 		}
 		// if(!useTwice) dead = IndexReg;
+#if 0
 		if(!useTwice){
 		  unsigned SubReg;
 		  for(const unsigned short *SubRegs = TRI->getSubRegisters(IndexReg);
 			  (SubReg = *SubRegs); ++SubRegs)
-			if(!(MI->killsRegister(SubReg))) abort();
+			if(!(MI->killsRegister(SubReg))) {
+        MI->dump();
+        MI->getParent()->getParent()->dump();
+        assert((MI->killsRegister(SubReg)));
+        abort();
+      }
 		  if(!SubReg) dead = IndexReg;
 		}
+#else
+    // JTC: I think the code above assumes that the MI will explicitly kill all
+    // subregs of a killed register.  However, perhaps that assumption no
+    // longer holds in LLVM IR.  This looks more like a sanity check; we should
+    // investigate later if this is really needed.
+    dead = IndexReg;
+#endif
 	  }
 	}
 
@@ -385,6 +407,7 @@ void X86SFIOptPass::insertMaskAfterReg (MachineBasicBlock& MBB,
                                         const TargetInstrInfo* TII,
                                         const unsigned Reg,
                                         const bool pushf) {
+#if 0
   const TargetRegisterInfo* TRI=MBB.getParent()->getTarget().getRegisterInfo();
 
   //
@@ -481,6 +504,7 @@ void X86SFIOptPass::insertMaskAfterReg (MachineBasicBlock& MBB,
   //
   if (pushf || saveFlags)
     insertPopf (nextMI,dl,TII);
+#endif
   return;
 }
 
@@ -522,20 +546,30 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
     // without modifying processor status flags or memory.
     //
     if (is64Bit()) {
-      BuildMI(MBB,MI,dl,TII->get(X86::ROR64ri),base).addReg(base).addImm(72);
-      BuildMI(MBB,MI,dl,TII->get(X86::OR64ri32),base).addReg(base).addImm(0x8u);
-      BuildMI(MBB,MI,dl,TII->get(X86::ROL64ri),base).addReg(base).addImm(72);
+#if 0
+      BuildMI(MBB,MI,dl,TII->get(X86::BTS64ri8),base).addImm(63);
+#endif
+#if 0
+      const unsigned int mask = 0x8u;
+      const unsigned int shift = 9;
+      BuildMI(MBB,MI,dl,TII->get(X86::ROR64ri),base).addReg(base).addImm(shift);
+      BuildMI(MBB,MI,dl,TII->get(X86::OR64ri32),base).addReg(base).addImm(mask);
+      BuildMI(MBB,MI,dl,TII->get(X86::ROL64ri),base).addReg(base).addImm(shift);
+#endif
     } else {
       BuildMI(MBB,MI,dl,TII->get(X86::AND32ri),base).addReg(base).addImm(0x0000008000000000u);
     }
 
+#if 1
     if (pushf || saveFlags) {
       BuildMI(MBB,MI,dl,TII->get(X86::POPF32)); // POPF32
     }
+#endif
     ++numAnds;
     return;
   }
 
+#if 0
   bool saved = false;
   unsigned dead = 0;
   if(useDead) dead = findDeadReg(MI, memIndex);
@@ -570,7 +604,7 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
 	++numPushs;
   }
   // leal mem_loc, %dead
-#if 1
+#if 0
   // JTC: Disabled for testing: This is the one causing problems
   const MachineInstrBuilder& LEA =
 	BuildMI(MBB,MI,dl,TII->get(X86::LEA32r),dead)
@@ -597,6 +631,7 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
 	MIB.addOperand(MI->getOperand(i));
   if(saved) BuildMI(MBB,MI,dl,TII->get(X86::POP32r),dead); // popl %dead
   MI->eraseFromParent();
+#endif
 }
 
 void X86SFIOptPass::insertMaskBeforeCheck(MachineBasicBlock& MBB, MachineInstr* MI,
@@ -622,6 +657,9 @@ void X86SFIOptPass::insertMaskBeforeLoad(MachineBasicBlock& MBB, MachineInstr* M
 										 DebugLoc& dl, const TargetInstrInfo* TII,
 										 const unsigned memIndex,
 										 const bool useDead, const bool pushf){
+#if 1
+  return;
+#endif
   assert(MI->getDesc().mayLoad() && "load instruction expected");
   const TargetRegisterInfo* TRI = MI->getParent()->getParent()->getTarget()
 	.getRegisterInfo();
@@ -779,6 +817,7 @@ unsigned X86SFIOptPass::getMemIndex(const MachineInstr* const MI){
 
 void X86SFIOptPass::insertMaskBeforeREP_MOVSX(MachineBasicBlock& MBB, MachineInstr* MI,
 											  DebugLoc& dl, const TargetInstrInfo* TII) {
+  return;
   const TargetRegisterInfo* TRI = MI->getParent()->getParent()->getTarget().getRegisterInfo();
   const bool saveFlags = needsPushf(MI,TRI);
   if(allPushf || saveFlags) {++numPushf; BuildMI(MBB,MI,dl,TII->get(X86::PUSHF32));}
@@ -793,6 +832,7 @@ void X86SFIOptPass::insertMaskBeforeREP_MOVSX(MachineBasicBlock& MBB, MachineIns
 void X86SFIOptPass::insertMaskBeforeCALL32m(MachineBasicBlock& MBB, MachineInstr* MI,
 											DebugLoc& dl, const TargetInstrInfo* TII,
 											const unsigned memIndex){
+  return;
   // use %eax to sandbox MI
   const unsigned dead = X86::EAX;
   // leal mem_loc, %dead
@@ -819,6 +859,7 @@ void X86SFIOptPass::insertMaskBeforeCALL32m(MachineBasicBlock& MBB, MachineInstr
 void X86SFIOptPass::insertMaskBeforeTAILJMPm(MachineBasicBlock& MBB, MachineInstr* MI,
 											 DebugLoc& dl, const TargetInstrInfo* TII,
 											 const unsigned memIndex){
+  return;
   insertMaskBeforeCALL32m(MBB,MI,dl,TII,memIndex);
 }
 
@@ -882,13 +923,18 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::IST_Fp32m32:
 		case X86::IST_Fp32m64:
 		case X86::IST_Fp32m80:
+#if 0
+      // JTC: Need to enable later
 		  insertMaskBeforeStore(MBB,MI,dl,TII,getMemIndex(MI));
 		  if(MI->modifiesRegister(X86::ESP,TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::ESP);
 		  if(MI->modifiesRegister(X86::EBP, TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
+#endif
 		  break;
 
+#if 0
+    // JTC: Need to enable later
 		case X86::IST_Fp64m32:
 		case X86::IST_Fp64m64:
 		case X86::IST_Fp64m80:
@@ -896,7 +942,10 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::MMX_MOVQ64mr:
 		  abort();
       break;
+#endif
 
+#if 0
+      // JTC: Enable later
 		case X86::MOV16mi:
 		case X86::MOV16mr:
 		case X86::MOV32mi:
@@ -907,6 +956,7 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  if(MI->modifiesRegister(X86::EBP, TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
 		  break;
+#endif
 
 #if 0
     /* TODO: See how tail calls are implemented now */
@@ -959,17 +1009,23 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::MOVUPSmr:
 		case X86::PEXTRDmr:
 		case X86::PEXTRQmr:
+#if 0
+      // JTC: Need to enable later
 		  insertMaskBeforeStore(MBB,MI,dl,TII,getMemIndex(MI));
 		  if(MI->modifiesRegister(X86::ESP,TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::ESP);
 		  if(MI->modifiesRegister(X86::EBP, TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
+#endif
 		  break;
 
 		case X86::PUSH16r:
 		  break;
 		case X86::PUSH16rmm:
+#if 0
+      // JTC: Need to enable later
 		  insertMaskBeforeStore(MBB,MI,dl,TII,getMemIndex(MI));
+#endif
 		  break;
 
 		case X86::PUSH16rmr:
@@ -986,13 +1042,19 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::PUSH64i16:
 		case X86::PUSH64i32:
 		case X86::PUSH64i8:
+#if 0
 		  abort();
+#endif
+      break;
 		case X86::PUSHA32:
 		case X86::PUSHF16:
 		case X86::PUSHF32:
 		  break;
 		case X86::PUSHF64:
+#if 0
 		  abort();
+#endif
+      break;
 		case X86::PUSHi16:
 		case X86::PUSHi32:
 		case X86::PUSHi8:
@@ -1005,8 +1067,10 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::REP_STOSW_64:
 		case X86::REP_STOSD_64:
 		case X86::REP_STOSQ_64:
+#if 0
 		  MI->dump();
       abort();
+#endif
       break;
 
 		case X86::SETAEm:
@@ -1065,15 +1129,22 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::VMOVUPSmr:
 		case X86::VPEXTRDmr:
 		case X86::VPEXTRQmr:
+#if 0
+      // JTC: Need to enable later
 		  insertMaskBeforeStore(MBB,MI,dl,TII,getMemIndex(MI));
 		  if(MI->modifiesRegister(X86::ESP, TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::ESP);
 		  if(MI->modifiesRegister(X86::EBP, TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
+#endif
 		  break;
 		default:
+#if 0
+      // JTC: Enable when all other instructions are handled
 		  llvm::errs() << "inst unsupported at " << __FILE__ << ":" << __LINE__ << "\n";
 		  MI->dump(); abort();
+#endif
+      break;
 		}
 	  } else if(sandboxLoads && TID.mayLoad() && !TID.mayStore()) { //  load only
 #if 0
@@ -1394,8 +1465,11 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::JMP32m:
 		  insertMaskBeforeJMP32m(MBB,MI,dl,TII,0);
 		  break;
+#if 0
+    // JTC: Need to enable later
 		case X86::JMP64m:
 		  abort();
+#endif
 		case X86::LDDQUrm:
 		case X86::LD_F32m:
 		case X86::LD_F64m:
@@ -1414,8 +1488,11 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  break;
 		case X86::LEAVE:
 		  break;
+#if 0
+    // JTC: Need to enable later
 		case X86::LEAVE64:
 		  abort();
+#endif
 		case X86::MAXPDrm:
 		case X86::MAXPDrm_Int:
 		case X86::MAXPSrm:
@@ -1726,8 +1803,11 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  break;
 		case X86::POP64r:
 		case X86::POP64rmm:
+#if 0
+    // JTC: Need to enable later
 		case X86::POP64rmr:
 		  abort();
+#endif
 		case X86::POPA32:
 		  insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
 		  break;
@@ -1739,13 +1819,19 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  if(MI->modifiesRegister(X86::EBP, TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
 		  break;
+#if 0
+    // JTC: Need to enable later
 		case X86::POPCNT64rm:
 		  abort();
+#endif
 		case X86::POPF16:
 		case X86::POPF32:
 		  break;
+#if 0
+    // JTC: Need to enable later
 		case X86::POPF64:
 		  abort(); // no need to sandbox pop
+#endif
 		case X86::PORrm:
 		case X86::PSADBWrm:
 		case X86::PSHUFBrm128:
@@ -1860,8 +1946,11 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::TAILJMPm: // TAIL call
 		  insertMaskBeforeTAILJMPm(MBB,MI,dl,TII,0);
 		  break;
+#if 0
+    // JTC: Need to enable later
 		case X86::TAILJMPm64:
 		  abort();
+#endif
 		case X86::TCRETURNmi:
 		case X86::TCRETURNmi64:
 		case X86::TEST16mi:
@@ -2146,8 +2235,11 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  if(MI->modifiesRegister(X86::EBP, TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
 		  break;
+#if 0
+    // JTC: Need to enable later
 		case X86::WINCALL64m:
 		  abort();
+#endif
 		case X86::XOR16rm:
 		case X86::XOR32rm:
 		case X86::XOR64rm:
@@ -2161,8 +2253,11 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
 		  break;
 		default:
+#if 0
 		  llvm::errs() << "inst unsupported at ";
+      // JTC: Need to enable later
 		  abort();
+#endif
 		}
 #endif
 	  } else if(TID.mayLoad() && TID.mayStore()){ // load and store
@@ -2490,8 +2585,11 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
 		  break;
 		default:
+#if 0
+    // JTC: Need to enable later
 		  llvm::errs() << "inst unsupported\n";
 		  abort();
+#endif
 		}
 #endif
 	  } else { // MI does not load or store
