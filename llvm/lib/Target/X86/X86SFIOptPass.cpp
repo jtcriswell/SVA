@@ -1021,7 +1021,7 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::IST_Fp32m32:
 		case X86::IST_Fp32m64:
 		case X86::IST_Fp32m80:
-#if 0
+#if 1
       // JTC: Need to enable later
 		  insertMaskBeforeStore(MBB,MI,dl,TII,getMemIndex(MI));
 		  if(MI->modifiesRegister(X86::ESP,TRI))
@@ -1104,7 +1104,7 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::MOVUPSmr:
 		case X86::PEXTRDmr:
 		case X86::PEXTRQmr:
-#if 0
+#if 1
       // JTC: Need to enable later
 		  insertMaskBeforeStore(MBB,MI,dl,TII,getMemIndex(MI));
 		  if(MI->modifiesRegister(X86::ESP,TRI))
@@ -1117,7 +1117,7 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::PUSH16r:
 		  break;
 		case X86::PUSH16rmm:
-#if 0
+#if 1
       // JTC: Need to enable later
 		  insertMaskBeforeStore(MBB,MI,dl,TII,getMemIndex(MI));
 #endif
@@ -1224,7 +1224,7 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::VMOVUPSmr:
 		case X86::VPEXTRDmr:
 		case X86::VPEXTRQmr:
-#if 0
+#if 1
       // JTC: Need to enable later
 		  insertMaskBeforeStore(MBB,MI,dl,TII,getMemIndex(MI));
 		  if(MI->modifiesRegister(X86::ESP, TRI))
