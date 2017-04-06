@@ -1042,8 +1042,6 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
       break;
 #endif
 
-#if 0
-      // JTC: Enable later
 		case X86::MOV16mi:
 		case X86::MOV16mr:
 		case X86::MOV32mi:
@@ -1054,7 +1052,6 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		  if(MI->modifiesRegister(X86::EBP, TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::EBP);
 		  break;
-#endif
 
 #if 0
     /* TODO: See how tail calls are implemented now */
