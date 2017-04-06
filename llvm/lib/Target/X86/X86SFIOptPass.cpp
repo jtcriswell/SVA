@@ -546,25 +546,124 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
     // without modifying processor status flags or memory.
     //
     if (is64Bit()) {
+      bool saved = false;
+      const unsigned int mask = 0x00000000ffffff80u;
+      const unsigned int shift = 32;
+
+      //
+      // Locate a dead register.  We will need one to use as an operand for
+      // the bit-masking operation.  If we can't find a dead register, spill
+      // a register to the stack.
+      //
 #if 0
-      BuildMI(MBB,MI,dl,TII->get(X86::BTS64ri8),base).addImm(63);
+      unsigned dead = findDeadReg(MI, memIndex);
+#else
+      unsigned dead = 0;
 #endif
-#if 0
-      const unsigned int mask = 0x8u;
-      const unsigned int shift = 9;
+      if (dead == 0) {
+        //
+        // Spill a register to the stack
+        //
+        if (MI->readsRegister(X86::SP, TRI) ||
+            MI->readsRegister(X86::ESP, TRI) ||
+            MI->modifiesRegister(X86::SP, TRI) ||
+            MI->modifiesRegister(X86::ESP, TRI)) abort();
+
+        if ((base != X86::RAX) &&
+            !MI->readsRegister(X86::AH, TRI) &&
+            !MI->readsRegister(X86::AL,  TRI) &&
+            !MI->readsRegister(X86::AX, TRI) &&
+            !MI->readsRegister(X86::EAX, TRI) &&
+            !MI->readsRegister(X86::RAX, TRI) &&
+            !MI->modifiesRegister(X86::RAX, TRI))
+          dead = X86::RAX;
+        else if ((base != X86::RBX) &&
+                 !MI->readsRegister(X86::BH, TRI) &&
+                 !MI->readsRegister(X86::BL,  TRI) &&
+                 !MI->readsRegister(X86::BX, TRI) &&
+                 !MI->readsRegister(X86::EBX, TRI) &&
+                 !MI->readsRegister(X86::RBX, TRI) &&
+                 !MI->modifiesRegister(X86::RBX, TRI))
+          dead = X86::RBX;
+        else if ((base != X86::RCX) &&
+                 !MI->readsRegister(X86::CH, TRI) &&
+                 !MI->readsRegister(X86::CL,  TRI) &&
+                 !MI->readsRegister(X86::CX, TRI) &&
+                 !MI->readsRegister(X86::ECX, TRI) &&
+                 !MI->readsRegister(X86::RCX, TRI) &&
+                 !MI->modifiesRegister(X86::RCX, TRI))
+          dead = X86::RCX;
+        else if((base != X86::RDX) &&
+                !MI->readsRegister(X86::DH, TRI) &&
+                !MI->readsRegister(X86::DL,  TRI) &&
+                !MI->readsRegister(X86::DX, TRI) &&
+                !MI->readsRegister(X86::EDX, TRI) &&
+                !MI->readsRegister(X86::RDX, TRI) &&
+                !MI->modifiesRegister(X86::RDX, TRI))
+          dead = X86::RDX;
+        else if((base != X86::RSI) &&
+                !MI->readsRegister(X86::SI, TRI) &&
+                !MI->readsRegister(X86::ESI, TRI) &&
+                !MI->readsRegister(X86::RSI, TRI) &&
+                !MI->modifiesRegister(X86::RSI, TRI))
+          dead = X86::RSI;
+        else if((base != X86::RDI) &&
+                !MI->readsRegister(X86::DI, TRI) &&
+                !MI->readsRegister(X86::EDI, TRI) &&
+                !MI->readsRegister(X86::RDI, TRI) &&
+                !MI->modifiesRegister(X86::RDI, TRI))
+          dead = X86::RDI;
+        else abort();
+
+        // Add the spill code
+        BuildMI(MBB,MI,dl,TII->get(X86::PUSH64r)).addReg(dead);
+        saved = true;
+        ++numPushs;
+      }
+      assert ((dead != base) && "Using base register!\n");
+
+      //
+      // Rotate the upper 32-bits to the lower 32-bits so that we can bit-mask
+      // using a constant 32-bit immediate operand.
+      //
       BuildMI(MBB,MI,dl,TII->get(X86::ROR64ri),base).addReg(base).addImm(shift);
-      BuildMI(MBB,MI,dl,TII->get(X86::OR64ri32),base).addReg(base).addImm(mask);
+
+      //
+      // Copy the rotated register contents to the dead register and set the
+      // bit that will move the pointer into the kernel virtual address space.
+      //
+      BuildMI(MBB,MI,dl,TII->get(X86::MOV64rr),dead).addReg(base);
+      BuildMI(MBB,MI,dl,TII->get(X86::OR64ri32),dead).addReg(dead).addImm(0x00000080u);
+
+      //
+      // Add the bit-masking instruction that will test whether the pointer is
+      // pointing into kernel space.
+      //
+      BuildMI(MBB,MI,dl,TII->get(X86::CMP32ri),dead).addImm(mask);
+
+      //
+      // Create the conditional move which will set the mask register to the
+      // masking value if the pointer points into kernel space.
+      //
+      BuildMI(MBB,MI,dl,TII->get(X86::CMOVGE64rr),base).addReg(base).addReg(dead);
+
+      //
+      // Rotate the pointer so that the higer-order word is back in the
+      // upper-level bits.
+      //
       BuildMI(MBB,MI,dl,TII->get(X86::ROL64ri),base).addReg(base).addImm(shift);
-#endif
+
+      //
+      // If we had to spill a register, restore it.
+      //
+      if (saved) BuildMI(MBB,MI,dl,TII->get(X86::POP64r),dead);
     } else {
       BuildMI(MBB,MI,dl,TII->get(X86::AND32ri),base).addReg(base).addImm(0x0000008000000000u);
     }
 
-#if 1
     if (pushf || saveFlags) {
       BuildMI(MBB,MI,dl,TII->get(X86::POPF32)); // POPF32
     }
-#endif
     ++numAnds;
     return;
   }
@@ -603,6 +702,7 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
 	saved = true;
 	++numPushs;
   }
+
   // leal mem_loc, %dead
 #if 0
   // JTC: Disabled for testing: This is the one causing problems
