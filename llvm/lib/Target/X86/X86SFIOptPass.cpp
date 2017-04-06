@@ -166,6 +166,7 @@ X86SFIOptPass::findDeadReg (const MachineInstr* MI, unsigned Idx) {
       return (RegsToCheck[index]);
   }
 
+#if 0
   //
 	// Find a register that lives in to MI and is only used to calculate the
 	// memory location and it is killed by MI e.g. movl %eax, 4(%ebx, %ecx, 4)
@@ -267,6 +268,7 @@ X86SFIOptPass::findDeadReg (const MachineInstr* MI, unsigned Idx) {
 #endif
 	  }
 	}
+#endif
 
   return dead;
 }
@@ -555,11 +557,7 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
       // the bit-masking operation.  If we can't find a dead register, spill
       // a register to the stack.
       //
-#if 0
       unsigned dead = findDeadReg(MI, memIndex);
-#else
-      unsigned dead = 0;
-#endif
       if (dead == 0) {
         //
         // Spill a register to the stack
