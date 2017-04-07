@@ -140,6 +140,8 @@ namespace llvm {
 	// MachineOperand that constitutes the memory location
 	unsigned findDeadReg(const MachineInstr* MI, const unsigned idx);
 
+  // Find a register to spill
+  unsigned findRegToSpill(const unsigned reg, const MachineInstr* MI, const TargetRegisterInfo* TRI);
 	// insert a mask instruction before store instruction MI
 	// this version does not use any dead registers
 	void insertMaskBeforeStoreNoDead(MachineBasicBlock& MBB, MachineInstr* MI,

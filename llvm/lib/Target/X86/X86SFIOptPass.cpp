@@ -273,6 +273,67 @@ X86SFIOptPass::findDeadReg (const MachineInstr* MI, unsigned Idx) {
   return dead;
 }
 
+//
+// Method: findRegToSpill()
+//
+// Description:
+//  Find a register to spill.
+//
+unsigned
+X86SFIOptPass::findRegToSpill(unsigned reg,
+                              const MachineInstr* MI,
+                              const TargetRegisterInfo* TRI) {
+  // Register name to spill
+  unsigned dead = 0;
+  if ((reg != X86::RAX) &&
+      !MI->readsRegister(X86::AH, TRI) &&
+      !MI->readsRegister(X86::AL,  TRI) &&
+      !MI->readsRegister(X86::AX, TRI) &&
+      !MI->readsRegister(X86::EAX, TRI) &&
+      !MI->readsRegister(X86::RAX, TRI) &&
+      !MI->modifiesRegister(X86::RAX, TRI))
+    dead = X86::RAX;
+  else if ((reg != X86::RBX) &&
+           !MI->readsRegister(X86::BH, TRI) &&
+           !MI->readsRegister(X86::BL,  TRI) &&
+           !MI->readsRegister(X86::BX, TRI) &&
+           !MI->readsRegister(X86::EBX, TRI) &&
+           !MI->readsRegister(X86::RBX, TRI) &&
+           !MI->modifiesRegister(X86::RBX, TRI))
+    dead = X86::RBX;
+  else if ((reg != X86::RCX) &&
+           !MI->readsRegister(X86::CH, TRI) &&
+           !MI->readsRegister(X86::CL,  TRI) &&
+           !MI->readsRegister(X86::CX, TRI) &&
+           !MI->readsRegister(X86::ECX, TRI) &&
+           !MI->readsRegister(X86::RCX, TRI) &&
+           !MI->modifiesRegister(X86::RCX, TRI))
+    dead = X86::RCX;
+  else if((reg != X86::RDX) &&
+          !MI->readsRegister(X86::DH, TRI) &&
+          !MI->readsRegister(X86::DL,  TRI) &&
+          !MI->readsRegister(X86::DX, TRI) &&
+          !MI->readsRegister(X86::EDX, TRI) &&
+          !MI->readsRegister(X86::RDX, TRI) &&
+          !MI->modifiesRegister(X86::RDX, TRI))
+    dead = X86::RDX;
+  else if((reg != X86::RSI) &&
+          !MI->readsRegister(X86::SI, TRI) &&
+          !MI->readsRegister(X86::ESI, TRI) &&
+          !MI->readsRegister(X86::RSI, TRI) &&
+          !MI->modifiesRegister(X86::RSI, TRI))
+    dead = X86::RSI;
+  else if((reg != X86::RDI) &&
+          !MI->readsRegister(X86::DI, TRI) &&
+          !MI->readsRegister(X86::EDI, TRI) &&
+          !MI->readsRegister(X86::RDI, TRI) &&
+          !MI->modifiesRegister(X86::RDI, TRI))
+    dead = X86::RDI;
+
+  assert (dead && "findRegToSpill: Could not find a register to spill!\n");
+  return dead;
+}
+
 // returns true if MI refers to memory location on stack
 bool X86SFIOptPass::onStack(const MachineInstr* MI, const unsigned index) {
   //
@@ -560,58 +621,19 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
       unsigned dead = findDeadReg(MI, memIndex);
       if (dead == 0) {
         //
-        // Spill a register to the stack
+        // Ensure that the instruction does not read or modify the stack
+        // pointer.  This is because we are about to add a push instruction to
+        // save the register.
         //
         if (MI->readsRegister(X86::SP, TRI) ||
             MI->readsRegister(X86::ESP, TRI) ||
             MI->modifiesRegister(X86::SP, TRI) ||
             MI->modifiesRegister(X86::ESP, TRI)) abort();
 
-        if ((base != X86::RAX) &&
-            !MI->readsRegister(X86::AH, TRI) &&
-            !MI->readsRegister(X86::AL,  TRI) &&
-            !MI->readsRegister(X86::AX, TRI) &&
-            !MI->readsRegister(X86::EAX, TRI) &&
-            !MI->readsRegister(X86::RAX, TRI) &&
-            !MI->modifiesRegister(X86::RAX, TRI))
-          dead = X86::RAX;
-        else if ((base != X86::RBX) &&
-                 !MI->readsRegister(X86::BH, TRI) &&
-                 !MI->readsRegister(X86::BL,  TRI) &&
-                 !MI->readsRegister(X86::BX, TRI) &&
-                 !MI->readsRegister(X86::EBX, TRI) &&
-                 !MI->readsRegister(X86::RBX, TRI) &&
-                 !MI->modifiesRegister(X86::RBX, TRI))
-          dead = X86::RBX;
-        else if ((base != X86::RCX) &&
-                 !MI->readsRegister(X86::CH, TRI) &&
-                 !MI->readsRegister(X86::CL,  TRI) &&
-                 !MI->readsRegister(X86::CX, TRI) &&
-                 !MI->readsRegister(X86::ECX, TRI) &&
-                 !MI->readsRegister(X86::RCX, TRI) &&
-                 !MI->modifiesRegister(X86::RCX, TRI))
-          dead = X86::RCX;
-        else if((base != X86::RDX) &&
-                !MI->readsRegister(X86::DH, TRI) &&
-                !MI->readsRegister(X86::DL,  TRI) &&
-                !MI->readsRegister(X86::DX, TRI) &&
-                !MI->readsRegister(X86::EDX, TRI) &&
-                !MI->readsRegister(X86::RDX, TRI) &&
-                !MI->modifiesRegister(X86::RDX, TRI))
-          dead = X86::RDX;
-        else if((base != X86::RSI) &&
-                !MI->readsRegister(X86::SI, TRI) &&
-                !MI->readsRegister(X86::ESI, TRI) &&
-                !MI->readsRegister(X86::RSI, TRI) &&
-                !MI->modifiesRegister(X86::RSI, TRI))
-          dead = X86::RSI;
-        else if((base != X86::RDI) &&
-                !MI->readsRegister(X86::DI, TRI) &&
-                !MI->readsRegister(X86::EDI, TRI) &&
-                !MI->readsRegister(X86::RDI, TRI) &&
-                !MI->modifiesRegister(X86::RDI, TRI))
-          dead = X86::RDI;
-        else abort();
+        //
+        // Spill a register to the stack
+        //
+        dead = findRegToSpill (base, MI, TRI);
 
         // Add the spill code
         BuildMI(MBB,MI,dl,TII->get(X86::PUSH64r)).addReg(dead);
