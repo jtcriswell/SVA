@@ -628,7 +628,8 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
         if (MI->readsRegister(X86::SP, TRI) ||
             MI->readsRegister(X86::ESP, TRI) ||
             MI->modifiesRegister(X86::SP, TRI) ||
-            MI->modifiesRegister(X86::ESP, TRI)) abort();
+            MI->modifiesRegister(X86::ESP, TRI) ||
+            MI->modifiesRegister(X86::RSP, TRI)) abort();
 
         //
         // Spill a register to the stack
