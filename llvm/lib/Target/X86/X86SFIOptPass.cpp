@@ -497,11 +497,17 @@ void X86SFIOptPass::insertMaskAfterReg (MachineBasicBlock& MBB,
   // performing this change must be determined and this code re-enabled.
   //
   if (isStackPointer(Reg) && saveFlags) {
-#if 0
     MachineInstr* Def = getDefInst(*MI, X86::EFLAGS);
     assert (Def && "Error can not find the instruction which defines eflags\n");
     assert ((Def != MI) && "Error: MI defines %%esp and eflags\n");
     MachineInstr* next = Def->getNextNode();
+    assert ((next == MI) && ("Need to enabled EFLAGS def moving code!\n"));
+
+#if 0
+    //
+    // TODO: Make this code work again if the above assertion (next == MI)
+    // ever fails.
+    //
     bool independent = true;
     while (next != MI) {
       if (!X86Inst::independent(*Def, *next)) {
@@ -515,41 +521,20 @@ void X86SFIOptPass::insertMaskAfterReg (MachineBasicBlock& MBB,
       llvm::errs() << "Error: the instruction which defines eflags can not be moved\n";
       abort();
     }
+#endif
 
-#if 0
     //
     // Create an instruction that creates a version of the pointer with the
     // proper bits set.
     //
-    MachineInstr * maskedPtr = BuildMI (MBB,
-                                        nextMI,
-                                        dl,
-                                        TII->get(X86::OR32ri),
-                                        Reg).addReg(Reg).addImm(setMask);
+    BuildMI(MBB,MI,dl,TII->get(X86::OR64ri32),Reg).addReg(Reg).addImm(0x00000080u);
 
-    //
-    // Create an instruction to mask off the proper bits to see if the pointer
-    // is within the secure memory range.
-    //
-    // AND32ri %Reg, DATA_MASK
-    //
-    MachineInstr * checkMasked = BuildMI (MBB,
-                                          nextMI,
-                                          dl,
-                                          TII->get(X86::AND32ri),
-                                          Reg).addReg(Reg).addImm(setMask);
-
-    //
-    // Compare the masked pointer to the mask.  If they're the same, we need to
-    // set that bit.
-    //
-    BuildMI(MBB,nextMI,dl, TII->get(X86::AND32ri), Reg).addReg(Reg).addImm(DATA_MASK);
+#if 0
     // make a copy of Def
     const MachineInstrBuilder& MIB = BuildMI(MBB, nextMI, dl, TII->get(Def->getOpcode()));
     for(unsigned i = 0, e = Def->getNumOperands(); i < e; ++i)
       MIB.addOperand(Def->getOperand(i));
     Def->eraseFromParent(); // delete Def
-#endif
 #endif
     return;
   }
