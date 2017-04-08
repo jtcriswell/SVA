@@ -588,6 +588,10 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
 										  DebugLoc& dl, const TargetInstrInfo* TII,
 										  const unsigned memIndex,
 										  const bool useDead, const bool pushf){
+  // Constants used for bitmasking on 64-bit systems
+  const unsigned int mask = 0x00000000ffffff80u;
+  const unsigned int shift = 32;
+
   assert(MI->getDesc().mayStore() && "store instruction expected");
   const TargetRegisterInfo* TRI = MI->getParent()->getParent()->getTarget().getRegisterInfo();
 
@@ -609,15 +613,12 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
     // without modifying processor status flags or memory.
     //
     if (is64Bit()) {
-      bool saved = false;
-      const unsigned int mask = 0x00000000ffffff80u;
-      const unsigned int shift = 32;
-
       //
       // Locate a dead register.  We will need one to use as an operand for
       // the bit-masking operation.  If we can't find a dead register, spill
       // a register to the stack.
       //
+      bool saved = false;
       unsigned dead = findDeadReg(MI, memIndex);
       if (dead == 0) {
         //
@@ -689,70 +690,149 @@ void X86SFIOptPass::insertMaskBeforeStore(MachineBasicBlock& MBB, MachineInstr* 
     return;
   }
 
-#if 0
-  bool saved = false;
-  unsigned dead = 0;
-  if(useDead) dead = findDeadReg(MI, memIndex);
-  if(dead == 0){ // no free register, we have to spill one onto stack
-	if(MI->readsRegister(X86::SP, TRI)    || MI->readsRegister(X86::ESP, TRI) ||
-	   MI->modifiesRegister(X86::SP, TRI) || MI->modifiesRegister(X86::ESP, TRI)) abort();
-	if(!MI->readsRegister(X86::AH, TRI) && !MI->readsRegister(X86::AL,  TRI) &&
-	   !MI->readsRegister(X86::AX, TRI) && !MI->readsRegister(X86::EAX, TRI) &&
-	   !MI->modifiesRegister(X86::EAX, TRI))
-	  dead = X86::EAX;
-	else if(!MI->readsRegister(X86::BH, TRI) && !MI->readsRegister(X86::BL,  TRI) &&
-			!MI->readsRegister(X86::BX, TRI) && !MI->readsRegister(X86::EBX, TRI) &&
-			!MI->modifiesRegister(X86::EBX, TRI))
-	  dead = X86::EBX;
-	else if(!MI->readsRegister(X86::CH, TRI) && !MI->readsRegister(X86::CL,  TRI) &&
-			!MI->readsRegister(X86::CX, TRI) && !MI->readsRegister(X86::ECX, TRI) &&
-			!MI->modifiesRegister(X86::ECX, TRI))
-	  dead = X86::ECX;
-	else if(!MI->readsRegister(X86::DH, TRI) && !MI->readsRegister(X86::DL,  TRI) &&
-			!MI->readsRegister(X86::DX, TRI) && !MI->readsRegister(X86::EDX, TRI) &&
-			!MI->modifiesRegister(X86::EDX, TRI))
-	  dead = X86::EDX;
-	else if(!MI->readsRegister(X86::SI, TRI) && !MI->readsRegister(X86::ESI, TRI) &&
-			!MI->modifiesRegister(X86::ESI, TRI))
-	  dead = X86::ESI;
-	else if(!MI->readsRegister(X86::DI, TRI) && !MI->readsRegister(X86::EDI, TRI) &&
-			!MI->modifiesRegister(X86::EDI, TRI))
-	  dead = X86::EDI;
-	else abort();
-	BuildMI(MBB,MI,dl,TII->get(X86::PUSH32r)).addReg(dead); // pushl %dead
-	saved = true;
-	++numPushs;
+  //
+  // For all other forms of instructions that write to memory, generate an LEA
+  // instruction to compute the effective address that will be accessed,
+  // sandbox the effective address, and then replace the original instruction
+  // with one that accesses the memory via the masked address in the register.
+  //
+
+  //
+  // First, find two free registers.  If we cannot find free registers, spill
+  // registers to the stack.
+  //
+  bool savedBase = false;
+  bool savedDead = false;
+  unsigned base = findDeadReg(MI, memIndex);
+  unsigned dead = findDeadReg(MI, memIndex);
+  if ((base == 0) || (dead == 0)) {
+    //
+    // Check that the instruction does not read or modify the stack pointer.
+    // If it does, then pushing the register on to the stack will cause
+    // problems.
+    //
+    if (MI->readsRegister(X86::SP, TRI) ||
+        MI->readsRegister(X86::ESP, TRI) ||
+        MI->modifiesRegister(X86::SP, TRI) ||
+        MI->modifiesRegister(X86::ESP, TRI) ||
+        MI->modifiesRegister(X86::RSP, TRI)) abort();
+
+    if (base == 0) {
+      base = findRegToSpill (0, MI, TRI);
+      assert (base && "Cannot find register to spill!\n");
+
+      // pushl %base
+      BuildMI(MBB,MI,dl,TII->get(X86::PUSH64r)).addReg(base);
+      savedBase = true;
+      ++numPushs;
+    }
+
+    if (dead == 0) {
+      dead = findRegToSpill (base, MI, TRI);
+      assert (dead && "Cannot find register to spill!\n");
+
+      // pushl %dead
+      BuildMI(MBB,MI,dl,TII->get(X86::PUSH64r)).addReg(dead);
+      savedDead = true;
+      ++numPushs;
+    }
   }
 
-  // leal mem_loc, %dead
-#if 0
-  // JTC: Disabled for testing: This is the one causing problems
+  //
+  // Insert an LEA instruction that will load the effective address into a
+  // virtual register: leal mem_loc, %base
+  //
+  unsigned leaOpcode = (is64Bit() ? X86::LEA64r : X86::LEA32r);
   const MachineInstrBuilder& LEA =
-	BuildMI(MBB,MI,dl,TII->get(X86::LEA32r),dead)
+	BuildMI(MBB,MI,dl,TII->get(leaOpcode),base)
 	.addOperand(MI->getOperand(memIndex+0))
 	.addOperand(MI->getOperand(memIndex+1))
 	.addOperand(MI->getOperand(memIndex+2))
-	.addOperand(MI->getOperand(memIndex+3));
+	.addOperand(MI->getOperand(memIndex+3))
+	.addOperand(MI->getOperand(memIndex+4));
   for(MachineInstr::mmo_iterator MMI = MI->memoperands_begin(),
 		MME = MI->memoperands_end(); MMI != MME; ++MMI)
 	LEA.addMemOperand(*MMI);
-#endif
+
+  //
+  // Save the processor status flags to the stack if necessary.
+  //
   bool saveFlags = needsPushf(MI,TRI);
-  if(pushf || saveFlags) { ++numPushf; BuildMI(MBB,MI,dl,TII->get(X86::PUSHF32)); }
-  //andl &DATA_MASK, %dead
-  BuildMI(MBB,MI,dl,TII->get(X86::AND32ri),dead).addReg(dead).addImm(DATA_MASK); 
+  if (pushf || saveFlags) {
+    ++numPushf;
+    BuildMI(MBB,MI,dl,TII->get(X86::PUSHF32));
+  }
+
+  //
+  // Insert the code that will set the needed bit in the effective address if
+  // the pointer points into kernel-space.
+  //
+  if (is64Bit()) {
+    //
+    // Rotate the upper 32-bits to the lower 32-bits so that we can bit-mask
+    // using a constant 32-bit immediate operand.
+    //
+    BuildMI(MBB,MI,dl,TII->get(X86::ROR64ri),base).addReg(base).addImm(shift);
+
+    //
+    // Copy the rotated register contents to the dead register and set the
+    // bit that will move the pointer into the kernel virtual address space.
+    //
+    BuildMI(MBB,MI,dl,TII->get(X86::MOV64rr),dead).addReg(base);
+    BuildMI(MBB,MI,dl,TII->get(X86::OR64ri32),dead).addReg(dead).addImm(0x00000080u);
+
+    //
+    // Add the bit-masking instruction that will test whether the pointer is
+    // pointing into kernel space.
+    //
+    BuildMI(MBB,MI,dl,TII->get(X86::CMP32ri),dead).addImm(mask);
+
+    //
+    // Create the conditional move which will set the mask register to the
+    // masking value if the pointer points into kernel space.
+    //
+    BuildMI(MBB,MI,dl,TII->get(X86::CMOVGE64rr),base).addReg(base).addReg(dead);
+
+    //
+    // Rotate the pointer so that the higer-order word is back in the
+    // upper-level bits.
+    //
+    BuildMI(MBB,MI,dl,TII->get(X86::ROL64ri),base).addReg(base).addImm(shift);
+  } else {
+      // andl &DATA_MASK, %base
+      BuildMI(MBB,MI,dl,TII->get(X86::AND32ri),base).addReg(base).addImm(DATA_MASK); 
+  }
   ++numAnds;
-  if(pushf || saveFlags) BuildMI(MBB,MI,dl,TII->get(X86::POPF32)); // POPF32
-  // insert a store instruction so that it uses %dead as the base reg
+
+  //
+  // Add an instruction to restore the processor status flags.
+  //
+  if (pushf || saveFlags) BuildMI(MBB,MI,dl,TII->get(X86::POPF32)); // POPF32
+
+  //
+  // Insert a store instruction that uses %base as the base register.
+  //
   const MachineInstrBuilder& MIB = BuildMI(MBB,MI,dl,MI->getDesc());
-  for(unsigned i = 0; i < memIndex; ++i)
-	MIB.addOperand(MI->getOperand(i));  
-  MIB.addReg(dead).addImm(1).addReg(0).addImm(0).addReg(0);
-  for(unsigned i = memIndex+5, end = MI->getNumOperands(); i < end; ++i)
-	MIB.addOperand(MI->getOperand(i));
-  if(saved) BuildMI(MBB,MI,dl,TII->get(X86::POP32r),dead); // popl %dead
+  for (unsigned i = 0; i < memIndex; ++i) {
+    MIB.addOperand(MI->getOperand(i));
+  }
+  MIB.addReg(base).addImm(1).addReg(0).addImm(0).addReg(0);
+  for (unsigned i = memIndex+5, end = MI->getNumOperands(); i < end; ++i) {
+    MIB.addOperand(MI->getOperand(i));
+  }
+  BuildMI(MBB,MI,dl,TII->get(X86::NOOP)); 
+
+  //
+  // Pop any saved values back into their respective registers.
+  //
+  if (savedDead) BuildMI(MBB,MI,dl,TII->get(X86::POP64r),dead); // popl %dead
+  if (savedBase) BuildMI(MBB,MI,dl,TII->get(X86::POP64r),base); // popl %base
+
+  //
+  // Erase the old store instruction from the program.
+  //
   MI->eraseFromParent();
-#endif
+  return;
 }
 
 void X86SFIOptPass::insertMaskBeforeCheck(MachineBasicBlock& MBB, MachineInstr* MI,
