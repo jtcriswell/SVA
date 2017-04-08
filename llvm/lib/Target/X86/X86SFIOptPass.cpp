@@ -470,7 +470,6 @@ void X86SFIOptPass::insertMaskAfterReg (MachineBasicBlock& MBB,
                                         const TargetInstrInfo* TII,
                                         const unsigned Reg,
                                         const bool pushf) {
-#if 0
   const TargetRegisterInfo* TRI=MBB.getParent()->getTarget().getRegisterInfo();
 
   //
@@ -491,7 +490,6 @@ void X86SFIOptPass::insertMaskAfterReg (MachineBasicBlock& MBB,
   //
   bool saveFlags = (NXT == end) ?  false : needsPushf(nextMI, TRI);
 
-#if 0
   //
   // TODO: This code inserts SFI instrumentation on the stack pointer.  For
   // some reason, it moves the instruction that defines the EFLAGS register
@@ -499,6 +497,7 @@ void X86SFIOptPass::insertMaskAfterReg (MachineBasicBlock& MBB,
   // performing this change must be determined and this code re-enabled.
   //
   if (isStackPointer(Reg) && saveFlags) {
+#if 0
     MachineInstr* Def = getDefInst(*MI, X86::EFLAGS);
     assert (Def && "Error can not find the instruction which defines eflags\n");
     assert ((Def != MI) && "Error: MI defines %%esp and eflags\n");
@@ -517,6 +516,7 @@ void X86SFIOptPass::insertMaskAfterReg (MachineBasicBlock& MBB,
       abort();
     }
 
+#if 0
     //
     // Create an instruction that creates a version of the pointer with the
     // proper bits set.
@@ -549,9 +549,10 @@ void X86SFIOptPass::insertMaskAfterReg (MachineBasicBlock& MBB,
     for(unsigned i = 0, e = Def->getNumOperands(); i < e; ++i)
       MIB.addOperand(Def->getOperand(i));
     Def->eraseFromParent(); // delete Def
+#endif
+#endif
     return;
   }
-#endif
 
   //
   // Insert code to save the processor status flags if needed.
@@ -559,15 +560,28 @@ void X86SFIOptPass::insertMaskAfterReg (MachineBasicBlock& MBB,
   if (pushf || saveFlags)
     insertPushf(nextMI,dl,TII);
 
-  // AND32ri %Reg, DATA_MASK
-  BuildMI(MBB,nextMI,dl,TII->get(X86::AND32ri),Reg).addReg(Reg).addImm(DATA_MASK);
+  //
+  // Insert bit-masking operations to sandbox the register.
+  //
+  if (is64Bit()) {
+    //
+    // If this is the stack pointer or frame pointer, we know it should never
+    // point into user-space.  Therefore, setting the bit to move it out of
+    // ghost memory will not change it if it is correct, and if it's incorrect,
+    // it will never move the register value into ghost memory.
+    //
+    assert ((Reg == X86::RBP) || (Reg == X86::RSP));
+    BuildMI(MBB,MI,dl,TII->get(X86::OR64ri32),Reg).addReg(Reg).addImm(0x00000080u);
+  } else {
+    // AND32ri %Reg, DATA_MASK
+    BuildMI(MBB,nextMI,dl,TII->get(X86::AND32ri),Reg).addReg(Reg).addImm(DATA_MASK);
+  }
 
   //
   // Insert code to restore the processor flags if necesary.
   //
   if (pushf || saveFlags)
     insertPopf (nextMI,dl,TII);
-#endif
   return;
 }
 
