@@ -109,7 +109,7 @@ namespace llvm{
 	static unsigned getSuperReg(const unsigned reg, const TargetRegisterInfo* TRI);
 #endif
 
-	// returns true if MI1 and MI2 are indepent. i.e. they can be reordered
+	// returns true if MI1 and MI2 are independent. i.e. they can be reordered
 	// if one of them loads from memory and the other stores to memory
 	// or both of them store to memory. or one of them reads a register, and
 	// the other writes to the register, or both of them write to the same register
