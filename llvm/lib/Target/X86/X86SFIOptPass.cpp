@@ -1123,7 +1123,6 @@ bool X86SFIOptPass::runOnMachineFunction(MachineFunction& F){
 		case X86::IST_Fp32m32:
 		case X86::IST_Fp32m64:
 		case X86::IST_Fp32m80:
-      // JTC: Need to enable later
 		  insertMaskBeforeStore(MBB,MI,dl,TII,getMemIndex(MI));
 		  if(MI->modifiesRegister(X86::ESP,TRI))
 			insertMaskAfterReg(MBB,MI,dl,TII,X86::ESP);
