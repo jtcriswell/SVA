@@ -94,7 +94,7 @@ ghostMalloc (intptr_t size) {
        * Map the memory into a part of the address space reserved for secure
        * memory.
        */
-      pml4e = mapSecurePage (vaddr, paddr);
+      pml4e = mapSecurePage ((uintptr_t)vaddr, paddr);
 
       /*
        * If this is the first piece of secure memory that we've allocated,
@@ -293,7 +293,7 @@ sva_ghost_fault (uintptr_t vaddr) {
      * Map the memory into a part of the address space reserved for secure
      * memory.
      */
-    pml4e = mapSecurePage (vaddr, paddr);
+    pml4e = mapSecurePage ((uintptr_t)vaddr, paddr);
 
     /*
      * If this is the first piece of secure memory that we've allocated,
@@ -312,7 +312,7 @@ sva_ghost_fault (uintptr_t vaddr) {
   /*
    * Zero out the ghost memory contents.
    */
-  memset (vaddr, 0, X86_PAGE_SIZE);
+  memset ((void *)vaddr, 0, X86_PAGE_SIZE);
 
   /* Re-enable interrupts if necessary */
   sva_exit_critical (rflags);

@@ -274,6 +274,7 @@ L9:
   movq %r15, as_num(%rip)
 L10:
 #endif
+
   /*
    * Configure the process to trigger a floating point fault while in
    * kernel mode.  This requires disabling the EM bit and enabling the MP and
@@ -695,7 +696,7 @@ SVAsyscall:
   bndmk (%rax,%rbx), %bnd0
 #endif
 
-/*
+  /*
    * Configure the process to trigger a floating point fault while in
    * kernel mode.  This requires disabling the EM bit and enabling the MP and
    * TS bits in CR0.

@@ -32,7 +32,7 @@ void sva_icontext_setretval (unsigned long, unsigned long, unsigned char error);
 void sva_icontext_restart (unsigned long, unsigned long);
 
 /* Types for handlers */
-typedef void (*genfault_handler_t)(sva_icontext_t * icontext);
+typedef void (*genfault_handler_t)(void);
 typedef void (*memfault_handler_t)(sva_icontext_t * icontext, void * mp);
 typedef void (*interrupt_handler_t)(unsigned int num, sva_icontext_t * icontext);
 typedef void * syscall_t;
@@ -56,6 +56,27 @@ extern void sva_register_old_trap      (int number, void *interrupt);
 #endif
 
 /**************************** Inline Functions *******************************/
+
+/*
+ * Intrinsic: register_hypercall()
+ *
+ * Description:
+ *  Register a handler for an SVA hypercall.
+ *
+ * Return value:
+ *  None.
+ */
+static inline void
+register_hypercall (unsigned char number, void * handler) {
+  /* Table of functions that handle traps and interrupts */
+  extern void * interrupt_table[256];
+
+  /*
+   * Put the handler into our dispatch table.
+   */
+  interrupt_table[number] = handler;
+  return;
+}
 
 /*
  * Intrinsic: sva_load_lif()

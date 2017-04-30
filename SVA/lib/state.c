@@ -12,6 +12,8 @@
  *===----------------------------------------------------------------------===
  */
 
+#include <string.h>
+
 #if 1
 #include <sva/config.h>
 #endif
@@ -45,7 +47,7 @@ installNewPushTarget (void) {
   /*
    * Add the new target.
    */
-  threadp->validPushTargets[(threadp->numPushTargets)++] = icp->rdi;
+  threadp->validPushTargets[(threadp->numPushTargets)++] = (void *) icp->rdi;
   return;
 }
 
@@ -110,7 +112,7 @@ sva_icontext_getpc (void) {
  *    This should be addressed at some point.
  */
 void
-sva_ipush_function5 (void (*newf)(uintptr_t, uintptr_t, uintptr_t),
+sva_ipush_function5 (void *newf,
                      uintptr_t p1,
                      uintptr_t p2,
                      uintptr_t p3,
@@ -160,7 +162,7 @@ sva_ipush_function5 (void (*newf)(uintptr_t, uintptr_t, uintptr_t),
 
     found = 0;
     for (index = 0; index < threadp->numPushTargets; ++index) {
-      if (threadp->validPushTargets[index] == p5) {
+      if (threadp->validPushTargets[index] == ((void *)p5)) {
         found = 1;
         break;
       }
@@ -509,7 +511,7 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
    * Save this functions return address because it can be overwritten by
    * calling interim FreeBSD code that does a native FreeBSD context switch.
    */
-  old->hackRIP = __builtin_return_address(0);
+  old->hackRIP = (uintptr_t) __builtin_return_address(0);
 
   /*
    * If the current state is using secure memory, we need to flush out the TLBs
@@ -526,7 +528,7 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
     /*
      * Get a pointer into the page tables for the secure memory region.
      */
-    pml4e_t * secmemp = getVirtual (get_pagetable() + secmemOffset);
+    pml4e_t * secmemp = (pml4e_t *) getVirtual((uintptr_t)(get_pagetable() + secmemOffset));
 
     /*
      * Mark the secure memory is unmapped in the page tables.
@@ -606,7 +608,7 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
       /*
        * Get a pointer into the page tables for the secure memory region.
        */
-      pml4e_t * secmemp = getVirtual (get_pagetable() + secmemOffset);
+      pml4e_t * secmemp = (pml4e_t *) getVirtual ((uintptr_t)(get_pagetable() + secmemOffset));
 
       /*
        * Restore the PML4E entry for the secure memory region.
@@ -746,8 +748,8 @@ sva_ialloca (uintptr_t size, uintptr_t alignment, void * initp) {
      */
     unsigned char spOkay = 1;
     if (isNotWithinSecureMemory(icontextp->rsp) &&
-       ((allocap >= 0xffffffff00000000u) ||
-        ((allocap + size) >= 0xffffffff00000000u))) {
+       ((((uintptr_t)allocap) >= 0xffffffff00000000u) ||
+        ((((uintptr_t)allocap) + size) >= 0xffffffff00000000u))) {
       spOkay = 0;
     }
 
@@ -1014,7 +1016,7 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
     /*
      * Get a pointer into the page tables for the secure memory region.
      */
-    pml4e_t * secmemp = getVirtual (get_pagetable() + secmemOffset);
+    pml4e_t * secmemp = (pml4e_t *) getVirtual ((uintptr_t)(get_pagetable() + secmemOffset));
 
     /*
      * Mark the secure memory is unmapped in the page tables.
@@ -1056,8 +1058,8 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
   /*
    * Setup the call to the new function.
    */
-  ep->rip = func;
-  ep->rsp = stackp;
+  ep->rip = (uintptr_t) func;
+  ep->rsp = (uintptr_t *)stackp;
   ep->rdi = arg;
 
   /*
@@ -1127,7 +1129,7 @@ sva_release_stack (uintptr_t id) {
   uintptr_t cr3 = ((((uintptr_t)new->cr3) & 0x000ffffffffff000u));
   for (uintptr_t size=0; size < newThread->secmemSize; size += X86_PAGE_SIZE) {
     if (vg) {
-      unmapSecurePage (newThread, SECMEMSTART + size);
+      unmapSecurePage (newThread, (unsigned char *)(SECMEMSTART + size));
     }
   }
 
@@ -1297,7 +1299,7 @@ sva_init_stack (unsigned char * start_stackp,
    * Allocate the call frame for the call to the system call.
    */
   stackp -= sizeof (struct frame);
-  args = stackp;
+  args = (struct frame *)stackp;
 
   /*
    * Initialize the arguments to the system call.  Also setup the interrupt
@@ -1309,11 +1311,11 @@ sva_init_stack (unsigned char * start_stackp,
    * Initialze the integer state of the new thread of control.
    */
   integerp = &(newThread->integerState);
-  integerp->rip = func;
+  integerp->rip = (uintptr_t) func;
   integerp->rdi = arg1;
   integerp->rsi = arg2;
   integerp->rdx = arg3;
-  integerp->rsp = stackp;
+  integerp->rsp = (uintptr_t *) stackp;
   integerp->cs  = 0x43;
   integerp->ss  = 0x3b;
   integerp->valid = 1;
@@ -1322,7 +1324,7 @@ sva_init_stack (unsigned char * start_stackp,
   integerp->ist3 = integerp->kstackp;
 #endif
 #if 1
-  integerp->kstackp = stackp;
+  integerp->kstackp = (uintptr_t) stackp;
 #endif
   integerp->fpstate.present = 0;
 

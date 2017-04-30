@@ -22,7 +22,7 @@
 # Ignore files created by the configure script
 #==============================================================================#
 
-SVA/include/sva/config.h
+SVA/include/sva/asmconfig.h
 SVA/lib/*.o
 make.conf
 config.log
