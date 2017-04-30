@@ -154,7 +154,8 @@ extern int tsc_read_enable;
 extern int tsc_read_enable_sva;
 extern uint64_t sva_tsc_val[SVA_API_NUM];
 extern uint64_t sva_call_freq[SVA_API_NUM];
-
+extern uint64_t wp_num;
+extern uint64_t as_num;
 
 enum SVA_OS_NAME
 {
@@ -238,6 +239,7 @@ init_sva_counter(void)
   int i;
   for(i = 0; i < SVA_API_NUM; i++)
     sva_tsc_val[i] = sva_call_freq[i] = 0;
+  wp_num = as_num = 0;
 }
 
 #ifdef __cplusplus

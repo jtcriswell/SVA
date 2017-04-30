@@ -227,13 +227,11 @@ Trap:
   /* Flag the interrupt context as valid */
   movq $1, IC_VALID(%rsp)
 
-#if 0
 #ifdef MPX
   /* Reset the MPX bounds register for SFI checks */
   movabsq $412316860416, %rax     # imm = 0x6000000000
   movabsq $-412316860417, %rdx    # imm = 0xFFFFFF9FFFFFFFFF
   bndmk (%rax,%rdx), %bnd0
-#endif
 #endif
 
 #ifdef SVA_ASID_PG
@@ -268,6 +266,12 @@ L9:
   orq  %r14, %r15
   movq %r15, %cr3 
 
+  movq  tsc_read_enable_sva(%rip), %r14
+  testq %r14, %r14
+  je L10
+  movq as_num(%rip), %r15
+  addq $1, %r15
+  movq %r15, as_num(%rip)
 L10:
 #endif
   /*
@@ -382,6 +386,15 @@ L11:
  movq $0x8000000000000000,  %r14
  orq  %r14, %r15
  movq %r15, %cr3 
+
+ movq  tsc_read_enable_sva(%rip), %r14
+ testq %r14, %r14
+ je L15
+ movq as_num(%rip), %r15
+ addq $1, %r15
+ movq %r15, as_num(%rip)
+
+L15:
 #endif
  
   /*
@@ -417,6 +430,15 @@ L12:
   movq $0x8000000000000000,   %r14
   orq  %r14, %r15
   movq %r15, %cr3
+
+  movq  tsc_read_enable_sva(%rip), %r14
+  testq %r14, %r14
+  je L16
+  movq as_num(%rip), %r15
+  addq $1, %r15
+  movq %r15, as_num(%rip)
+
+L16:
 #endif
  
   /*
@@ -483,6 +505,13 @@ L13:
   orq  %r14, %rbx
   movq %rbx, %cr3
 
+  movq  tsc_read_enable_sva(%rip), %r14
+  testq %r14, %r14
+  je L14
+  movq as_num(%rip), %rbx
+  addq $1, %rbx
+  movq %rbx, as_num(%rip)
+  
 L14:   
 #endif
   /*
@@ -659,13 +688,11 @@ SVAsyscall:
   cmoveq %r13, %r12
   movq %r12, IC_VALID(%rsp)
 
-#if 0
 #ifdef MPX
   /* Reset the MPX bounds register for SFI checks */
   movabsq $412316860416, %rax     # imm = 0x6000000000
   movabsq $-412316860417, %rbx    # imm = 0xFFFFFF9FFFFFFFFF
   bndmk (%rax,%rbx), %bnd0
-#endif
 #endif
 
 /*
@@ -754,6 +781,15 @@ SVAsyscall:
   movq $0x8000000000000000,   %r14
   orq  %r14, %r15
   movq %r15, %cr3
+
+  movq  tsc_read_enable_sva(%rip), %r14
+  testq %r14, %r14
+  je L17
+  movq as_num(%rip), %r15
+  addq $1, %r15
+  movq %r15, as_num(%rip)
+
+L17:
 #endif
   /*
    * Call the system software system call handler.
@@ -782,7 +818,16 @@ sc_ret:
   shlq $12,  %r15
   movq $0x8000000000000000,   %r14
   orq  %r14, %r15
-  movq %r15, %cr3   
+  movq %r15, %cr3
+
+  movq  tsc_read_enable_sva(%rip), %r14
+  testq %r14, %r14
+  je L18
+  movq as_num(%rip), %r15
+  addq $1, %r15
+  movq %r15, as_num(%rip)
+
+L18:   
 #endif
 
   /*

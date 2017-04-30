@@ -76,6 +76,15 @@ sva_invoke:
   movq $0x8000000000000000,   %r14
   orq  %r14, %r15
   movq %r15, %cr3
+
+  movq  tsc_read_enable_sva(%rip), %r14
+  testq %r14, %r14
+  je L1
+  movq as_num(%rip), %r15
+  addq $1, %r15
+  movq %r15, as_num(%rip)
+
+L1:
 #endif
   /*
    * Save the location of the invoke frame into the CPUState.
@@ -105,6 +114,14 @@ sva_invoke:
   movq $0x8000000000000000,   %r14
   orq  %r14, %r15
   movq %r15, %cr3
+
+  movq  tsc_read_enable_sva(%rip), %r14
+  testq %r14, %r14
+  je L2
+  movq as_num(%rip), %r15
+  addq $1, %r15
+  movq %r15, as_num(%rip)
+L2:
 #endif
   /*
    * Call the function.
@@ -129,7 +146,15 @@ sva_invoke:
   shlq $12, %r15
   movq $0x8000000000000000,   %r14
   orq  %r14, %r15
-  movq %r15, %cr3  
+  movq %r15, %cr3 
+
+  movq  tsc_read_enable_sva(%rip), %r14
+  testq %r14, %r14
+  je L3
+  movq as_num(%rip), %r15
+  addq $1, %r15
+  movq %r15, as_num(%rip) 
+L3:
 #endif
 
   /*
@@ -156,6 +181,15 @@ sva_invoke:
   movq $0x8000000000000000, %rbx
   orq  %rbx, %rbp
   movq %rbp, %cr3
+
+  movq  tsc_read_enable_sva(%rip), %rbx
+  testq %rbx, %rbx
+  je L4
+  movq as_num(%rip), %rbp
+  addq $1, %rbp
+  movq %rbp, as_num(%rip)
+
+L4:
 #endif
 
   /* Restore the saved registers */

@@ -1858,6 +1858,9 @@ void usersva_to_kernel_pcid(void)
         pg = (pg == 0)? cr3 : pg;
         cr3 = (pg & ~0xfff) | 0x1 | ((unsigned long)1 << 63);
         __asm __volatile("movq %0,%%cr3" : : "r" (cr3) : "memory");
+
+	if(tsc_read_enable_sva)
+		as_num ++;
   }
 #endif
 }
@@ -1877,6 +1880,9 @@ void kernel_to_usersva_pcid(void)
         pg = (pg == 0)? cr3 : pg;
         cr3 = (pg & ~0xfff) | ((unsigned long)1 << 63);
         __asm __volatile("movq %0,%%cr3" : : "r" (cr3) : "memory");
+
+	if(tsc_read_enable_sva)
+		as_num ++;
   }
 #endif
 }
@@ -2249,7 +2255,7 @@ sva_declare_l1_page (uintptr_t frameAddr) {
   SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l1_page: more than one virtual addresses are still using this page!");
 #else
   /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
-  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l1_page: more than one virtual addresses are still using this page!");
+  //SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l1_page: more than one virtual addresses are still using this page!");
 #endif
 
   /* 
@@ -2329,7 +2335,7 @@ sva_declare_l2_page (uintptr_t frameAddr) {
   SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l2_page: more than one virtual addresses are still using this page!");
 #else
   /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
-  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l2_page: more than one virtual addresses are still using this page!");
+  //SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l2_page: more than one virtual addresses are still using this page!");
 #endif
 
   /* 
@@ -2404,7 +2410,7 @@ sva_declare_l3_page (uintptr_t frameAddr) {
   SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l3_page: more than one virtual addresses are still using this page!");
 #else
    /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
-  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l3_page: more than one virtual addresses are still using this page!");
+  //SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l3_page: more than one virtual addresses are still using this page!");
 #endif
 
   /* 
@@ -2488,7 +2494,7 @@ sva_declare_l4_page (uintptr_t frameAddr) {
   SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l4_page: more than one virtual addresses are still using this page!");
 #else
  /* A page can only be declared as a page table page if its reference count is less than 2.*/
-  SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l4_page: more than one virtual addresses are still using this page!");
+  //SVA_ASSERT((pgRefCount(pgDesc) <= 1), "sva_declare_l4_page: more than one virtual addresses are still using this page!");
 #endif
   /* 
    * Declare the page as an L4 page (unless it is already an L4 page).

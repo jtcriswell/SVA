@@ -106,6 +106,10 @@ static const uintptr_t secmemOffset = ((SECMEMSTART >> 39) << 3) & vmask;
 /* Zero mapping is the mapping that eliminates the previous entry */
 static const uintptr_t ZERO_MAPPING = 0;
 
+extern int tsc_read_enable_sva;
+extern uint64_t wp_num;
+
+
 /*
  * Assert macro for SVA
  */
@@ -700,6 +704,9 @@ protect_paging(void) {
   __asm__ __volatile ("movq %%cr0,%0\n": "=r" (value));
   value |= flag;
   __asm__ __volatile ("movq %0,%%cr0\n": :"r" (value));
+
+  if(tsc_read_enable_sva)
+	  wp_num ++;
   return;
 }
 
@@ -719,6 +726,9 @@ unprotect_paging(void) {
   __asm__ __volatile("movq %%cr0,%0\n": "=r"(value));
   value &= flag;
   __asm__ __volatile("movq %0,%%cr0\n": : "r"(value));
+
+  if(tsc_read_enable_sva)
+	  wp_num ++;
 }
 
 /* functions to change PCID and page table during user/sva and kernel switch*/
