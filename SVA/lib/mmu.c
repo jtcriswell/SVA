@@ -198,11 +198,11 @@ page_entry_store (unsigned long *page_entry, page_entry_t newVal) {
 
 #ifdef SVA_DMAP
   uintptr_t phys;
-  uintptr_t* page_entry_svadm;
+  unsigned long* page_entry_svadm;
   page_desc_t * pgDescPtr; 
 
   phys = getPhysicalAddr(page_entry);
-  page_entry_svadm = (uintptr_t*)getVirtualSVADMAP(phys);  
+  page_entry_svadm = (unsigned long*)getVirtualSVADMAP(phys);  
   pgDescPtr = getPageDescPtr(phys);
 
   if(pgDescPtr->dmap)
@@ -2070,7 +2070,7 @@ void * DMPDphys, int ndmpdp, int ndm1g)
 #endif
   }
   for (j = 0; i < 384 + ndmpdp; i++, j++) {
-                ((pdpte_t *)DMPDPphys)[i] = DMPDphys + (j << PAGE_SHIFT);
+                ((pdpte_t *)DMPDPphys)[i] = (uintptr_t)DMPDphys + (uintptr_t)(j << PAGE_SHIFT);
                 ((pdpte_t *)DMPDPphys)[i] |= PG_RW | PG_V | PG_U;
 
   }
@@ -2078,7 +2078,7 @@ void * DMPDphys, int ndmpdp, int ndm1g)
 
   /* Connect the Direct Map slot(s) up to the PML4. */
   for (i = 0; i < NDMPML4E; i++) {
-                ((pdpte_t *)KPML4phys)[DMPML4I + i] = DMPDPphys +
+                ((pdpte_t *)KPML4phys)[DMPML4I + i] = (uintptr_t)DMPDPphys + (uintptr_t)
                     (i << PAGE_SHIFT);
                 ((pdpte_t *)KPML4phys)[DMPML4I + i] |= PG_RW | PG_V | PG_U;
   }
