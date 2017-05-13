@@ -2038,26 +2038,37 @@ remap_internal_memory (uintptr_t * firstpaddr) {
  * KPML4phys - phys addr of kernel level 4 page table page
  * DMPDPphys - phys addr of SVA direct mapping level 3 page table page
  * DMPDphys -  phys addr of SVA direct mapping level 2 page table page
+ * DMPTphys -  phys addr of SVA direct mapping level 1 page table page
  * ndmpdp   -  number of SVA direct mapping level 3 page table pages
  * ndm1g    -  number of 1GB pages used for SVA direct mapping
  */
 
 void
 sva_create_dmap(void * KPML4phys, void * DMPDPphys,
-void * DMPDphys, int ndmpdp, int ndm1g)
+void * DMPDphys, void * DMPTphys, int ndmpdp, int ndm1g)
 {
   int i, j;
 
+  for (i = 0; i < NPTEPG * NPDEPG * ndmpdp; i++) {
+	        ((pte_t *)DMPTphys)[i] = (uintptr_t) i << PAGE_SHIFT;
+		((pte_t *)DMPTphys)[i] |= PG_RW | PG_V 
+#ifdef SVA_ASID_PG
+			;
+#else
+			| PG_G;
+#endif
+       }
+
   for (i = NPDEPG * ndm1g, j = 0; i < NPDEPG * ndmpdp; i++, j++) {
-                ((pde_t *)DMPDphys)[j] = (uintptr_t)i << PDRSHIFT;
+                ((pde_t *)DMPDphys)[j] = (uintptr_t)DMPTphys + ((uintptr_t)j << PAGE_SHIFT);
                 /* Preset PG_M and PG_A because demotion expects it. */
-                ((pde_t *)DMPDphys)[j] |= PG_RW | PG_V | PG_PS | 
+                ((pde_t *)DMPDphys)[j] |= PG_RW | PG_V; /*| PG_PS | 
 #ifdef SVA_ASID_PG
                     PG_M | PG_A;
 #else	
 		    PG_G | PG_M | PG_A;
-#endif
-  }
+#endif*/
+       }
 
   for (i = 384; i < 384 + ndm1g; i++) {
                 ((pdpte_t *)DMPDPphys)[i] = (uintptr_t)(i - 384) << PDPSHIFT;
