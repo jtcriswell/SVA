@@ -2671,7 +2671,7 @@ sva_remove_page (uintptr_t paddr) {
 		SVA_ASSERT((other_pgDesc->count <= 2),
 			    "the kernel or usersva version pml4 page table page still has reference.\n" );
 		other_pgDesc->type = PG_UNUSED;
-		page_entry_t *other_pte = get_pgeVaddr(getVirtual (other_cr3));
+		page_entry_t *other_pte = get_pgeVaddr((uintptr_t)getVirtual (other_cr3));
 	        page_entry_store ((page_entry_t *) other_pte, setMappingReadWrite (*other_pte));
 		sva_mm_flush_tlb(getVirtual(other_cr3));
 		other_pgDesc->other_pgPaddr = 0;
