@@ -36,6 +36,9 @@ llvm:
 freebsd9_patch:
   A patch that will modify the FreeBSD 9.0 kernel source code to work on SVA.
 
+freebsd9_libc_patch:
+  A patch that will modify the FreeBSD 9.0 C library source code to SVA.
+
 autoconf:
   The source code to the AutoConf configure script.
 
@@ -76,11 +79,12 @@ o Download and extract the FreeBSD 9.0 source code:
 
   - xzcat src.txz | tar -xvf -
 
-o Apply the SVA patch to the FreeBSD source code
+o Apply the SVA patches to the FreeBSD source code
 
   - cd usr/src
 
   - patch -p1 < ../../freebsd9_patch
+  - patch -p1 < ../../freebsd9_libc_patch
 
 o Build the kernel, setting INSTKERNNAME to the name of the kernel
 
@@ -89,6 +93,22 @@ o Build the kernel, setting INSTKERNNAME to the name of the kernel
 o As the root user, install the kernel
 
   - make installkernel INSTKERNNAME=svaKernel __MAKE_CONF=$SRC_ROOT/make.conf
+
+o Build the C library with Ghost Memory support
+
+  - cd lib/libc
+  - make
+
+o As the root user, install the new C library
+
+  - make install
+
+o As the root user, compile the programs in the sbin directory and install them
+
+  - cd ../..
+  - cd sbin
+  - make
+  - make install
 
 Incremental Kernel Compiles
 ---------------------------
