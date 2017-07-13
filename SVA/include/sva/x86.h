@@ -59,5 +59,6 @@ static const unsigned PTE_PRESENT  = 0x0001u;
 static const unsigned PTE_CANWRITE = 0x0002u;
 static const unsigned PTE_CANUSER  = 0x0004u;
 static const unsigned PTE_PS       = 0x0080u;
+static const unsigned PTE_ACCESS   = 0x0020u;
 static const unsigned PTE_DIRTY	   = 0x0040u; 
 #endif
