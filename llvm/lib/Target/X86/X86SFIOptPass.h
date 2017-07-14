@@ -114,7 +114,7 @@ namespace llvm {
 
 	BitVector AllocatableSet;
 
-	static bool isCFICMP(const MachineInstr& MI);
+	bool isCFICMP(const MachineInstr& MI);
 	
   X86SFIOptPass(X86TargetMachine &tm) : MachineFunctionPass(ID), TM(tm),
 	  numPushf(0), numPushs(0), numAnds(0) {}
@@ -140,6 +140,8 @@ namespace llvm {
 	// MachineOperand that constitutes the memory location
 	unsigned findDeadReg(const MachineInstr* MI, const unsigned idx);
 
+  // Find a register to spill
+  unsigned findRegToSpill(const unsigned reg, const MachineInstr* MI, const TargetRegisterInfo* TRI);
 	// insert a mask instruction before store instruction MI
 	// this version does not use any dead registers
 	void insertMaskBeforeStoreNoDead(MachineBasicBlock& MBB, MachineInstr* MI,
@@ -175,7 +177,7 @@ namespace llvm {
 	// insert sandboxing instructions right after MI to sandbox %esp
 	// MI must modify %esp. we only sandbox the change to %esp so that
 	// there is no need to sandbox all the uses of %esp
-	static void insertMaskAfterReg(MachineBasicBlock& MBB, MachineInstr* MI,
+	void insertMaskAfterReg(MachineBasicBlock& MBB, MachineInstr* MI,
 								   DebugLoc& dl, const TargetInstrInfo* TII,
 								   const unsigned Reg);
 	
