@@ -56,6 +56,17 @@ static inline pdpte_t * get_pdpteVaddr (pml4e_t * pml4e, uintptr_t vaddr);
 static inline pde_t * get_pdeVaddr (pdpte_t * pdpte, uintptr_t vaddr);
 static inline pte_t * get_pteVaddr (pde_t * pde, uintptr_t vaddr);
 
+/* 
+ * Function prototypes for finding the virtual address of 
+ * page table components based on SVA Direct MAP
+ */
+//static inline page_entry_t * get_svaDmap_pgeVaddr (uintptr_t vaddr);
+static inline pml4e_t * get_svaDmap_pml4eVaddr (unsigned char * cr3, uintptr_t vaddr);
+static inline pdpte_t * get_svaDmap_pdpteVaddr (pml4e_t * pml4e, uintptr_t vaddr);
+static inline pde_t * get_svaDmap_pdeVaddr (pdpte_t * pdpte, uintptr_t vaddr);
+static inline pte_t * get_svaDmap_pteVaddr (pde_t * pde, uintptr_t vaddr);
+
+
 /*
  * Function prototypes for returning the physical address of page table pages.
  */
@@ -202,7 +213,8 @@ page_entry_store (unsigned long *page_entry, page_entry_t newVal) {
   page_desc_t * pgDescPtr; 
 
   phys = getPhysicalAddr(page_entry);
-  page_entry_svadm = (unsigned long*)getVirtualSVADMAP(phys);  
+  page_entry_svadm = (unsigned long*)getVirtualSVADMAP(phys);
+  //printf("page_entry = 0x%lx, page_entry_svadm = 0x%lx\n", page_entry, page_entry_svadm);  
   pgDescPtr = getPageDescPtr(phys);
 
   if(pgDescPtr->dmap)
@@ -833,6 +845,34 @@ get_pteVaddr (pde_t * pde, uintptr_t vaddr) {
   return (pte_t *) getVirtual (base | offset);
 }
 
+static inline pml4e_t *
+get_svaDmap_pml4eVaddr (unsigned char * cr3, uintptr_t vaddr) {
+  /* Offset into the page table */
+  uintptr_t offset = (vaddr >> (39 - 3)) & vmask;
+  return (pml4e_t *) getVirtualSVADMAP (((uintptr_t)cr3) | offset);
+}
+
+static inline pdpte_t *
+get_svaDmap_pdpteVaddr (pml4e_t * pml4e, uintptr_t vaddr) {
+  uintptr_t base   = (*pml4e) & 0x000ffffffffff000u;
+  uintptr_t offset = (vaddr >> (30 - 3)) & vmask;
+  return (pdpte_t *) getVirtualSVADMAP (base | offset);
+}
+
+static inline pde_t *
+get_svaDmap_pdeVaddr (pdpte_t * pdpte, uintptr_t vaddr) {
+  uintptr_t base   = (*pdpte) & 0x000ffffffffff000u;
+  uintptr_t offset = (vaddr >> (21 - 3)) & vmask;
+  return (pde_t *) getVirtualSVADMAP (base | offset);
+}
+
+static inline pte_t *
+get_svaDmap_pteVaddr (pde_t * pde, uintptr_t vaddr) {
+  uintptr_t base   = (*pde) & 0x000ffffffffff000u;
+  uintptr_t offset = (vaddr >> (12 - 3)) & vmask;
+  return (pte_t *) getVirtualSVADMAP (base | offset);
+}
+
 /*
  * Functions for returing the physical address of page table pages.
  */
@@ -905,6 +945,10 @@ getPhysicalAddr (void * v) {
 
   if (((uintptr_t) v >= 0xfffffe0000000000u) && ((uintptr_t) v < 0xffffff0000000000u))
        return getPhysicalAddrKDMAP(v);
+#ifdef SVA_DMAP
+  if (((uintptr_t) v >= SVADMAPSTART) && ((uintptr_t) v <= SVADMAPEND))
+       return getPhysicalAddrSVADMAP(v);
+#endif
 
   /* Mask to get the proper number of bits from the virtual address */
   static const uintptr_t vmask = 0x0000000000000fffu;
@@ -1153,6 +1197,10 @@ allocPTPage (void) {
    * Ask the system software for a page of memory.
    */
   if ((p = SVAPTPages[ptindex]) != 0) {
+    
+    unsigned char * p_kernelMap = p;
+    p = getVirtualSVADMAP(getPhysicalAddr(p_kernelMap));
+
     /*
      * Initialize the memory.
      */
@@ -1167,8 +1215,13 @@ allocPTPage (void) {
     PTPages[ptindex].vosaddr = p;
     PTPages[ptindex].paddr   = getPhysicalAddr (p);
 
+    /*
+     * Set the type of the page to be a ghost page table page.
+     */
+    getPageDescPtr(getPhysicalAddr (p))->ghostPTP = 1;
+
 #ifdef SVA_DMAP
-    removeOSDirectMap(p);
+    //removeOSDirectMap(p);
 #endif
     /*
      * Return the index in the table.
@@ -1176,11 +1229,7 @@ allocPTPage (void) {
     return ptindex;
   }
 
-  /*
-   * Set the type of the page to be a ghost page table page.
-   */
-  getPageDescPtr(getPhysicalAddr (p))->ghostPTP = 1;
-  return 0;
+    return 0;
 }
 
 /*
@@ -1202,7 +1251,7 @@ freePTPage (unsigned int ptindex) {
   getPageDescPtr(PTPages[ptindex].paddr)->ghostPTP = 0;
 
 #ifdef SVA_DMAP
-  updateOSDirectMap(PTPages[ptindex].vosaddr, PTPages[ptindex].paddr|PG_RW|PG_V|PG_G);
+  //updateOSDirectMap(PTPages[ptindex].vosaddr, PTPages[ptindex].paddr|PG_RW|PG_V|PG_G);
 #endif
 
   return;
@@ -1316,14 +1365,18 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
   /*
    * Disable protections.
    */
+#ifndef SVA_DMAP
   unprotect_paging();
-
+#endif
   /*
    * Get the PML4E of the current page table.  If there isn't one in the
    * table, add one.
    */
+#ifdef SVA_DMAP
+  pml4e_t * pml4e = get_svaDmap_pml4eVaddr (get_pagetable(), vaddr);
+#else
   pml4e_t * pml4e = get_pml4eVaddr (get_pagetable(), vaddr);
-
+#endif
   if (!isPresent (pml4e)) {
     /* Page table page index */
     unsigned int ptindex;
@@ -1351,7 +1404,11 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
   /*
    * Get the PDPTE entry (or add it if it is not present).
    */
+#ifdef SVA_DMAP
+  pdpte_t * pdpte = get_svaDmap_pdpteVaddr (pml4e, vaddr);
+#else
   pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr);
+#endif
   if (!isPresent (pdpte)) {
     /* Page table page index */
     unsigned int ptindex;
@@ -1380,7 +1437,11 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
   /*
    * Get the PDE entry (or add it if it is not present).
    */
+#ifdef SVA_DMAP
+  pde_t * pde = get_svaDmap_pdeVaddr (pdpte, vaddr);
+#else
   pde_t * pde = get_pdeVaddr (pdpte, vaddr);
+#endif
   if (!isPresent (pde)) {
     /* Page table page index */
     unsigned int ptindex;
@@ -1409,7 +1470,11 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
   /*
    * Get the PTE entry (or add it if it is not present).
    */
+#ifdef SVA_DMAP 
+  pte_t * pte = get_svaDmap_pteVaddr (pde, vaddr);
+#else
   pte_t * pte = get_pteVaddr (pde, vaddr);
+#endif
 #if 0
   if (isPresent (pte)) {
     panic ("SVA: mapSecurePage: PTE is present: %p!\n", pte);
@@ -1445,7 +1510,9 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
   /*
    * Re-enable page protections.
    */
+#ifndef SVA_DMAP
   protect_paging();
+#endif
 
   return pml4eVal;
 }
@@ -1472,7 +1539,11 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
    * table, add one.
    */
   uintptr_t vaddr = (uintptr_t) v;
+#ifdef SVA_DMAP
+  pdpte_t * pdpte = get_svaDmap_pdpteVaddr (&(threadp->secmemPML4e), vaddr);
+#else
   pdpte_t * pdpte = get_pdpteVaddr (&(threadp->secmemPML4e), vaddr);
+#endif
   if (!isPresent (pdpte)) {
     return;
   }
@@ -1484,7 +1555,11 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
   /*
    * Get the PDE entry (or add it if it is not present).
    */
+#ifdef SVA_DMAP 
+  pde_t * pde = get_svaDmap_pdeVaddr (pdpte, vaddr);
+#else
   pde_t * pde = get_pdeVaddr (pdpte, vaddr);
+#endif
   if (!isPresent (pde)) {
     return;
   }
@@ -1496,7 +1571,11 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
   /*
    * Get the PTE entry (or add it if it is not present).
    */
+#ifdef SVA_DMAP
+  pte_t * pte = get_svaDmap_pteVaddr (pde, vaddr);
+#else
   pte_t * pte = get_pteVaddr (pde, vaddr);
+#endif
   if (!isPresent (pte)) {
     return;
   }
@@ -1510,7 +1589,9 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
   /*
    * Modify the PTE so that the page is not present.
    */
+#ifndef SVA_DMAP
   unprotect_paging();
+#endif
   *pte = 0;
 
   /*
@@ -1543,7 +1624,9 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
     }
   }
 
+#ifndef SVA_DMAP
   protect_paging();
+#endif
   return;
 }
 
@@ -2231,8 +2314,8 @@ void * DMPDphys, void * DMPTphys, int ndmpdp, int ndm1g)
 #endif*/
        }
 
-  for (i = 384; i < 384 + ndm1g; i++) {
-                ((pdpte_t *)DMPDPphys)[i] = (uintptr_t)(i - 384) << PDPSHIFT;
+  for (i = 0/*384*/; i < 0 /*384*/ + ndm1g; i++) {
+                ((pdpte_t *)DMPDPphys)[i] = (uintptr_t)(i /*- 384*/) << PDPSHIFT;
                 /* Preset PG_M and PG_A because demotion expects it. */
                 ((pdpte_t *)DMPDPphys)[i] |= PG_RW | PG_V | PG_PS | 
 #ifdef SVA_ASID_PG
@@ -2241,7 +2324,7 @@ void * DMPDphys, void * DMPTphys, int ndmpdp, int ndm1g)
 		    PG_G | PG_M | PG_A;
 #endif
   }
-  for (j = 0; i < 384 + ndmpdp; i++, j++) {
+  for (j = 0; i < /*384 +*/ ndmpdp; i++, j++) {
                 ((pdpte_t *)DMPDPphys)[i] = (uintptr_t)DMPDphys + (uintptr_t)(j << PAGE_SHIFT);
                 ((pdpte_t *)DMPDPphys)[i] |= PG_RW | PG_V | PG_U;
 

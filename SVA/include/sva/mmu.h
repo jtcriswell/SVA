@@ -75,15 +75,15 @@ static const unsigned long numPageDescEntries = memSize / pageSize;
 
 /* Start and end addresses of the secure memory */
 #define SECMEMSTART 0xffffff0000000000u
-#ifndef SVA_DMAP
+//#ifndef SVA_DMAP
 #define SECMEMEND   0xffffff8000000000u
-#else
-#define SECMEMEND   0xffffff6000000000u
-#endif
+//#else
+//#define SECMEMEND   0xffffff6000000000u
+//#endif
 
 /* Start and end addresses of the SVA direct mapping */
-#define SVADMAPSTART 0xffffff6000000000u
-#define SVADMAPEND   0xffffff7fffffffffu
+#define SVADMAPSTART 0xfffffd8000000000//0xffffff6000000000u
+#define SVADMAPEND   0xfffffe0000000000//0xffffff7fffffffffu
 
 /* Start and end addresses of user memory */
 static const uintptr_t USERSTART = 0x0000000000000000u;
@@ -278,7 +278,7 @@ typedef struct page_desc_t {
  */
 #define NDMPML4E    1 
 #define KPML4I      (NPML4EPG - 1)    /* Top 512GB for KVM */
-#define DMPML4I     (KPML4I - NDMPML4E)/NDMPML4E * NDMPML4E /* the index of SVA direct mapping on pml4*/
+#define DMPML4I     (KPML4I - 4) //(KPML4I - NDMPML4E)/NDMPML4E * NDMPML4E /* the index of SVA direct mapping on pml4*/
 
 
 /* ASID/page table switch*/
