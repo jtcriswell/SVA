@@ -924,7 +924,7 @@ allocPTPage (void) {
   /*
    * Ask the system software for a page of memory.
    */
-  if ((p = SVAPTPages[ptindex]) != 0) {
+  if ((p = SVAPTPages[ptindex]) != NULL) {
     /*
      * Initialize the memory.
      */
@@ -940,15 +940,16 @@ allocPTPage (void) {
     PTPages[ptindex].paddr   = getPhysicalAddr (p);
 
     /*
+     * Set the type of the page to be a ghost page table page.
+     */
+    getPageDescPtr(getPhysicalAddr (p))->ghostPTP = 1;
+
+    /*
      * Return the index in the table.
      */
     return ptindex;
   }
 
-  /*
-   * Set the type of the page to be a ghost page table page.
-   */
-  getPageDescPtr(getPhysicalAddr (p))->ghostPTP = 1;
   return 0;
 }
 
