@@ -80,7 +80,6 @@ static inline uintptr_t get_ptePaddr (pde_t * pde, uintptr_t vaddr);
  */
 static inline uintptr_t getPhysicalAddrKDMAP (void * v);
 static inline uintptr_t getPhysicalAddrSVADMAP (void * v);
-
 /*
  * Mapping update function prototypes.
  */
@@ -126,6 +125,10 @@ struct PTInfo {
  *  that the SVA VM will use for its own purposes.
  */
 struct PTInfo PTPages[1024] __attribute__ ((section ("svamem")));
+
+/* Cache of page table pages */
+extern unsigned char
+SVAPTPages[1024][X86_PAGE_SIZE] __attribute__ ((section ("svamem")));
 
 /* Array describing the physical pages */
 /* The index is the physical page number */
@@ -1009,78 +1012,6 @@ getPhysicalAddr (void * v) {
   return paddr;
 }
 
-/*
- * Function: updateOSDirectMap
- * 
- * Description:
- *  This function recovers the OS's direct mapping page table entry
- *  translating the virtual address of the SVA page 
- *  table page for ghost memory just freed.
- *
- * Inputs:
- *  v    -   Virtual address of the page table page of ghost memory*
- *  val  -   The translation to insert into the direct mapping
- */
-
-void
-updateOSDirectMap (void * v, page_entry_t val) {
-
-  /* Mask to get the proper number of bits from the virtual address */
-  static const uintptr_t vmask = 0x0000000000000fffu;
-
-  /* Virtual address to convert */
-  uintptr_t vaddr  = ((uintptr_t) v);
-
-  /* Offset into the page table */
-  uintptr_t offset = 0;
-
-  /*
-   * Get the currently active page table.
-   */
-  unsigned char * cr3 = get_pagetable();
-
-  /*
-   * Get the address of the PML4e.
-   */
-  pml4e_t * pml4e = get_pml4eVaddr (cr3, vaddr);
-
-  /*
-   * Use the PML4E to get the address of the PDPTE.
-   */
-  pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr);
-
-  /*
-   * Determine if the PDPTE has the PS flag set.  If so, then it's pointing to
-   * a 1 GB page; return the physical address of that page.
-   */
-  if ((*pdpte) & PTE_PS) {
-    //return (*pdpte & 0x000fffffffffffffu) >> 30;
-    panic("not 4KB-only dmap. 1GB pages are used.");
-  }
-
-  /*
-   * Find the page directory entry table from the PDPTE value.
-   */
-  pde_t * pde = get_pdeVaddr (pdpte, vaddr);
-
-  /*
-   * Determine if the PDE has the PS flag set.  If so, then it's pointing to a
-   * 2 MB page; return the physical address of that page.
-   */
-  if ((*pde) & PTE_PS) {
-    panic("not 4KB-only dmap. 2MB pages are used.");
-  }
-
-  /*
-   * Find the PTE pointed to by this PDE.
-   */
-  pte_t * pte = get_pteVaddr (pde, vaddr);
-
-  sva_update_l1_mapping(pte, val); 
-
-  return;
-}
-
 
 /*
  * Function: removeOSDirectMap
@@ -1115,52 +1046,49 @@ removeOSDirectMap (void * v) {
   /*
    * Get the address of the PML4e.
    */
-  pml4e_t * pml4e = get_pml4eVaddr (cr3, vaddr);
+  pml4e_t * pml4e = get_svaDmap_pml4eVaddr (cr3, vaddr);
 
   /*
    * Use the PML4E to get the address of the PDPTE.
    */
-  pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr);
+  pdpte_t * pdpte = get_svaDmap_pdpteVaddr (pml4e, vaddr);
 
   /*
    * Determine if the PDPTE has the PS flag set.  If so, then it's pointing to
    * a 1 GB page; return the physical address of that page.
    */
   if ((*pdpte) & PTE_PS) {
-    //return (*pdpte & 0x000fffffffffffffu) >> 30;
-    panic("not 4KB-only dmap. 1GB pages are used.");
+    *pdpte = 0;
+    return; 
   }
 
   /*
    * Find the page directory entry table from the PDPTE value.
    */
-  pde_t * pde = get_pdeVaddr (pdpte, vaddr);
+  pde_t * pde = get_svaDmap_pdeVaddr (pdpte, vaddr);
 
   /*
    * Determine if the PDE has the PS flag set.  If so, then it's pointing to a
    * 2 MB page; return the physical address of that page.
    */
   if ((*pde) & PTE_PS) {
-    panic("not 4KB-only dmap. 2MB pages are used.");
+    *pde = 0;
+    return;
   }
 
   /*
    * Find the PTE pointed to by this PDE.
    */
-  pte_t * pte = get_pteVaddr (pde, vaddr);
+  pte_t * pte = get_svaDmap_pteVaddr (pde, vaddr);
 
   if(*pte == 0)
   	panic("The direct mapping PTE of the SVA PTP does not exist");
 
-  sva_remove_mapping(pte); 
+  *pte = 0; 
 
   return;
 }
 
-
-/* Cache of page table pages */
-extern unsigned char
-SVAPTPages[1024][X86_PAGE_SIZE] __attribute__ ((section ("svamem")));
 
 /*
  * Function: allocPTPage()
@@ -1196,11 +1124,12 @@ allocPTPage (void) {
   /*
    * Ask the system software for a page of memory.
    */
-  if ((p = SVAPTPages[ptindex]) != 0) {
+#ifdef SVA_DMAP
+  if ((p = PTPages[ptindex].vosaddr) != NULL) {
+#else
+  if ((p = SVAPTPages[ptindex]) != NULL) {
+#endif
     
-    unsigned char * p_kernelMap = p;
-    p = getVirtualSVADMAP(getPhysicalAddr(p_kernelMap));
-
     /*
      * Initialize the memory.
      */
@@ -1212,17 +1141,15 @@ allocPTPage (void) {
      * page as well as the physical address so that the SVA VM can unmap it
      * later.
      */
+#ifndef SVA_DMAP
     PTPages[ptindex].vosaddr = p;
     PTPages[ptindex].paddr   = getPhysicalAddr (p);
-
+#endif
     /*
      * Set the type of the page to be a ghost page table page.
      */
     getPageDescPtr(getPhysicalAddr (p))->ghostPTP = 1;
 
-#ifdef SVA_DMAP
-    //removeOSDirectMap(p);
-#endif
     /*
      * Return the index in the table.
      */
@@ -1249,10 +1176,6 @@ freePTPage (unsigned int ptindex) {
    * Change the type of the page table page.
    */
   getPageDescPtr(PTPages[ptindex].paddr)->ghostPTP = 0;
-
-#ifdef SVA_DMAP
-  //updateOSDirectMap(PTPages[ptindex].vosaddr, PTPages[ptindex].paddr|PG_RW|PG_V|PG_G);
-#endif
 
   return;
 }
@@ -1349,6 +1272,7 @@ releaseUse (uintptr_t * ptp) {
  */
 uintptr_t
 mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
+  
   /* PML4e value for the secure memory region */
   pml4e_t pml4eVal;
   /*
@@ -2465,6 +2389,19 @@ sva_mmu_init (pml4e_t * kpml4Mapping,
    */
   mmuIsInitialized = 1;
 
+#ifdef SVA_DMAP  
+  int ptindex;
+  unsigned char * p;
+  for(ptindex = 0; ptindex < 1024; ++ptindex)
+  {
+	  if((p = SVAPTPages[ptindex]) == NULL)
+		panic("SVAPTPages[%d] is not allocated\n", ptindex);  
+	  PTPages[ptindex].paddr   = getPhysicalAddr (p);
+	  PTPages[ptindex].vosaddr = getVirtualSVADMAP(PTPages[ptindex].paddr);
+	  removeOSDirectMap(getVirtual(PTPages[ptindex].paddr)); 
+  }
+  
+#endif
   record_tsc(sva_mmu_init_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
