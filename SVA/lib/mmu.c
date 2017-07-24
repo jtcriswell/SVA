@@ -1354,7 +1354,7 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
   updateUses (pdpte);
 
   if ((*pdpte) & PTE_PS) {
-    *pdpte |= PTE_DIRTY | PTE_ACCESS;
+    *pdpte |= PTE_DIRTY;
     printf ("mapSecurePage: PDPTE has PS BIT\n");
   }
 
@@ -1387,7 +1387,7 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
   updateUses (pde);
 
   if ((*pde) & PTE_PS) {
-    *pde |= PTE_DIRTY | PTE_ACCESS;
+    *pde |= PTE_DIRTY;
     printf ("mapSecurePage: PDE has PS BIT\n");
   }
 
@@ -1408,8 +1408,7 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
   /*
    * Modify the PTE to install the physical to virtual page mapping.
    */
-  *pte = (paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT 
-	  | PTE_DIRTY | PTE_ACCESS;
+  *pte = (paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT | PTE_DIRTY;
 
   /*
    * Note that we've added another translation to the pde.
