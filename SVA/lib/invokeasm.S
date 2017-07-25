@@ -18,6 +18,12 @@
 #include "sva/cfi.h"
 #include "sva/asmconfig.h"
 
+/*cache partitioning related macros*/
+#define MSR_COS 0xc8f
+#define APP_COS 0
+#define OS_COS  1
+#define SVA_COS 2
+
 .global sva_invoke
 .type sva_invoke, @function
 
@@ -43,7 +49,28 @@
  *  1 - Stack was unwound.
  */
 sva_invoke:
+  
+  
+//#ifdef SVA_CACHE_PART
+  movq cache_part_enable_sva(%rip), %rax
+  testq %rax, %rax
+  je L10
+  
+  pushq %rax
+  pushq %rcx
+  pushq %rdx
 
+  movl $MSR_COS, %ecx
+  movl $0, %edx
+  movl $SVA_COS, %eax
+  wrmsr
+
+  popq  %rdx
+  popq  %rcx
+  popq  %rax
+  
+L10: 
+//#endif
 
   /*
    * Create the new invoke frame.  Note that we save call the registers that
@@ -60,7 +87,7 @@ sva_invoke:
   pushq %rbx
   pushq %rbp
 
-#ifdef SVA_ASID_PG
+  #ifdef SVA_ASID_PG
   //change PCID from 1(kernel) to 0(SVA)
   movq %cr3, %r15
   movq %r15, %r13
@@ -97,6 +124,7 @@ L1:
    */
   movq %rcx, %rbx
 
+
 #ifdef SVA_ASID_PG
   //change PCID from 0(SVA) to 1(kernel)
   movq %cr3, %r15
@@ -123,6 +151,28 @@ L1:
   movq %r15, as_num(%rip)
 L2:
 #endif
+
+//#ifdef SVA_CACHE_PART
+  movq cache_part_enable_sva(%rip), %rax
+  testq %rax, %rax
+  je L11
+  
+  pushq %rax
+  pushq %rcx
+  pushq %rdx
+
+  movl $MSR_COS, %ecx
+  movl $0, %edx
+  movl $OS_COS, %eax
+  wrmsr
+
+  popq  %rdx
+  popq  %rcx
+  popq  %rax
+
+L11: 
+//#endif
+
   /*
    * Call the function.
    *
@@ -130,6 +180,27 @@ L2:
    */
   callq *%r8
   RETTARGET
+
+//#ifdef SVA_CACHE_PART
+  movq cache_part_enable_sva(%rip), %r15
+  testq %r15, %r15
+  je L12
+
+  pushq %rax
+  pushq %rcx
+  pushq %rdx 
+
+  movl $MSR_COS, %ecx
+  movl $0, %edx
+  movl $SVA_COS, %eax
+  wrmsr
+
+  popq  %rdx
+  popq  %rcx
+  popq  %rax
+
+L12:
+//#endif
 
 #ifdef SVA_ASID_PG
   //change PCID from 1(kernel) to 0(SVA)
@@ -192,6 +263,8 @@ L3:
 L4:
 #endif
 
+
+
   /* Restore the saved registers */
   popq %rbp
   popq %rbx
@@ -204,6 +277,23 @@ L4:
   movq %gs:0x260, %rax
   popq CPU_GIP(%rax)
 
+//#ifdef SVA_CACHE_PART
+  movq cache_part_enable_sva(%rip), %rax
+  testq %rax, %rax
+  je L13
+
+  pushq %rcx
+  pushq %rdx
+
+  movl $MSR_COS, %ecx
+  movl $0, %edx
+  movl $OS_COS, %eax
+  wrmsr
+
+  popq %rdx
+  popq %rcx
+L13: 
+//#endif
 
 
   /* Set the return value */

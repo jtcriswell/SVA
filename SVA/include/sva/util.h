@@ -157,6 +157,12 @@ extern uint64_t sva_call_freq[SVA_API_NUM];
 extern uint64_t wp_num;
 extern uint64_t as_num;
 
+extern int cache_part_enable_sva;
+#define MSR_COS 0xc8f
+#define APP_COS 0
+#define OS_COS  1
+#define SVA_COS 2
+
 enum SVA_OS_NAME
 {
   sva_trapframe_api = 0,

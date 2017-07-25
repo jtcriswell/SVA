@@ -25,6 +25,12 @@
 /* FreeBSD segment selector for kernel code segment */
 #define USERCS 0x43
 
+/*cache partitioning related macros*/
+#define MSR_COS 0xc8f
+#define APP_COS 0
+#define OS_COS  1
+#define SVA_COS 2
+
 /*
  * Macro: TRAP
  *
@@ -175,6 +181,27 @@ SVAbadtrap:
  *  o The error code and trap number should have been pushed on to the stack. 
  */
 Trap:
+
+//#ifdef SVA_CACHE_PART
+  pushq %rax 
+  movq cache_part_enable_sva(%rip), %rax
+  testq %rax, %rax
+  je L20
+ 
+  pushq %rcx
+  pushq %rdx
+
+  movl $MSR_COS, %ecx
+  movl $0, %edx
+  movl $SVA_COS, %eax
+  wrmsr
+
+  popq %rdx
+  popq %rcx
+L20:
+  popq %rax
+//#endif
+
   /*
    * Switch to the stack segment.
    */
@@ -226,6 +253,8 @@ Trap:
 
   /* Flag the interrupt context as valid */
   movq $1, IC_VALID(%rsp)
+
+
 
 #ifdef MPX
   /* Reset the MPX bounds register for SFI checks */
@@ -397,7 +426,18 @@ L11:
 
 L15:
 #endif
- 
+
+//#ifdef SVA_CACHE_PART
+  movq cache_part_enable_sva(%rip), %rax
+  testq %rax, %rax
+  je L24
+  movl $MSR_COS, %ecx
+  movl $0, %edx
+  movl $OS_COS, %eax
+  wrmsr
+L24:
+//#endif
+
   /*
    * Call the trap handler registered by the OS for this trap.
    */
@@ -409,6 +449,18 @@ L15:
    * Disable interrupts.
    */
   cli
+
+//#ifdef SVA_CACHE_PART
+  movq cache_part_enable_sva(%rip), %rax
+  testq %rax, %rax
+  je L25
+  movl $MSR_COS, %ecx
+  movl $0, %edx
+  movl $SVA_COS, %eax
+  wrmsr
+L25:
+//#endif
+
 
 #ifdef SVA_ASID_PG 
   movq %cr3, %r15  //change PCID from 1 (kernel) to 0 (SVA)
@@ -515,6 +567,9 @@ L13:
   
 L14:   
 #endif
+
+
+
   /*
    * Copy the registers from the interrupt context back on to the processor.
    */
@@ -549,13 +604,48 @@ L14:
   addq $0x98, %rsp
 
   /* Determine whether we interrupted user or supervisor mode execution. */
+//#ifdef SVA_CACHE_PART
+  pushq %rbx
+  movq $0, %rbx
+//#endif
   cmpq $USERCS, 8(%rsp)
   jne 1f
 
+//#ifdef SVA_CACHE_PART
+  movq $1, %rbx 
+//#endif
   /* We came from user mode.  First switch to the kernel %GS register. */
   swapgs
 
 1:
+
+//#ifdef SVA_CACHE_PART
+  pushq %rax
+  movq cache_part_enable_sva(%rip), %rax
+  testq %rax, %rax
+  je L21
+
+  pushq %rcx
+  pushq %rdx
+
+  movl $MSR_COS, %ecx
+  movl $0, %edx
+  testq %rbx, %rbx
+  je L28
+  movl $APP_COS, %eax
+  jmp L29
+L28:
+  movl $OS_COS, %eax
+L29:
+  wrmsr
+
+  popq %rdx
+  popq %rcx
+L21:
+  popq %rax
+  popq %rbx
+//#endif
+
   /*
    * Return to the calling code.  On x86_64, this will restore the stack
    * pointer regardless of whether we came from user mode or kernel mode.
@@ -591,6 +681,26 @@ SVAsyscall:
 
   /* We came from user mode.  First switch to the kernel %GS register. */
   swapgs
+
+//#ifdef SVA_CACHE_PART
+  pushq %rax
+  movq cache_part_enable_sva(%rip), %rax
+  testq %rax, %rax
+  je L22
+  
+  pushq %rcx
+  pushq %rdx
+
+  movl $MSR_COS, %ecx
+  movl $0, %edx
+  movl $SVA_COS, %eax
+  wrmsr
+
+  popq %rdx
+  popq %rcx
+L22:
+  popq %rax
+//#endif
 
   /*
    * Save the stack pointer (%rsp) and frame pointer (%rbp) of the application.
@@ -664,6 +774,7 @@ SVAsyscall:
 
   /* Push a NULL invoke pointer into the Interrupt Context */
   pushq $0
+
 
   /*
    * Mark the interrupt context as valid.  Additionally, set the fork bit
@@ -792,6 +903,18 @@ SVAsyscall:
 
 L17:
 #endif
+
+//#ifdef SVA_CACHE_PART
+  movq cache_part_enable_sva(%rip), %rax
+  testq %rax, %rax
+  je L26
+  movl $MSR_COS, %ecx
+  movl $0, %edx
+  movl $OS_COS, %eax
+  wrmsr
+L26:
+//#endif
+
   /*
    * Call the system software system call handler.
    */
@@ -803,6 +926,16 @@ sc_ret:
    * Disable interrupts.
    */
   cli
+
+//#ifdef SVA_CACHE_PART
+  movq cache_part_enable_sva(%rip), %rax
+  testq %rax, %rax
+  je L27
+  movl $MSR_COS, %ecx
+  movl $0, %edx
+  movl $SVA_COS, %eax
+  wrmsr
+L27:
 
 #ifdef SVA_ASID_PG
   //change PCID from 1 (kernel) to 0 (SVA)
@@ -854,7 +987,7 @@ L18:
   movq CPU_TSSP(%rbp), %rbx
   addq $IC_SIZE, TSS_IST3(%rbx)
 
-  /*
+ /*
    * Copy the registers from the interrupt context back on to the processor.
    */
   movw IC_FS(%rsp), %cx
@@ -882,6 +1015,26 @@ L18:
   movq IC_R15(%rsp), %r15
   movq IC_RBP(%rsp), %rbp
 
+//#ifdef SVA_CACHE_PART
+  pushq %rax
+  movq cache_part_enable_sva(%rip), %rax
+  testq %rax, %rax
+  je L23
+
+  pushq %rcx
+  pushq %rdx
+
+  movl $MSR_COS, %ecx
+  movl $0, %edx
+  movl $APP_COS, %eax
+  wrmsr
+
+  popq %rdx
+  popq %rcx
+L23:
+  popq %rax
+//#endif
+
   /*
    * Restore the user-space stack pointer.
    */
@@ -889,7 +1042,7 @@ L18:
 
   /* We came from user mode.  First switch to the kernel %GS register. */
   swapgs
-
+ 
   /*
    * Return to the calling code.
    */

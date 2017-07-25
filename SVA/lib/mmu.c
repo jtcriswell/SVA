@@ -2007,6 +2007,15 @@ makePTReadOnly (void) {
   //protect_paging();
 }
 
+static __inline void
+wrmsr(u_int msr, uint64_t newval)
+{
+  uint32_t low, high;
+  low = newval;
+  high = newval >> 32;
+  __asm __volatile("wrmsr" : : "a" (low), "d" (high), "c" (msr));
+}
+
 /* PCID-related functions: 
  * kernel pcid is 1, and user/SVA pcid is 0
  */
@@ -2031,6 +2040,11 @@ void usersva_to_kernel_pcid(void)
 		as_num ++;
   }
 #endif
+
+//#ifdef SVA_CACHE_PART
+//if(cache_part_enable_sva) 
+//  wrmsr(MSR_COS, OS_COS);
+//#endif
 }
 
 void kernel_to_usersva_pcid(void)
@@ -2053,6 +2067,10 @@ void kernel_to_usersva_pcid(void)
 		as_num ++;
   }
 #endif
+//#ifdef SVA_CACHE_PART
+//if(cache_part_enable_sva)
+//  wrmsr(MSR_COS, SVA_COS);
+//#endif
 }
 
 /*
