@@ -52,7 +52,7 @@ UseMPX("enable-mpx-sfi",
 static const uintptr_t checkMask = 0xffffff0000000000u;
 #else
 /* Mask to determine if we use the original value or the masked value */
-static const uintptr_t checkMask = 0x00000000ffffff00;
+static const uintptr_t checkMask = 0x00000000fffffd00;
 #endif
 
 /* Mask to set proper lower-order bits */
