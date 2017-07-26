@@ -74,16 +74,12 @@ static const unsigned long pageSize = 4096;
 static const unsigned long numPageDescEntries = memSize / pageSize;
 
 /* Start and end addresses of the secure memory */
-#define SECMEMSTART 0xffffff0000000000u
-//#ifndef SVA_DMAP
-#define SECMEMEND   0xffffff8000000000u
-//#else
-//#define SECMEMEND   0xffffff6000000000u
-//#endif
+#define SECMEMSTART 0xfffffd0000000000u
+#define SECMEMEND   0xfffffd8000000000u
 
 /* Start and end addresses of the SVA direct mapping */
-#define SVADMAPSTART 0xfffffd8000000000//0xffffff6000000000u
-#define SVADMAPEND   0xfffffe0000000000//0xffffff7fffffffffu
+#define SVADMAPSTART 0xfffffd8000000000
+#define SVADMAPEND   0xfffffe0000000000
 
 /* Start and end addresses of user memory */
 static const uintptr_t USERSTART = 0x0000000000000000u;
