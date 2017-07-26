@@ -68,6 +68,17 @@ case "$enableval" in
   *) AC_MSG_ERROR([Invalid setting for --enable-asid. Use "yes" or "no"]) ;;
 esac
 
+dnl Enable LLC partitioning Feature
+AC_ARG_ENABLE(llc-part,
+              AS_HELP_STRING([--enable-llc-part],
+                             [Enable SVA LLC partitioning Feature (default is YES)]),,
+                             enableval=default)
+case "$enableval" in
+  yes) AC_DEFINE(SVA_LLC_PART) ;;
+  no) AC_DEFINE(NOSVA_LLC_PART) ;;
+  *) AC_MSG_ERROR([Invalid setting for --enable-llc-part. Use "yes" or "no"]) ;;
+esac
+
 dnl
 dnl Include the command-line option to configure the targets used by LLVM
 dnl

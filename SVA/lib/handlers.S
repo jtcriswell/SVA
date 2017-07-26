@@ -26,7 +26,7 @@
 #define USERCS 0x43
 
 /*cache partitioning related macros*/
-#define MSR_COS 0xc8f
+#define COS_MSR 0xc8f
 #define APP_COS 0
 #define OS_COS  1
 #define SVA_COS 2
@@ -182,7 +182,7 @@ SVAbadtrap:
  */
 Trap:
 
-//#ifdef SVA_CACHE_PART
+#ifdef SVA_LLC_PART
   pushq %rax 
   movq cache_part_enable_sva(%rip), %rax
   testq %rax, %rax
@@ -191,7 +191,7 @@ Trap:
   pushq %rcx
   pushq %rdx
 
-  movl $MSR_COS, %ecx
+  movl $COS_MSR, %ecx
   movl $0, %edx
   movl $SVA_COS, %eax
   wrmsr
@@ -200,7 +200,7 @@ Trap:
   popq %rcx
 L20:
   popq %rax
-//#endif
+#endif
 
   /*
    * Switch to the stack segment.
@@ -427,16 +427,16 @@ L11:
 L15:
 #endif
 
-//#ifdef SVA_CACHE_PART
+#ifdef SVA_LLC_PART
   movq cache_part_enable_sva(%rip), %rax
   testq %rax, %rax
   je L24
-  movl $MSR_COS, %ecx
+  movl $COS_MSR, %ecx
   movl $0, %edx
   movl $OS_COS, %eax
   wrmsr
 L24:
-//#endif
+#endif
 
   /*
    * Call the trap handler registered by the OS for this trap.
@@ -450,16 +450,16 @@ L24:
    */
   cli
 
-//#ifdef SVA_CACHE_PART
+#ifdef SVA_LLC_PART
   movq cache_part_enable_sva(%rip), %rax
   testq %rax, %rax
   je L25
-  movl $MSR_COS, %ecx
+  movl $COS_MSR, %ecx
   movl $0, %edx
   movl $SVA_COS, %eax
   wrmsr
 L25:
-//#endif
+#endif
 
 
 #ifdef SVA_ASID_PG 
@@ -604,22 +604,22 @@ L14:
   addq $0x98, %rsp
 
   /* Determine whether we interrupted user or supervisor mode execution. */
-//#ifdef SVA_CACHE_PART
+#ifdef SVA_LLC_PART
   pushq %rbx
   movq $0, %rbx
-//#endif
+#endif
   cmpq $USERCS, 8(%rsp)
   jne 1f
 
-//#ifdef SVA_CACHE_PART
+#ifdef SVA_LLC_PART
   movq $1, %rbx 
-//#endif
+#endif
   /* We came from user mode.  First switch to the kernel %GS register. */
   swapgs
 
 1:
 
-//#ifdef SVA_CACHE_PART
+#ifdef SVA_LLC_PART
   pushq %rax
   movq cache_part_enable_sva(%rip), %rax
   testq %rax, %rax
@@ -628,7 +628,7 @@ L14:
   pushq %rcx
   pushq %rdx
 
-  movl $MSR_COS, %ecx
+  movl $COS_MSR, %ecx
   movl $0, %edx
   testq %rbx, %rbx
   je L28
@@ -644,7 +644,7 @@ L29:
 L21:
   popq %rax
   popq %rbx
-//#endif
+#endif
 
   /*
    * Return to the calling code.  On x86_64, this will restore the stack
@@ -682,7 +682,7 @@ SVAsyscall:
   /* We came from user mode.  First switch to the kernel %GS register. */
   swapgs
 
-//#ifdef SVA_CACHE_PART
+#ifdef SVA_LLC_PART
   pushq %rax
   movq cache_part_enable_sva(%rip), %rax
   testq %rax, %rax
@@ -691,7 +691,7 @@ SVAsyscall:
   pushq %rcx
   pushq %rdx
 
-  movl $MSR_COS, %ecx
+  movl $COS_MSR, %ecx
   movl $0, %edx
   movl $SVA_COS, %eax
   wrmsr
@@ -700,7 +700,7 @@ SVAsyscall:
   popq %rcx
 L22:
   popq %rax
-//#endif
+#endif
 
   /*
    * Save the stack pointer (%rsp) and frame pointer (%rbp) of the application.
@@ -904,16 +904,16 @@ L22:
 L17:
 #endif
 
-//#ifdef SVA_CACHE_PART
+#ifdef SVA_LLC_PART
   movq cache_part_enable_sva(%rip), %rax
   testq %rax, %rax
   je L26
-  movl $MSR_COS, %ecx
+  movl $COS_MSR, %ecx
   movl $0, %edx
   movl $OS_COS, %eax
   wrmsr
 L26:
-//#endif
+#endif
 
   /*
    * Call the system software system call handler.
@@ -927,15 +927,16 @@ sc_ret:
    */
   cli
 
-//#ifdef SVA_CACHE_PART
+#ifdef SVA_LLC_PART
   movq cache_part_enable_sva(%rip), %rax
   testq %rax, %rax
   je L27
-  movl $MSR_COS, %ecx
+  movl $COS_MSR, %ecx
   movl $0, %edx
   movl $SVA_COS, %eax
   wrmsr
 L27:
+#endif
 
 #ifdef SVA_ASID_PG
   //change PCID from 1 (kernel) to 0 (SVA)
@@ -1015,7 +1016,7 @@ L18:
   movq IC_R15(%rsp), %r15
   movq IC_RBP(%rsp), %rbp
 
-//#ifdef SVA_CACHE_PART
+#ifdef SVA_LLC_PART
   pushq %rax
   movq cache_part_enable_sva(%rip), %rax
   testq %rax, %rax
@@ -1024,7 +1025,7 @@ L18:
   pushq %rcx
   pushq %rdx
 
-  movl $MSR_COS, %ecx
+  movl $COS_MSR, %ecx
   movl $0, %edx
   movl $APP_COS, %eax
   wrmsr
@@ -1033,7 +1034,7 @@ L18:
   popq %rcx
 L23:
   popq %rax
-//#endif
+#endif
 
   /*
    * Restore the user-space stack pointer.

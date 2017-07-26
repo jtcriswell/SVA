@@ -31,4 +31,7 @@
 /* Let the configure script determine if we enable the SVA ASID Feature */
 #undef SVA_ASID_PG
 
+/* Let the configure script determine if we enable the LLC partitioning Feature */
+#undef SVA_LLC_PART
+
 #endif

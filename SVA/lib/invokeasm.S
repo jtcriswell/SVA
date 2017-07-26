@@ -19,7 +19,7 @@
 #include "sva/asmconfig.h"
 
 /*cache partitioning related macros*/
-#define MSR_COS 0xc8f
+#define COS_MSR 0xc8f
 #define APP_COS 0
 #define OS_COS  1
 #define SVA_COS 2
@@ -51,7 +51,7 @@
 sva_invoke:
   
   
-//#ifdef SVA_CACHE_PART
+#ifdef SVA_LLC_PART
   movq cache_part_enable_sva(%rip), %rax
   testq %rax, %rax
   je L10
@@ -60,7 +60,7 @@ sva_invoke:
   pushq %rcx
   pushq %rdx
 
-  movl $MSR_COS, %ecx
+  movl $COS_MSR, %ecx
   movl $0, %edx
   movl $SVA_COS, %eax
   wrmsr
@@ -70,7 +70,7 @@ sva_invoke:
   popq  %rax
   
 L10: 
-//#endif
+#endif
 
   /*
    * Create the new invoke frame.  Note that we save call the registers that
@@ -152,7 +152,7 @@ L1:
 L2:
 #endif
 
-//#ifdef SVA_CACHE_PART
+#ifdef SVA_LLC_PART
   movq cache_part_enable_sva(%rip), %rax
   testq %rax, %rax
   je L11
@@ -161,7 +161,7 @@ L2:
   pushq %rcx
   pushq %rdx
 
-  movl $MSR_COS, %ecx
+  movl $COS_MSR, %ecx
   movl $0, %edx
   movl $OS_COS, %eax
   wrmsr
@@ -171,7 +171,7 @@ L2:
   popq  %rax
 
 L11: 
-//#endif
+#endif
 
   /*
    * Call the function.
@@ -181,7 +181,7 @@ L11:
   callq *%r8
   RETTARGET
 
-//#ifdef SVA_CACHE_PART
+#ifdef SVA_LLC_PART
   movq cache_part_enable_sva(%rip), %r15
   testq %r15, %r15
   je L12
@@ -190,7 +190,7 @@ L11:
   pushq %rcx
   pushq %rdx 
 
-  movl $MSR_COS, %ecx
+  movl $COS_MSR, %ecx
   movl $0, %edx
   movl $SVA_COS, %eax
   wrmsr
@@ -200,7 +200,7 @@ L11:
   popq  %rax
 
 L12:
-//#endif
+#endif
 
 #ifdef SVA_ASID_PG
   //change PCID from 1(kernel) to 0(SVA)
@@ -277,7 +277,7 @@ L4:
   movq %gs:0x260, %rax
   popq CPU_GIP(%rax)
 
-//#ifdef SVA_CACHE_PART
+#ifdef SVA_LLC_PART
   movq cache_part_enable_sva(%rip), %rax
   testq %rax, %rax
   je L13
@@ -285,7 +285,7 @@ L4:
   pushq %rcx
   pushq %rdx
 
-  movl $MSR_COS, %ecx
+  movl $COS_MSR, %ecx
   movl $0, %edx
   movl $OS_COS, %eax
   wrmsr
@@ -293,7 +293,7 @@ L4:
   popq %rdx
   popq %rcx
 L13: 
-//#endif
+#endif
 
 
   /* Set the return value */

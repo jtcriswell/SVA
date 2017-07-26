@@ -2045,10 +2045,10 @@ void usersva_to_kernel_pcid(void)
   }
 #endif
 
-//#ifdef SVA_CACHE_PART
-//if(cache_part_enable_sva) 
-//  wrmsr(MSR_COS, OS_COS);
-//#endif
+#ifdef SVA_LLC_PART
+if(cache_part_enable_sva) 
+  wrmsr(COS_MSR, OS_COS);
+#endif
 }
 
 void kernel_to_usersva_pcid(void)
@@ -2071,10 +2071,11 @@ void kernel_to_usersva_pcid(void)
 		as_num ++;
   }
 #endif
-//#ifdef SVA_CACHE_PART
-//if(cache_part_enable_sva)
-//  wrmsr(MSR_COS, SVA_COS);
-//#endif
+
+#ifdef SVA_LLC_PART
+if(cache_part_enable_sva)
+  wrmsr(COS_MSR, SVA_COS);
+#endif
 }
 
 /*

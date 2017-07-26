@@ -635,6 +635,7 @@ enable_mpx
 enable_mmuchecks
 enable_sva_dmap
 enable_asid
+enable_llc_part
 enable_targets
 '
       ac_precious_vars='build_alias
@@ -1254,7 +1255,7 @@ Optional Features:
   --enable-mmuchecks      Enable SVA MMU Checks (default is YES)
   --enable-sva-dmap       Enable SVA Direct Map Feature (default is YES)
   --enable-asid           Enable SVA ASID Feature (default is YES)
-
+  --enable-llc-part       Enable LLC cache partitioning feature to mitigate LLC side-channel attacks (default is YES)
 
 Report bugs to <jtcriswel@gmail.com>.
 _ACEOF
@@ -1767,6 +1768,21 @@ case "$enableval" in
   no) $as_echo "#define NOSVA_ASID_PG 1" >>confdefs.h
  ;;
   *) as_fn_error $? "Invalid setting for --enable-asid. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
+esac
+
+# Check whether --enable-llc-part was given.
+if test "${enable_llc_part+set}" = set; then :
+  enableval=$enable_llc_part;
+else
+  enableval=default
+fi
+
+case "$enableval" in
+  yes) $as_echo "#define SVA_LLC_PART 1" >>confdefs.h
+ ;;
+  no) $as_echo "#define NOSVA_LLC_PART 1" >>confdefs.h
+ ;;
+  *) as_fn_error $? "Invalid setting for --enable-llc-part. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
 esac
 
 # Check whether --enable-targets was given.
