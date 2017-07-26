@@ -1129,7 +1129,6 @@ allocPTPage (void) {
 #else
   if ((p = SVAPTPages[ptindex]) != NULL) {
 #endif
-    
     /*
      * Initialize the memory.
      */
@@ -1151,12 +1150,17 @@ allocPTPage (void) {
     getPageDescPtr(getPhysicalAddr (p))->ghostPTP = 1;
 
     /*
+     * Set the type of the page to be a ghost page table page.
+     */
+    getPageDescPtr(getPhysicalAddr (p))->ghostPTP = 1;
+
+    /*
      * Return the index in the table.
      */
     return ptindex;
   }
 
-    return 0;
+  return 0;
 }
 
 /*
