@@ -74,8 +74,8 @@ static const unsigned long pageSize = 4096;
 static const unsigned long numPageDescEntries = memSize / pageSize;
 
 /* Start and end addresses of the secure memory */
-#define SECMEMSTART 0xffffff0000000000u
-#define SECMEMEND   0xffffff8000000000u
+#define SECMEMSTART 0xfffffd0000000000u
+#define SECMEMEND   0xfffffd8000000000u
 
 /* Start and end addresses of user memory */
 static const uintptr_t USERSTART = 0x0000000000000000u;
