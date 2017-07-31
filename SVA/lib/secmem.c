@@ -157,13 +157,13 @@ allocSecureMemory (void) {
    */
   unsigned char * vaddrStart = 0;
   struct SVAThread * threadp = cpup->currentThread;
-  if (threadp->secmemSize) {
+  //if (threadp->secmemSize) {
     /*
      * Pretend to allocate more ghost memory (but let demand paging actually
      * map it in.
      */
-    vaddrStart = getNextSecureAddress (threadp, size);
-  } else {
+    //vaddrStart = getNextSecureAddress (threadp, size);
+  //} else {
     /*
      * Call the ghost memory allocator to allocate some ghost memory.
      */
@@ -173,7 +173,7 @@ allocSecureMemory (void) {
      * Zero out the memory.
      */
     memset (vaddrStart, 0, size);
-  }
+  //}
 
   /*
    * Set the return value in the Interrupt Context to be a pointer to the
