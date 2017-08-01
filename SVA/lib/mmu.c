@@ -1306,6 +1306,7 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
     }
   }
 
+  /* Re-enable protection of page table pages */
   protect_paging();
   return;
 }
