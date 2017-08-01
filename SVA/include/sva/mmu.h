@@ -288,7 +288,7 @@ typedef struct page_desc_t {
 
 extern uintptr_t getPhysicalAddr (void * v);
 extern pml4e_t mapSecurePage (uintptr_t v, uintptr_t paddr);
-extern void unmapSecurePage (struct SVAThread *, unsigned char * v);
+extern uintptr_t unmapSecurePage (struct SVAThread *, unsigned char * v);
 
 /*
  *****************************************************************************

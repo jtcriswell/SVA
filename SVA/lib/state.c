@@ -1129,7 +1129,10 @@ sva_release_stack (uintptr_t id) {
   uintptr_t cr3 = ((((uintptr_t)new->cr3) & 0x000ffffffffff000u));
   for (uintptr_t size=0; size < newThread->secmemSize; size += X86_PAGE_SIZE) {
     if (vg) {
-      unmapSecurePage (newThread, (unsigned char *)(SECMEMSTART + size));
+      uintptr_t paddr;
+      paddr = unmapSecurePage(newThread, (unsigned char *)(SECMEMSTART + size));
+      if (paddr != 0)
+        releaseSVAMemory(paddr, X86_PAGE_SIZE);
     }
   }
 
