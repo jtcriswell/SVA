@@ -1039,7 +1039,6 @@ sva_release_stack (uintptr_t id) {
    * Release ghost memory.  Be sure to use the value of CR3 belonging to the
    * thread that is being released.
    */
-  uintptr_t cr3 = ((((uintptr_t)new->cr3) & 0x000ffffffffff000u));
   for (uintptr_t size=0; size < newThread->secmemSize; size += X86_PAGE_SIZE) {
     if (vg) {
       unmapSecurePage (newThread, (unsigned char *)(SECMEMSTART + size));
