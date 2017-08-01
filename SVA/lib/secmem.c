@@ -220,27 +220,37 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
     memset (p, 0, size);
 
     /*
-     * Get the physical address before unmapping the page.  We do this because
-     * unmapping the page may remove page table pages that are no longer
-     * needed for mapping secure pages.
+     * Loop through each page of the ghost memory until all of the frames
+     * have been returned to the operating system kernel.
      */
-    uintptr_t paddr = getPhysicalAddr (p);
+    for (unsigned char * ptr = p; ptr < (p + size); ptr += X86_PAGE_SIZE) {
+      /*
+       * Get the physical address before unmapping the page.  We do this
+       * because unmapping the page may remove page table pages that are no
+       * longer needed for mapping secure pages.
+       */
+      uintptr_t paddr = getPhysicalAddr (ptr);
 
-    /*
-     * Unmap the memory from the secure memory virtual address space.
-     */
-    unmapSecurePage (threadp, p);
+      /*
+       * Unmap the memory from the secure memory virtual address space.
+       */
+      unmapSecurePage (threadp, ptr);
 
-    /*
-     * Release the memory to the operating system.  Note that we must first
-     * get the physical address of the data page as that is what the OS is
-     * expecting.
-     */
-    releaseSVAMemory (paddr, size);
+      /*
+       * Release the memory to the operating system.  Note that we must first
+       * get the physical address of the data page as that is what the OS is
+       * expecting.
+       *
+       * TODO:
+       *  This code works around a limitation in the releaseSVAMemory()
+       *  implementation in which it only releases one page at a time to the
+       *  OS.
+       */
+      releaseSVAMemory (paddr, X86_PAGE_SIZE);
+    }
   }
 
   return;
-
 }
 
 /*
