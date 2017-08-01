@@ -188,6 +188,62 @@ allocSecureMemory (void) {
 }
 
 /*
+ * Function: ghostFree()
+ *
+ * Description:
+ *  Free the physical frames backing ghost memory at the specified virtual
+ *  address.  This function frees entire frames and returns the physical memory
+ *  to the operating system kernel.
+ *
+ *  Note that this function may be called upon to unmap ghost memory from a
+ *  thread *other* than the one currently running on the CPU.
+ *
+ * Inputs:
+ *  threadp - A pointer to the SVA Thread for which we should release the frame
+ *            of secure memory.
+ *  p        - A pointer to the virtual address of the ghost memory to free.
+ *  size     - The amount of ghost memory in bytes to free.
+ *
+ */
+void
+ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
+  /*
+   * Verify that the memory is within the secure memory portion of the
+   * address space.
+   */
+  uintptr_t pint = (uintptr_t) p;
+  if ((SECMEMSTART <= pint) && (pint < SECMEMEND) &&
+     (SECMEMSTART <= (pint + size)) && ((pint + size) < SECMEMEND)) {
+    /*
+     * Zero out the contents of the ghost memory.
+     */
+    memset (p, 0, size);
+
+    /*
+     * Get the physical address before unmapping the page.  We do this because
+     * unmapping the page may remove page table pages that are no longer
+     * needed for mapping secure pages.
+     */
+    uintptr_t paddr = getPhysicalAddr (p);
+
+    /*
+     * Unmap the memory from the secure memory virtual address space.
+     */
+    unmapSecurePage (threadp, p);
+
+    /*
+     * Release the memory to the operating system.  Note that we must first
+     * get the physical address of the data page as that is what the OS is
+     * expecting.
+     */
+    releaseSVAMemory (paddr, size);
+  }
+
+  return;
+
+}
+
+/*
  * Function: freeSecureMemory()
  *
  * Description:
@@ -211,40 +267,9 @@ freeSecureMemory (void) {
   unsigned char * p = (unsigned char *)(icp->rdi);
   uintptr_t size = icp->rsi;
 
-  /*
-   * Verify that the memory is within the secure memory portion of the
-   * address space.
-   */
-  uintptr_t pint = (uintptr_t) p;
-  if ((SECMEMSTART <= pint) &&
-     (pint < SECMEMEND) &&
-     (SECMEMSTART <= (pint + size)) &&
-     ((pint + size) < SECMEMEND)) {
-    /*
-     * Zero out the memory.
-     */
-    memset (p, 0, size);
-
-    /*
-     * Get the physical address before unmapping the page.  We do this because
-     * unmapping the page may remove page table pages that are no longer
-     * needed for mapping secure pages.
-     */
-    uintptr_t paddr = getPhysicalAddr (p);
-
-    /*
-     * Unmap the memory from the secure memory virtual address space.
-     */
-    struct CPUState * cpup = getCPUState();
-    unmapSecurePage (cpup->currentThread, p);
-
-    /*
-     * Release the memory to the operating system.  Note that we must first
-     * get the physical address of the data page as that is what the OS is
-     * expecting.
-     */
-    releaseSVAMemory (paddr, size);
-  }
+  /* Free the ghost memory */
+  struct CPUState * cpup = getCPUState();
+  ghostFree (cpup->currentThread, p, size);
 
   return;
 }
