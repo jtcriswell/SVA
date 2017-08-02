@@ -251,12 +251,16 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
       uintptr_t paddr;
       if (getPhysicalAddrFromPML4E (ptr, secmemPML4Ep, &paddr)) {
         /*
-         * Zero out the contents of the ghost memory if it has been mapped
-         * in the current address space.
+         * Zero out the contents of the ghost memory.
          */
+#ifdef SVA_DMAP
+        unsigned char * dmapAddr = getVirtualSVADMAP (paddr);
+        memset (dmapAddr, 0, X86_PAGE_SIZE);
+#else
         if (threadp == currentThread) {
           memset (ptr, 0, X86_PAGE_SIZE);
         }
+#endif
 
         /*
          * Unmap the memory from the secure memory virtual address space.
