@@ -945,9 +945,18 @@ getPhysicalAddrSVADMAP (void * v) {
  */
 uintptr_t
 getPhysicalAddr (void * v) {
-
+  /*
+   * If the pointer is within the kernel's direct map, use a simple
+   * bit-masking operation to convert the virtual address to a physical
+   * address.
+   */
   if (((uintptr_t) v >= 0xfffffe0000000000u) && ((uintptr_t) v < 0xffffff0000000000u))
        return getPhysicalAddrKDMAP(v);
+
+  /*
+   * If the virtual address falls within the SVA VM's direct map, use a simple
+   * bit-masking operation to find the physical address.
+   */
 #ifdef SVA_DMAP
   if (((uintptr_t) v >= SVADMAPSTART) && ((uintptr_t) v <= SVADMAPEND))
        return getPhysicalAddrSVADMAP(v);
