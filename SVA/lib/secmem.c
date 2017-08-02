@@ -227,6 +227,11 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
   currentThread = cpup->currentThread;
 
   /*
+   * Get the PML4E entry for the Ghost Memory for the thread.
+   */
+  pml4e_t * secmemPML4Ep = &(threadp->secmemPML4e);
+
+  /*
    * Verify that the memory is within the secure memory portion of the
    * address space.
    */
@@ -243,7 +248,7 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
        * because unmapping the page may remove page table pages that are no
        * longer needed for mapping secure pages.
        */
-      uintptr_t paddr = getPhysicalAddr (ptr);
+      uintptr_t paddr = getPhysicalAddrFromPML4E (ptr, secmemPML4Ep);
 
       /*
        * Zero out the contents of the ghost memory if it has been mapped
