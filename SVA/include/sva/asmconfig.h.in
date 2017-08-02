@@ -34,4 +34,8 @@
 /* Let the configure script determine if we enable the LLC partitioning Feature */
 #undef SVA_LLC_PART
 
+/* Let the configure script determine if we enable the page table side-channel defenses for ghost memory*/
+#undef SVA_PG_DEF
+
+
 #endif

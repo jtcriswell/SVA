@@ -79,6 +79,17 @@ case "$enableval" in
   *) AC_MSG_ERROR([Invalid setting for --enable-llc-part. Use "yes" or "no"]) ;;
 esac
 
+dnl Enable Defenses Against Page Table Side-channels
+AC_ARG_ENABLE(pg-defenses,
+              AS_HELP_STRING([--enable-pg-defenses],
+                             [Enable defenses against page table side-channels (default is YES)]),,
+                             enableval=default)
+case "$enableval" in
+  yes) AC_DEFINE(SVA_PG_DEF) ;;
+  no) AC_DEFINE(NOSVA_PG_DEF) ;;
+  *) AC_MSG_ERROR([Invalid setting for --enable-pg-defenses. Use "yes" or "no"]) ;;
+esac
+
 dnl
 dnl Include the command-line option to configure the targets used by LLVM
 dnl

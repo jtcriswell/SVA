@@ -20,7 +20,7 @@
 #include "sva/mmu.h"
 #include "sva/state.h"
 #include "sva/util.h"
-
+#include <sva/config.h>
 /*
  * Function: getNextSecureAddress()
  *
@@ -157,13 +157,15 @@ allocSecureMemory (void) {
    */
   unsigned char * vaddrStart = 0;
   struct SVAThread * threadp = cpup->currentThread;
-  //if (threadp->secmemSize) {
+#ifndef SVA_PG_DEF
+  if (threadp->secmemSize) {
     /*
      * Pretend to allocate more ghost memory (but let demand paging actually
      * map it in.
      */
-    //vaddrStart = getNextSecureAddress (threadp, size);
-  //} else {
+    vaddrStart = getNextSecureAddress (threadp, size);
+  } else {
+#endif	  
     /*
      * Call the ghost memory allocator to allocate some ghost memory.
      */
@@ -173,8 +175,9 @@ allocSecureMemory (void) {
      * Zero out the memory.
      */
     memset (vaddrStart, 0, size);
-  //}
-
+#ifndef SVA_PG_DEF
+  }
+#endif
   /*
    * Set the return value in the Interrupt Context to be a pointer to the
    * newly allocated memory.

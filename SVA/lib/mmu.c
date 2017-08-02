@@ -2429,7 +2429,9 @@ sva_mmu_init (pml4e_t * kpml4Mapping,
 		panic("SVAPTPages[%d] is not allocated\n", ptindex);  
 	  PTPages[ptindex].paddr   = getPhysicalAddr (p);
 	  PTPages[ptindex].vosaddr = getVirtualSVADMAP(PTPages[ptindex].paddr);
+#ifdef SVA_PG_DEF
 	  removeOSDirectMap(getVirtual(PTPages[ptindex].paddr)); 
+#endif
   }
   
 #endif

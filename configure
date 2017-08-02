@@ -636,6 +636,7 @@ enable_mmuchecks
 enable_sva_dmap
 enable_asid
 enable_llc_part
+enable_pg_defenses
 enable_targets
 '
       ac_precious_vars='build_alias
@@ -1256,6 +1257,7 @@ Optional Features:
   --enable-sva-dmap       Enable SVA Direct Map Feature (default is YES)
   --enable-asid           Enable SVA ASID Feature (default is YES)
   --enable-llc-part       Enable LLC cache partitioning feature to mitigate LLC side-channel attacks (default is YES)
+  --enable-pg-defenses    Enable defenses against page table side-channels (default is YES)
 
 Report bugs to <jtcriswel@gmail.com>.
 _ACEOF
@@ -1783,6 +1785,21 @@ case "$enableval" in
   no) $as_echo "#define NOSVA_LLC_PART 1" >>confdefs.h
  ;;
   *) as_fn_error $? "Invalid setting for --enable-llc-part. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
+esac
+
+# Check whether --enable-pg-defenses was given.
+if test "${enable_pg_defenses+set}" = set; then :
+  enableval=$enable_pg_defenses;
+else
+  enableval=default
+fi
+
+case "$enableval" in
+  yes) $as_echo "#define SVA_PG_DEF 1" >>confdefs.h
+ ;;
+  no) $as_echo "#define NOSVA_PG_DEF 1" >>confdefs.h
+ ;;
+  *) as_fn_error $? "Invalid setting for --enable-pg-defenses. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
 esac
 
 # Check whether --enable-targets was given.
