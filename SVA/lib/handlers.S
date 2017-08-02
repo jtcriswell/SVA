@@ -130,7 +130,7 @@ interrupt##x: \
  ****************************************************************************/
 .data
 .comm interrupt_table, 2048
-
+.comm cache_part_enable_sva, 8
 /*****************************************************************************
  * Text Section
  ****************************************************************************/
@@ -184,13 +184,13 @@ Trap:
 
 #ifdef SVA_LLC_PART
   pushq %rax 
-  movq cache_part_enable_sva(%rip), %rax
+  movq cache_part_enable_sva, %rax
   testq %rax, %rax
   je L20
  
   pushq %rcx
   pushq %rdx
-
+  
   movl $COS_MSR, %ecx
   movl $0, %edx
   movl $SVA_COS, %eax
@@ -428,7 +428,7 @@ L15:
 #endif
 
 #ifdef SVA_LLC_PART
-  movq cache_part_enable_sva(%rip), %rax
+  movq cache_part_enable_sva, %rax
   testq %rax, %rax
   je L24
   movl $COS_MSR, %ecx
@@ -451,7 +451,7 @@ L24:
   cli
 
 #ifdef SVA_LLC_PART
-  movq cache_part_enable_sva(%rip), %rax
+  movq cache_part_enable_sva, %rax
   testq %rax, %rax
   je L25
   movl $COS_MSR, %ecx
@@ -608,7 +608,11 @@ L14:
   pushq %rbx
   movq $0, %rbx
 #endif
+#ifdef SVA_LLC_PART
+  cmpq $USERCS, 16(%rsp)
+#else
   cmpq $USERCS, 8(%rsp)
+#endif
   jne 1f
 
 #ifdef SVA_LLC_PART
@@ -621,7 +625,7 @@ L14:
 
 #ifdef SVA_LLC_PART
   pushq %rax
-  movq cache_part_enable_sva(%rip), %rax
+  movq cache_part_enable_sva, %rax
   testq %rax, %rax
   je L21
 
@@ -684,7 +688,7 @@ SVAsyscall:
 
 #ifdef SVA_LLC_PART
   pushq %rax
-  movq cache_part_enable_sva(%rip), %rax
+  movq cache_part_enable_sva, %rax
   testq %rax, %rax
   je L22
   
@@ -905,7 +909,7 @@ L17:
 #endif
 
 #ifdef SVA_LLC_PART
-  movq cache_part_enable_sva(%rip), %rax
+  movq cache_part_enable_sva, %rax
   testq %rax, %rax
   je L26
   movl $COS_MSR, %ecx
@@ -928,7 +932,7 @@ sc_ret:
   cli
 
 #ifdef SVA_LLC_PART
-  movq cache_part_enable_sva(%rip), %rax
+  movq cache_part_enable_sva, %rax
   testq %rax, %rax
   je L27
   movl $COS_MSR, %ecx
@@ -1018,7 +1022,7 @@ L18:
 
 #ifdef SVA_LLC_PART
   pushq %rax
-  movq cache_part_enable_sva(%rip), %rax
+  movq cache_part_enable_sva, %rax
   testq %rax, %rax
   je L23
 

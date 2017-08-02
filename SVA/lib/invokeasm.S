@@ -30,6 +30,11 @@
 .global sva_invoke_except
 .type sva_invoke_except, @function
 
+#ifdef SVA_LLC_PART
+.global cache_part_enable_sva
+.type cache_part_enable_sva, @common
+#endif
+
 /*
  * Intrinsic: sva_invoke()
  *
@@ -52,7 +57,7 @@ sva_invoke:
   
   
 #ifdef SVA_LLC_PART
-  movq cache_part_enable_sva(%rip), %rax
+  movq cache_part_enable_sva, %rax
   testq %rax, %rax
   je L10
   
@@ -153,7 +158,7 @@ L2:
 #endif
 
 #ifdef SVA_LLC_PART
-  movq cache_part_enable_sva(%rip), %rax
+  movq cache_part_enable_sva, %rax
   testq %rax, %rax
   je L11
   
@@ -182,7 +187,7 @@ L11:
   RETTARGET
 
 #ifdef SVA_LLC_PART
-  movq cache_part_enable_sva(%rip), %r15
+  movq cache_part_enable_sva, %r15
   testq %r15, %r15
   je L12
 
@@ -278,7 +283,7 @@ L4:
   popq CPU_GIP(%rax)
 
 #ifdef SVA_LLC_PART
-  movq cache_part_enable_sva(%rip), %rax
+  movq cache_part_enable_sva, %rax
   testq %rax, %rax
   je L13
 

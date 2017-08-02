@@ -2006,6 +2006,7 @@ makePTReadOnly (void) {
   //protect_paging();
 }
 
+extern int cache_part_enable_sva;
 static __inline void
 wrmsr(u_int msr, uint64_t newval)
 {
@@ -2071,6 +2072,16 @@ void kernel_to_usersva_pcid(void)
 if(cache_part_enable_sva)
   wrmsr(COS_MSR, SVA_COS);
 #endif
+}
+
+void sva_enable_cache_part()
+{
+  cache_part_enable_sva = 1;
+}
+
+void sva_disable_cache_part()
+{
+  cache_part_enable_sva = 0;
 }
 
 /*
