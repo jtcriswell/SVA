@@ -16,6 +16,7 @@
 
 #include <sys/types.h>
 
+#include "sva/config.h"
 #include "sva/callbacks.h"
 #include "sva/mmu.h"
 #include "sva/state.h"
