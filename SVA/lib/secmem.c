@@ -227,6 +227,11 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
   currentThread = cpup->currentThread;
 
   /*
+   * Get the PML4E entry for the Ghost Memory for the thread.
+   */
+  pml4e_t * secmemPML4Ep = &(threadp->secmemPML4e);
+
+  /*
    * Verify that the memory is within the secure memory portion of the
    * address space.
    */
@@ -243,32 +248,31 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
        * because unmapping the page may remove page table pages that are no
        * longer needed for mapping secure pages.
        */
-      uintptr_t paddr = getPhysicalAddr (ptr);
+      uintptr_t paddr;
+      if (getPhysicalAddrFromPML4E (ptr, secmemPML4Ep, &paddr)) {
+        /*
+         * Zero out the contents of the ghost memory if it has been mapped
+         * in the current address space.
+         */
+        if (threadp == currentThread) {
+          memset (ptr, 0, X86_PAGE_SIZE);
+        }
 
-      /*
-       * Zero out the contents of the ghost memory if it has been mapped
-       * in the current address space.
-       */
-      if ((paddr) && (threadp == currentThread)) {
-        memset (ptr, 0, X86_PAGE_SIZE);
-      }
+        /*
+         * Unmap the memory from the secure memory virtual address space.
+         */
+        unmapSecurePage (threadp, ptr);
 
-      /*
-       * Unmap the memory from the secure memory virtual address space.
-       */
-      unmapSecurePage (threadp, ptr);
-
-      /*
-       * Release the memory to the operating system.  Note that we must first
-       * get the physical address of the data page as that is what the OS is
-       * expecting.
-       *
-       * TODO:
-       *  This code works around a limitation in the releaseSVAMemory()
-       *  implementation in which it only releases one page at a time to the
-       *  OS.
-       */
-      if (paddr) {
+        /*
+         * Release the memory to the operating system.  Note that we must first
+         * get the physical address of the data page as that is what the OS is
+         * expecting.
+         *
+         * TODO:
+         *  This code works around a limitation in the releaseSVAMemory()
+         *  implementation in which it only releases one page at a time to the
+         *  OS.
+         */
         releaseSVAMemory (paddr, X86_PAGE_SIZE);
       }
     }

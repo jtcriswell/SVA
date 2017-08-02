@@ -821,10 +821,107 @@ isPresent (uintptr_t * pte) {
 }
 
 /*
+ * Function: getPhysicalAddrFromPML4E()
+ *
+ * Description:
+ *  Find the physical page number of the specified virtual address.  Begin the
+ *  translation starting from the specified PML4E.
+ *
+ * Inputs:
+ *  v - The virtual address to look up.
+ *  pmlr4e - A pointer to the PML4E entry from which to start the lookup.
+ *
+ * Outputs:
+ *  paddr - A pointer into which to store the physical address.
+ *
+ * Return value:
+ *  1 - A physical frame was mapped at the specified virtual address.
+ *  0 - No frame was mapped at the specified virtual address.
+ */
+unsigned char
+getPhysicalAddrFromPML4E (void * v, pml4e_t * pml4e, uintptr_t * paddr) {
+  /* Mask to get the proper number of bits from the virtual address */
+  static const uintptr_t vmask = 0x0000000000000fffu;
+
+  /* Virtual address to convert */
+  uintptr_t vaddr  = ((uintptr_t) v);
+
+  /* Offset into the page table */
+  uintptr_t offset = 0;
+
+  /*
+   * Determine if the PML4E is present.  If not, stop the page table walk.
+   */
+  if (((*pml4e) & PG_V) == 0) {
+    return 0;
+  }
+
+  /*
+   * Use the PML4E to get the address of the PDPTE.
+   */
+  pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr);
+
+  /*
+   * Determine if the PDPTE is present.  If not, stop the page table walk.
+   */
+  if (((*pdpte) & PG_V) == 0) {
+    return 0;
+  }
+
+  /*
+   * Determine if the PDPTE has the PS flag set.  If so, then it's pointing to
+   * a 1 GB page; return the physical address of that page.
+   */
+  if ((*pdpte) & PTE_PS) {
+    *paddr = ((*pdpte & 0x000fffffffffffffu) >> 30);
+    return 1;
+  }
+
+  /*
+   * Find the page directory entry table from the PDPTE value.
+   */
+  pde_t * pde = get_pdeVaddr (pdpte, vaddr);
+
+  /*
+   * Determine if the PDE is present.  If not, stop the page table walk.
+   */
+  if (((*pde) & PG_V) == 0) {
+    return 0;
+  }
+
+  /*
+   * Determine if the PDE has the PS flag set.  If so, then it's pointing to a
+   * 2 MB page; return the physical address of that page.
+   */
+  if ((*pde) & PTE_PS) {
+    *paddr = ((*pde & 0x000fffffffe00000u) + (vaddr & 0x1fffffu));
+    return 1;
+  }
+
+  /*
+   * Find the PTE pointed to by this PDE.
+   */
+  pte_t * pte = get_pteVaddr (pde, vaddr);
+
+  /*
+   * Compute the physical address.
+   */
+  if ((*pte) & PG_V) {
+    offset = vaddr & vmask;
+    *paddr = ((*pte & 0x000ffffffffff000u) + offset);
+    return 1;
+  }
+
+  /* No entry was found.  Return zero */
+  return 0;
+}
+
+/*
  * Function: getPhysicalAddr()
  *
  * Description:
- *  Find the physical page number of the specified virtual address.
+ *  Find the physical page number of the specified virtual address using the
+ *  virtual address space currently in use on this processor.
  */
 uintptr_t
 getPhysicalAddr (void * v) {
@@ -834,8 +931,8 @@ getPhysicalAddr (void * v) {
   /* Virtual address to convert */
   uintptr_t vaddr  = ((uintptr_t) v);
 
-  /* Offset into the page table */
-  uintptr_t offset = 0;
+  /* Physical address */
+  uintptr_t paddr;
 
   /*
    * Get the currently active page table.
@@ -848,42 +945,13 @@ getPhysicalAddr (void * v) {
   pml4e_t * pml4e = get_pml4eVaddr (cr3, vaddr);
 
   /*
-   * Use the PML4E to get the address of the PDPTE.
+   * Perform the rest of the page table walk.
    */
-  pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr);
-
-  /*
-   * Determine if the PDPTE has the PS flag set.  If so, then it's pointing to
-   * a 1 GB page; return the physical address of that page.
-   */
-  if ((*pdpte) & PTE_PS) {
-    return (*pdpte & 0x000fffffffffffffu) >> 30;
+  if (getPhysicalAddrFromPML4E (v, pml4e, &paddr)) {
+    return paddr;
   }
 
-  /*
-   * Find the page directory entry table from the PDPTE value.
-   */
-  pde_t * pde = get_pdeVaddr (pdpte, vaddr);
-
-  /*
-   * Determine if the PDE has the PS flag set.  If so, then it's pointing to a
-   * 2 MB page; return the physical address of that page.
-   */
-  if ((*pde) & PTE_PS) {
-    return (*pde & 0x000fffffffe00000u) + (vaddr & 0x1fffffu);
-  }
-
-  /*
-   * Find the PTE pointed to by this PDE.
-   */
-  pte_t * pte = get_pteVaddr (pde, vaddr);
-
-  /*
-   * Compute the physical address.
-   */
-  offset = vaddr & vmask;
-  uintptr_t paddr = (*pte & 0x000ffffffffff000u) + offset;
-  return paddr;
+  return 0;
 }
 
 /* Cache of page table pages */
@@ -1231,8 +1299,7 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
 void
 unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
   /*
-   * Get the PML4E of the current page table.  If there isn't one in the
-   * table, add one.
+   * Get the PML4E of the page table associated with the specified thread.
    */
   uintptr_t vaddr = (uintptr_t) v;
   pdpte_t * pdpte = get_pdpteVaddr (&(threadp->secmemPML4e), vaddr);
