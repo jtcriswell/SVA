@@ -821,13 +821,14 @@ isPresent (uintptr_t * pte) {
 }
 
 /*
- * Function: getPhysicalAddr()
+ * Function: getPhysicalAddrFromPML4E()
  *
  * Description:
- *  Find the physical page number of the specified virtual address.
+ *  Find the physical page number of the specified virtual address.  Begin the
+ *  translation starting from the specified PML4E.
  */
 uintptr_t
-getPhysicalAddr (void * v) {
+getPhysicalAddrFromPML4E (void * v, pml4e_t * pml4e) {
   /* Mask to get the proper number of bits from the virtual address */
   static const uintptr_t vmask = 0x0000000000000fffu;
 
@@ -836,16 +837,6 @@ getPhysicalAddr (void * v) {
 
   /* Offset into the page table */
   uintptr_t offset = 0;
-
-  /*
-   * Get the currently active page table.
-   */
-  unsigned char * cr3 = get_pagetable();
-
-  /*
-   * Get the address of the PML4e.
-   */
-  pml4e_t * pml4e = get_pml4eVaddr (cr3, vaddr);
 
   /*
    * Use the PML4E to get the address of the PDPTE.
@@ -884,6 +875,37 @@ getPhysicalAddr (void * v) {
   offset = vaddr & vmask;
   uintptr_t paddr = (*pte & 0x000ffffffffff000u) + offset;
   return paddr;
+}
+
+/*
+ * Function: getPhysicalAddr()
+ *
+ * Description:
+ *  Find the physical page number of the specified virtual address using the
+ *  virtual address space currently in use on this processor.
+ */
+uintptr_t
+getPhysicalAddr (void * v) {
+  /* Mask to get the proper number of bits from the virtual address */
+  static const uintptr_t vmask = 0x0000000000000fffu;
+
+  /* Virtual address to convert */
+  uintptr_t vaddr  = ((uintptr_t) v);
+
+  /*
+   * Get the currently active page table.
+   */
+  unsigned char * cr3 = get_pagetable();
+
+  /*
+   * Get the address of the PML4e.
+   */
+  pml4e_t * pml4e = get_pml4eVaddr (cr3, vaddr);
+
+  /*
+   * Perform the rest of the page table walk.
+   */
+  return getPhysicalAddrFromPML4E (v, pml4e);
 }
 
 /* Cache of page table pages */
