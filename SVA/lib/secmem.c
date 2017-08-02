@@ -225,25 +225,28 @@ freeSecureMemory (void) {
      */
     memset (p, 0, size);
 
+#if 0
     /*
      * Get the physical address before unmapping the page.  We do this because
      * unmapping the page may remove page table pages that are no longer
      * needed for mapping secure pages.
      */
     uintptr_t paddr = getPhysicalAddr (p);
+#endif
 
     /*
      * Unmap the memory from the secure memory virtual address space.
      */
     struct CPUState * cpup = getCPUState();
-    unmapSecurePage (cpup->currentThread, p);
+    uintptr_t paddr = unmapSecurePage (cpup->currentThread, p);
 
     /*
      * Release the memory to the operating system.  Note that we must first
      * get the physical address of the data page as that is what the OS is
      * expecting.
      */
-    releaseSVAMemory (paddr, size);
+    if (paddr != 0)
+      releaseSVAMemory (paddr, size);
   }
 
   return;

@@ -1448,28 +1448,32 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
  *            of secure memory.
  *  v       - The virtual address to unmap.
  *
+ * Return value:
+ *  The physical address of the unmapped page on success, 0 otherwise
+ *
  * TODO:
  *  Implement code that will tell other processors to invalidate their TLB
  *  entries for this page.
  */
-void
+uintptr_t
 unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
   /*
    * Get the PML4E of the current page table.  If there isn't one in the
    * table, add one.
    */
   uintptr_t vaddr = (uintptr_t) v;
+  uintptr_t paddr = 0;
 #ifdef SVA_DMAP
   pdpte_t * pdpte = get_svaDmap_pdpteVaddr (&(threadp->secmemPML4e), vaddr);
 #else
   pdpte_t * pdpte = get_pdpteVaddr (&(threadp->secmemPML4e), vaddr);
 #endif
   if (!isPresent (pdpte)) {
-    return;
+    return 0;
   }
 
   if ((*pdpte) & PTE_PS) {
-    return;
+    return 0;
   }
 
   /*
@@ -1481,11 +1485,11 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
   pde_t * pde = get_pdeVaddr (pdpte, vaddr);
 #endif
   if (!isPresent (pde)) {
-    return;
+    return 0;
   }
 
   if ((*pde) & PTE_PS) {
-    return;
+    return 0;
   }
 
   /*
@@ -1497,7 +1501,7 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
   pte_t * pte = get_pteVaddr (pde, vaddr);
 #endif
   if (!isPresent (pte)) {
-    return;
+    return 0;
   }
 
   /*
@@ -1512,6 +1516,7 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
 #ifndef SVA_DMAP
   unprotect_paging();
 #endif
+  paddr = *pte & PG_FRAME;
   *pte = 0;
 
   /*
@@ -1547,7 +1552,7 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
 #ifndef SVA_DMAP
   protect_paging();
 #endif
-  return;
+  return paddr;
 }
 
 /*
