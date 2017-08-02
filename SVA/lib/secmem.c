@@ -207,6 +207,25 @@ allocSecureMemory (void) {
  */
 void
 ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
+  /* Per-CPU data structure maintained by SVA */
+  struct CPUState * cpup;
+
+  /* Pointer to thread currently executing on the CPU */
+  struct SVAThread * currentThread;
+
+  /*
+   * If the amount of memory to free is zero, do nothing.
+   */
+  if (size == 0) {
+    return;
+  }
+
+  /*
+   * Get a pointer to the thread currently running on the CPU.
+   */
+  cpup = getCPUState();
+  currentThread = cpup->currentThread;
+
   /*
    * Verify that the memory is within the secure memory portion of the
    * address space.
@@ -214,11 +233,6 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
   uintptr_t pint = (uintptr_t) p;
   if ((SECMEMSTART <= pint) && (pint < SECMEMEND) &&
      (SECMEMSTART <= (pint + size)) && ((pint + size) < SECMEMEND)) {
-    /*
-     * Zero out the contents of the ghost memory.
-     */
-    memset (p, 0, size);
-
     /*
      * Loop through each page of the ghost memory until all of the frames
      * have been returned to the operating system kernel.
@@ -230,6 +244,14 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
        * longer needed for mapping secure pages.
        */
       uintptr_t paddr = getPhysicalAddr (ptr);
+
+      /*
+       * Zero out the contents of the ghost memory if it has been mapped
+       * in the current address space.
+       */
+      if ((paddr) && (threadp == currentThread)) {
+        memset (ptr, 0, X86_PAGE_SIZE);
+      }
 
       /*
        * Unmap the memory from the secure memory virtual address space.
@@ -246,7 +268,9 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
        *  implementation in which it only releases one page at a time to the
        *  OS.
        */
-      releaseSVAMemory (paddr, X86_PAGE_SIZE);
+      if (paddr) {
+        releaseSVAMemory (paddr, X86_PAGE_SIZE);
+      }
     }
   }
 

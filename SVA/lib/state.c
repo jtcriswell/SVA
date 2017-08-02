@@ -1036,13 +1036,13 @@ sva_release_stack (uintptr_t id) {
     return;
 
   /*
-   * Release ghost memory.  Be sure to use the value of CR3 belonging to the
-   * thread that is being released.
+   * Release ghost memory belonging to the thread that we are deallocating.
    */
-  for (uintptr_t size=0; size < newThread->secmemSize; size += X86_PAGE_SIZE) {
-    if (vg) {
-      unmapSecurePage (newThread, (unsigned char *)(SECMEMSTART + size));
-    }
+  if (vg) {
+    extern void
+    ghostFree (struct SVAThread * tp, unsigned char * p, intptr_t size);
+    unsigned char * secmemStart = (unsigned char *)(SECMEMSTART);
+    ghostFree (newThread, secmemStart, newThread->secmemSize);
   }
 
   /*
