@@ -1253,8 +1253,7 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
 void
 unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
   /*
-   * Get the PML4E of the current page table.  If there isn't one in the
-   * table, add one.
+   * Get the PML4E of the page table associated with the specified thread.
    */
   uintptr_t vaddr = (uintptr_t) v;
   pdpte_t * pdpte = get_pdpteVaddr (&(threadp->secmemPML4e), vaddr);
