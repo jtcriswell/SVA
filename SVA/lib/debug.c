@@ -96,43 +96,60 @@ sva_trapframe (struct trapframe * tf) {
 #endif
 
   /*
-   * Store the fields into the trap frame.
+   * Store the fields into the trap frame.  Omit those belonging to the
+   * application if Virtual Ghost is enabled.
    */
-  tf->tf_rdi = p->rdi;
-  tf->tf_rsi = p->rsi;
-  tf->tf_rcx = p->rcx;
-  tf->tf_r8  = p->r8;
-  tf->tf_r9  = p->r9;
-  tf->tf_rax = p->rax;
-  tf->tf_rbx = p->rbx;
-  tf->tf_rdx = p->rdx;
-  tf->tf_rbp = p->rbp;
-  tf->tf_r10 = p->r10;
-  tf->tf_r11 = p->r11;
-  tf->tf_r12 = p->r12;
-  tf->tf_r13 = p->r13;
-  tf->tf_r14 = p->r14;
-  tf->tf_r15 = p->r15;
+  if (copyICToTrapFrame) {
+    tf->tf_rdi = p->rdi;
+    tf->tf_rsi = p->rsi;
+    tf->tf_rcx = p->rcx;
+    tf->tf_r8  = p->r8;
+    tf->tf_r9  = p->r9;
+    tf->tf_rax = p->rax;
+    tf->tf_rbx = p->rbx;
+    tf->tf_rdx = p->rdx;
+    tf->tf_rbp = p->rbp;
+    tf->tf_r10 = p->r10;
+    tf->tf_r11 = p->r11;
+    tf->tf_r12 = p->r12;
+    tf->tf_r13 = p->r13;
+    tf->tf_r14 = p->r14;
+    tf->tf_r15 = p->r15;
+  }
 
   tf->tf_trapno = p->trapno;
 
-
-  tf->tf_fs = p->fs;
-  tf->tf_gs = p->gs;
-  tf->tf_addr = 0;
-  tf->tf_es = p->es;
+  if (copyICToTrapFrame) {
+    tf->tf_fs = p->fs;
+    tf->tf_gs = p->gs;
+    tf->tf_es = p->es;
 #if 0
-  tf->tf_ds = p->ds;
+    tf->tf_ds = p->ds;
 #else
-  tf->tf_ds = 0;
+    tf->tf_ds = 0;
 #endif
+  }
 
+  /* Set the address that caused the page fault to zero */
+  tf->tf_addr = 0;
+
+  /* Set the error code */
   tf->tf_err = p->code;
-  tf->tf_rip = p->rip;
-  tf->tf_cs = p->cs;
-  tf->tf_rflags = p->rflags;
-  tf->tf_rsp = (unsigned long)(p->rsp);
+
+  /* Only save the program counter if Virtual Ghost is disabled */
+  if (copyICToTrapFrame) {
+    tf->tf_rip = p->rip;
+    tf->tf_rsp = (unsigned long)(p->rsp);
+  }
+
+  /* Limit the status flags that the process is allowed to see */
+  if (copyICToTrapFrame) {
+    tf->tf_rflags = p->rflags;
+  } else {
+    tf->tf_rflags = (p->rflags) & EFLAGS_IF;
+  }
   tf->tf_ss = p->ss;
+  tf->tf_cs = p->cs;
 
   return;
 }
@@ -169,34 +186,48 @@ sva_syscall_trapframe (struct trapframe * tf) {
    */
   tf->tf_rdi = p->rdi;
   tf->tf_rsi = p->rsi;
+  tf->tf_rdx = p->rdx;
   tf->tf_rcx = p->r10;  /* Done for system call ABI */
   tf->tf_r8  = p->r8;
   tf->tf_r9  = p->r9;
   tf->tf_rax = p->rax;
-  tf->tf_rbx = p->rbx;
-  tf->tf_rdx = p->rdx;
-  tf->tf_rbp = p->rbp;
-  tf->tf_r10 = p->r10;
-  tf->tf_r11 = p->r11;
-  tf->tf_r12 = p->r12;
-  tf->tf_r13 = p->r13;
-  tf->tf_r14 = p->r14;
-  tf->tf_r15 = p->r15;
+
+  if (copyICToTrapFrame) {
+    tf->tf_rbx = p->rbx;
+    tf->tf_rbp = p->rbp;
+    tf->tf_r10 = p->r10;
+    tf->tf_r11 = p->r11;
+    tf->tf_r12 = p->r12;
+    tf->tf_r13 = p->r13;
+    tf->tf_r14 = p->r14;
+    tf->tf_r15 = p->r15;
+  }
 
   tf->tf_trapno = p->trapno;
-
-
-  tf->tf_fs = p->fs;
-  tf->tf_gs = p->gs;
-  tf->tf_addr = 0;
-  tf->tf_es = p->es;
-  tf->tf_ds = p->ds;
-
   tf->tf_err = p->code;
-  tf->tf_rip = p->rcx;
+  tf->tf_addr = 0;
+
+  if (copyICToTrapFrame) {
+    tf->tf_fs = p->fs;
+    tf->tf_gs = p->gs;
+    tf->tf_es = p->es;
+    tf->tf_ds = p->ds;
+  }
+
+  /* Don't leak the program counter if Virtual Ghost is enabled */
   tf->tf_cs = p->cs;
-  tf->tf_rflags = p->r11;
-  tf->tf_rsp = (unsigned long)(p->rsp);
+  if (copyICToTrapFrame) {
+    tf->tf_rip = p->rcx;
+  }
+  if (copyICToTrapFrame) {
+    tf->tf_rflags = p->r11;
+  } else {
+    tf->tf_rflags = ((p->r11) & EFLAGS_IF);
+  }
+
+  if (copyICToTrapFrame) {
+    tf->tf_rsp = (unsigned long)(p->rsp);
+  }
   tf->tf_ss = p->ss;
 
   return;
