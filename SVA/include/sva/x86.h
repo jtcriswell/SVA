@@ -54,6 +54,9 @@ typedef struct {
   unsigned int iomap __attribute__((packed));
 } tss_t;
 
+/* Flags for x86 processor status register (EFLAGS and RFLAGS) */
+static const unsigned EFLAGS_IF = (1u << 9);
+
 /* Flags bits in x86_64 PTE entries */
 static const unsigned PTE_PRESENT  = 0x0001u;
 static const unsigned PTE_CANWRITE = 0x0002u;

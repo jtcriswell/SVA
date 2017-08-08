@@ -44,6 +44,9 @@ static unsigned char disableMMUChecks = 0;
 static unsigned char disableMMUChecks = 1;
 #endif
 
+/* Enable copying of the Interrupt Context to Trapframe for Debugging */
+static unsigned char copyICToTrapFrame = 0;
+
 /* Total number of processors supported by this SVA Execution Engine */
 static const unsigned int numProcessors=2;
 
