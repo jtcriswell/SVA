@@ -604,22 +604,40 @@ L14:
   addq $0x98, %rsp
 
   /* Determine whether we interrupted user or supervisor mode execution. */
-#ifdef SVA_LLC_PART
-  pushq %rbx
-  movq $0, %rbx
-#endif
-#ifdef SVA_LLC_PART
-  cmpq $USERCS, 16(%rsp)
-#else
   cmpq $USERCS, 8(%rsp)
-#endif
   jne 1f
 
 #ifdef SVA_LLC_PART
-  movq $1, %rbx 
+  pushq %rax
+  movq cache_part_enable_sva, %rax
+  testq %rax, %rax
+  je L21
+
+  pushq %rcx
+  pushq %rdx
+
+  movl $COS_MSR, %ecx
+  movl $0, %edx
+
+  movq %gs:0x260, %rax              // Test whether secmemSize is 0; if yes, use kernel's LLC partition
+  movq CPU_THREAD(%rax), %rax
+  movq 0x7d58(%rax), %rax
+  testq %rax, %rax
+  je L29
+
+  movl $APP_COS, %eax
+  wrmsr
+ 
+  popq %rdx
+  popq %rcx
 #endif
+
   /* We came from user mode.  First switch to the kernel %GS register. */
   swapgs
+
+#ifdef SVA_LLC_PART
+  jmp L21
+#endif
 
 1:
 
@@ -634,20 +652,18 @@ L14:
 
   movl $COS_MSR, %ecx
   movl $0, %edx
-  testq %rbx, %rbx
-  je L28
-  movl $APP_COS, %eax
-  jmp L29
+  jmp L28
+
+L29:
+  swapgs
 L28:
   movl $OS_COS, %eax
-L29:
   wrmsr
 
   popq %rdx
   popq %rcx
 L21:
   popq %rax
-  popq %rbx
 #endif
 
   /*
@@ -1031,7 +1047,19 @@ L18:
 
   movl $COS_MSR, %ecx
   movl $0, %edx
+
+  movq %gs:0x260, %rax              // Test whether secmemSize is 0; if yes, use kernel's LLC partition
+  movq CPU_THREAD(%rax), %rax
+  movq 0x7d58(%rax), %rax 
+  testq %rax, %rax
+  je L30
+
   movl $APP_COS, %eax
+  jmp L31
+L30:
+  movl $OS_COS, %eax
+
+L31:
   wrmsr
 
   popq %rdx
