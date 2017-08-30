@@ -1435,13 +1435,13 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
      */
     uintptr_t pdpte_paddr = PTPages[ptindex].paddr;
     *pdpte = (pdpte_paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
+
+    /*
+     * Note that we've added another translation to the pml4e.
+     */
+    updateUses (pdpte);
   }
   *pdpte |= PTE_CANUSER;
-
-  /*
-   * Note that we've added another translation to the pml4e.
-   */
-  updateUses (pdpte);
 
   if ((*pdpte) & PTE_PS) {
     printf ("mapSecurePage: PDPTE has PS BIT\n");
@@ -1467,13 +1467,13 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
      */
     uintptr_t pde_paddr = PTPages[ptindex].paddr;
     *pde = (pde_paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
+
+    /*
+     * Note that we've added another translation to the pdpte.
+     */
+    updateUses (pde);
   }
   *pde |= PTE_CANUSER;
-
-  /*
-   * Note that we've added another translation to the pdpte.
-   */
-  updateUses (pde);
 
   if ((*pde) & PTE_PS) {
     printf ("mapSecurePage: PDE has PS BIT\n");
@@ -1629,8 +1629,9 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
       freePTPage (ptindex);
       *pdpte = 0;
       if ((ptindex = releaseUse (pdpte))) {
-#if 0
         freePTPage (ptindex);
+        threadp->secmemPML4e = 0;
+#if 0
         if ((ptindex = releaseUse (getVirtual(*thread->secmemPML4e)))) {
           freePTPage (ptindex);
         }
