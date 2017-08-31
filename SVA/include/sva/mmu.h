@@ -734,4 +734,10 @@ unprotect_paging(void) {
 void usersva_to_kernel_pcid(void);
 void kernel_to_usersva_pcid(void);
 
+static __inline void
+wbinvd(void)
+{   
+  __asm __volatile("wbinvd");
+} 
+
 #endif
