@@ -33,6 +33,12 @@ static const unsigned char usempx = 1;
 static const unsigned char usempx = 0;
 #endif
 
+/* Enable or Disable the use of page table side-channel defenses*/
+#ifdef SVA_PG_DEF
+static const unsigned char pgdef = 1;
+#else
+static const unsigned char pgdef = 0;
+#endif
 
 /* Configure whether to use the hack that keeps page tables writeable */
 static unsigned char keepPTWriteableHack = 1;
