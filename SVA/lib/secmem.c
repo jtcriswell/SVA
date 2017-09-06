@@ -317,7 +317,7 @@ freeSecureMemory (void) {
 }
 
 void
-sva_ghost_fault (uintptr_t vaddr) {
+sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
   uint64_t tsc_tmp;
   if(tsc_read_enable_sva)
      tsc_tmp = sva_read_tsc();
@@ -342,6 +342,50 @@ sva_ghost_fault (uintptr_t vaddr) {
    */
   struct CPUState * cpup = getCPUState();
   struct SVAThread * threadp = cpup->currentThread;
+
+  /* copy-on-write page fault */
+  if((code & PGEX_P) && (code & PGEX_W)){
+ 	pml4e = get_pml4eVaddr (get_pagetable(), vaddr);
+	if(!isPresent (pml4e)) 
+		panic("sva_ghost_fault: cow pgfault pml4e %p does not exist\n", pml4e);
+	pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr);
+	if(!isPresent (pdpte)) 
+		panic("sva_ghost_fault: cow pgfault pdpte %p does not exist\n", pdpte);
+	pde_t * pde = get_pdeVaddr (pdpte, vaddr);
+	if(!isPresent (pde)) 
+		panic("sva_ghost_fault: cow pgfault pde %p does not exist\n", pde);
+	pte_t * pte = get_pteVaddr (pde, vaddr);
+	uintptr_t paddr = *pte & PG_FRAME;
+	page_desc_t * pgDesc = getPageDescPtr (paddr);
+
+	/* If only one process maps this page, directly grant this process write permission */
+	if(pgDesc->count == 1)
+		* pte = (* pte) | PTE_CANWRITE;
+	/* Otherwise copy-on-write */
+	else
+	{
+		uintptr_t vaddr_svaDmap = getVirtualSVADMAP(paddr);
+
+		uintptr_t paddr_new = provideSVAMemory (X86_PAGE_SIZE);
+		page_desc_t * pgDesc_new = getPageDescPtr (paddr_new);
+  		if (pgRefCount (pgDesc_new) > 1) {
+    			panic ("SVA: Ghost page still in use somewhere else!\n");
+  		}
+  		if (isPTP(pgDesc_new) || isCodePG (pgDesc_new)) {
+    			panic ("SVA: Ghost page has wrong type!\n");
+  		} 
+		memcpy(getVirtualSVADMAP(paddr_new), vaddr_svaDmap, X86_PAGE_SIZE);    
+		*pte = (paddr_new & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
+		
+		
+		getPageDescPtr (paddr_new)->type = PG_GHOST;
+		getPageDescPtr (paddr)->count = 1;
+		pgDesc->count --;
+	}
+
+  	return; 
+  }
+
 
   /*
    * Determine if this is the first secure memory allocation.

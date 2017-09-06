@@ -1507,7 +1507,7 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
    * Mark the physical page frame as a ghost memory page frame.
    */
   getPageDescPtr (paddr)->type = PG_GHOST;
-
+  getPageDescPtr (paddr)->count = 1;
   /*
    * Mark the physical page frames used to map the entry as Ghost Page Table
    * Pages.  Note that we don't mark the PML4E as a ghost page table page
@@ -3342,4 +3342,142 @@ void sva_set_kernel_pml4pg_ready(uintptr_t orig_phys)
   page_desc_t * usersva_ptDesc = getPageDescPtr(orig_phys);
   usersva_ptDesc->other_pgPaddr = usersva_ptDesc->other_pgPaddr & ~PML4_SWITCH_DISABLE;
 
+}
+
+void
+ghostmemCOW(struct SVAThread* newThread, struct SVAThread* oldThread)
+{
+    
+    uintptr_t vaddr_start, vaddr_end, size;
+    
+    vaddr_start = (uintptr_t) SECMEMSTART;
+    size = oldThread->secmemSize;
+    vaddr_end = vaddr_start + oldThread->secmemSize;    
+
+   /*
+    * Get the PML4E of the new process's page table.  If there isn't one in the
+    * table, add one.
+    */
+    pml4e_t * pml4e =  (pml4e_t *) getVirtualSVADMAP((newThread->integerState).cr3 + secmemOffset);
+    newThread->secmemPML4e = *pml4e;
+
+    if (!isPresent (pml4e)) {
+    /* Page table page index */
+    unsigned int ptindex;
+
+    /* Fetch a new page table page */
+    ptindex = allocPTPage ();
+
+    /*
+     * Install a new PDPTE entry using the page.
+     */
+    uintptr_t paddr = PTPages[ptindex].paddr;
+    *pml4e = (paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
+    } 
+    
+    /*
+     * Enable writing to the virtual address space used for secure memory.
+     */
+    *pml4e |= PTE_CANUSER;
+
+    uintptr_t base = oldThread->secmemPML4e & 0x000ffffffffff000u;
+    uintptr_t offset = (vaddr_start >> (30 - 3)) & vmask; 
+    pdpte_t * src_pdpte = (pdpte_t *) getVirtualSVADMAP (base | offset);;
+    pdpte_t * pdpte = get_svaDmap_pdpteVaddr (pml4e, vaddr_start);
+    
+    for(uintptr_t vaddr_pdp = vaddr_start;
+	  vaddr_pdp < vaddr_end; 
+	  vaddr_pdp += NBPDP,\
+	  src_pdpte += sizeof(pdpte_t),\
+	  pdpte += sizeof(pdpte_t))
+    {
+	   
+	   if(!isPresent (src_pdpte))
+		panic("parent process ghosting memory pdpte 0x%p does not exist!\n", src_pdpte);
+           if (!isPresent (pdpte)) {
+             /* Page table page index */
+             unsigned int ptindex;
+
+             /* Fetch a new page table page */
+             ptindex = allocPTPage ();
+
+             /*
+              * Install a new PDPTE entry using the page.
+              */
+             uintptr_t pdpte_paddr = PTPages[ptindex].paddr;
+             *pdpte = (pdpte_paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
+           }
+           *pdpte |= PTE_CANUSER;
+
+          /*
+           * Note that we've added another translation to the pml4e.
+           */
+           updateUses (pdpte);
+
+           if ((*pdpte) & PTE_PS) {
+              printf ("sva_cow_ghostmem: PDPTE has PS BIT\n");
+           }
+
+	   pde_t * src_pde = get_svaDmap_pdeVaddr (src_pdpte, vaddr_pdp);
+  	   pde_t * pde = get_svaDmap_pdeVaddr (pdpte, vaddr_pdp);
+           for(uintptr_t vaddr_pde = vaddr_pdp;
+	       vaddr_pde < vaddr_pdp + NBPDP; 
+	       vaddr_pde += NBPDR,\
+	       src_pde += sizeof(pde_t),\
+	       pde += sizeof(pde_t)) 
+	    {
+		/*
+   		 * Get the PDE entry (or add it if it is not present).
+   		 */
+		 if(!isPresent (src_pde))
+			panic("parent process ghosting memory pde 0x%p does not exist!\n", src_pde);
+  		 if (!isPresent (pde)) {
+    			/* Page table page index */
+    			unsigned int ptindex;
+
+    			/* Fetch a new page table page */
+    			ptindex = allocPTPage ();
+
+    			/*
+     			 * Install a new PDE entry.
+     			 */
+    			uintptr_t pde_paddr = PTPages[ptindex].paddr;
+    			*pde = (pde_paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
+  		}
+  		*pde |= PTE_CANUSER;
+
+  		/*
+   		* Note that we've added another translation to the pdpte.
+   		*/
+  		updateUses (pde);
+
+  		if ((*pde) & PTE_PS) {
+    			printf ("sva_cow_ghostmem: PDE has PS BIT\n");
+  		}
+		
+		
+		pde_t * src_pte = get_svaDmap_pteVaddr (src_pde, vaddr_pde);
+  	        pde_t * pte = get_svaDmap_pteVaddr (pde, vaddr_pde);
+
+	 	for(uintptr_t vaddr_pte = vaddr_pde;
+	        vaddr_pte < vaddr_pde + NBPDR; 
+	        vaddr_pte += PAGE_SIZE,\
+	        src_pte += sizeof(pte_t),\
+	        pte += sizeof(pte_t))
+	        {
+			if(!isPresent (src_pte))
+				panic("parent process ghosting memory pte 0x%p does not exist!\n", src_pte);
+		} 
+
+		*src_pte &= ~PTE_CANWRITE; 
+		*pte = *src_pte;
+		
+		page_desc_t * pgDesc = getPageDescPtr (*src_pte & PG_FRAME);
+		if(pgDesc->type != PG_GHOST)
+			panic("sva_cow_ghostmem: page is not a ghost memory page!\n");
+		pgDesc->count ++;
+			
+	    }
+    }
+           
 }

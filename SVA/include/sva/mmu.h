@@ -280,6 +280,11 @@ typedef struct page_desc_t {
 /* ASID/page table switch*/
 #define PML4PML4I   (NPML4EPG/2)    /* Index of recursive pml4 mapping */
 #define PML4_SWITCH_DISABLE 0x10    /*Disable pmle4 page table page switch in Trap() handler*/
+
+/* Page fault code flags*/
+#define PGEX_P      0x01    /* Protection violation vs. not present */
+#define PGEX_W      0x02    /* during a Write cycle */
+
 /*
  * ===========================================================================
  * END FreeBSD CODE BLOCK
