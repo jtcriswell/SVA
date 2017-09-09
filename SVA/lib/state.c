@@ -1382,11 +1382,6 @@ sva_init_stack (unsigned char * start_stackp,
     icontextp->valid |= IC_is_valid;
   }
 
-#ifdef SVA_DMAP
-  //if((flags & RFPROC) && !(flags & RFMEM)) we need to port flags in as an argument
-  ghostmemCOW(oldThread, newThread);
-#endif
-
   /*
    * Re-enable interrupts.
    */

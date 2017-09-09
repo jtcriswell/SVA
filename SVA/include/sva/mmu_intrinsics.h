@@ -89,8 +89,6 @@ extern void sva_mmu_init(pml4e_t * kpml4Mapping,
 /* Key initialization and secure storage allocation */
 extern void * sva_translate(void * entryPoint);
 
-/* COW on ghost memory at fork */
-extern void ghostmemCOW(struct SVAThread* newThread, struct SVAThread* oldThread);
 /*
  *****************************************************************************
  * SVA intrinsics implemented as inline functions
