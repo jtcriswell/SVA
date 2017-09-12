@@ -16,10 +16,200 @@
 
 #include <sys/types.h>
 
+#include "sva/config.h"
 #include "sva/callbacks.h"
 #include "sva/mmu.h"
 #include "sva/state.h"
 #include "sva/util.h"
+
+#ifdef VG_RANDOM
+
+/* Size of frame cache queue */
+#define FRAME_CACHE_SIZE 4096
+
+extern u_long random(void);
+
+/* Frame cache queue */
+static uintptr_t frame_cache[FRAME_CACHE_SIZE];
+
+/* Front and rear of frame cache queue */
+static int frame_cache_st = 0;
+static int frame_cache_ed = 0;
+
+/*
+ * Internal frame cache queue operations, should not be called anywhere
+ * else except in alloc_frame() and free_frame().
+ */
+static inline int frame_cache_used(void);
+static inline int frame_cache_full(void);
+static inline int frame_cache_empty(void);
+static inline void frame_enqueue(uintptr_t paddr);
+static inline uintptr_t frame_dequeue(void);
+static inline void fill_in_random_frames(void);
+static inline void release_random_frames(void);
+
+/*
+ * Function: frame_cache_used()
+ *
+ * Description:
+ *  Return the number of frames currently in the frame cache.
+ */
+static inline int
+frame_cache_used(void) {
+  return (frame_cache_ed - frame_cache_st + FRAME_CACHE_SIZE) % FRAME_CACHE_SIZE;
+}
+
+/*
+ * Function: frame_cache_full()
+ *
+ * Description:
+ *  Determine if the frame cache queue is full.
+ */
+static inline int
+frame_cache_full(void) {
+  return frame_cache_used() == FRAME_CACHE_SIZE - 1;
+}
+
+/*
+ * Function: frame_cache_empty()
+ *
+ * Description:
+ *  Determine if the frame cache queue is empty.
+ */
+static inline int
+frame_cache_empty(void) {
+  return frame_cache_used() == 0;
+}
+
+/*
+ * Function: frame_enqueue()
+ *
+ * Description:
+ *  Enqueue a frame into the frame cache queue.
+ *
+ * Input:
+ *  paddr - physical addree of the frame to enqueue
+ */
+static inline void
+frame_enqueue(uintptr_t paddr) {
+  /* If our cache is full, release some frames */
+  if (frame_cache_full()) {
+    release_random_frames();
+  }
+
+  frame_cache[frame_cache_ed] = paddr;
+  frame_cache_ed = (frame_cache_ed + 1) % FRAME_CACHE_SIZE;
+}
+
+/*
+ * Function: frame_dequeue()
+ *
+ * Description:
+ *  Dequeue a frame out of the frame cache queue.
+ */
+static inline uintptr_t
+frame_dequeue(void) {
+  uintptr_t paddr = 0;
+
+  /* If we don't have any frames in cache, grab some */
+  if (frame_cache_empty()) {
+    fill_in_random_frames();
+  }
+
+  paddr = frame_cache[frame_cache_st];
+  frame_cache[frame_cache_st] = 0;
+  frame_cache_st = (frame_cache_st + 1) % FRAME_CACHE_SIZE;
+
+  return paddr;
+}
+
+/*
+ * Function: fill_in_random_frames()
+ *
+ * Description:
+ *  Allocate some random number of frames and put them into the frame
+ *  cache queue.
+ */
+static inline void
+fill_in_random_frames(void) {
+  int i, max_nframe, nframe;
+  uintptr_t paddr;
+
+  /*
+   * Generate a suitable random number (between 1 and current max
+   * capacity of frame cache queue) so that we can call frame_enqueue()
+   * without triggering release_random_frames().
+   */
+  max_nframe = FRAME_CACHE_SIZE - 1 - frame_cache_used();
+  nframe = random() % max_nframe + 1;
+
+  printf("%s: allocating %d frames\n", __func__, nframe);
+
+  for (int i = 0; i < nframe; ++i) {
+    paddr = provideSVAMemory(X86_PAGE_SIZE);
+    frame_enqueue(paddr);
+  }
+}
+
+/*
+ * Function: release_random_frames()
+ *
+ * Description:
+ *  Dequeue and free some random number of frames in the frame cache
+ *  queue.
+ */
+static inline void
+release_random_frames(void) {
+  int i, max_nframe, nframe;
+  uintptr_t paddr;
+
+  /*
+   * Generate a suitable random number (between 1 and current occupancy
+   * of frame cache queue) so that we can call frame_dequeue() without
+   * triggering fill_in_random_frames().
+   */
+  max_nframe = frame_cache_used();
+  nframe = random() % max_nframe + 1;
+
+  printf("%s: freeing %d frames\n", __func__, nframe);
+
+  for (i = 0; i < nframe; ++i) {
+    paddr = frame_dequeue();
+    releaseSVAMemory(paddr, X86_PAGE_SIZE);
+  }
+}
+
+#endif /* VG_RANDOM */
+
+/*
+ * Function: alloc_frame()
+ *
+ * Description:
+ *  The front end function for allocating a physical frame.
+ */
+uintptr_t
+alloc_frame(void) {
+#ifdef VG_RANDOM
+  return frame_dequeue();
+#else
+  return provideSVAMemory(X86_PAGE_SIZE);
+#endif
+}
+
+/*
+ * Function: free_frame()
+ *
+ * Description:
+ *  The front end function for freeing a physical frame.
+ */
+void
+free_frame(uintptr_t paddr) {
+#ifdef VG_RANDOM
+  frame_enqueue(paddr);
+#else
+  releaseSVAMemory(paddr, X86_PAGE_SIZE);
+#endif
+}
 
 /*
  * Function: getNextSecureAddress()
@@ -86,7 +276,7 @@ ghostMalloc (intptr_t size) {
    * the physical address of the allocated memory.
    */
   for (intptr_t remaining = size; remaining > 0; remaining -= X86_PAGE_SIZE) {
-    if ((sp = provideSVAMemory (X86_PAGE_SIZE)) != 0) {
+    if ((sp = alloc_frame()) != 0) {
       /* Physical address of the allocated page */
       uintptr_t paddr = sp;
 
@@ -273,7 +463,7 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
          *  implementation in which it only releases one page at a time to the
          *  OS.
          */
-        releaseSVAMemory (paddr, X86_PAGE_SIZE);
+        free_frame(paddr);
       }
     }
   }
@@ -343,7 +533,7 @@ sva_ghost_fault (uintptr_t vaddr) {
    * Get a page of memory from the operating system.  Note that the OS provides
    * the physical address of the allocated memory.
    */
-  if ((sp = provideSVAMemory (X86_PAGE_SIZE)) != 0) {
+  if ((sp = alloc_frame()) != 0) {
     /* Physical address of the allocated page */
     uintptr_t paddr = (uintptr_t) sp;
 
