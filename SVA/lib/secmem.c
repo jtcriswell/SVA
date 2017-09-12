@@ -143,8 +143,6 @@ fill_in_random_frames(void) {
   max_nframe = FRAME_CACHE_SIZE - 1 - frame_cache_used();
   nframe = random() % max_nframe + 1;
 
-  printf("%s: allocating %d frames\n", __func__, nframe);
-
   for (int i = 0; i < nframe; ++i) {
     paddr = provideSVAMemory(X86_PAGE_SIZE);
     frame_enqueue(paddr);
@@ -170,8 +168,6 @@ release_random_frames(void) {
    */
   max_nframe = frame_cache_used();
   nframe = random() % max_nframe + 1;
-
-  printf("%s: freeing %d frames\n", __func__, nframe);
 
   for (i = 0; i < nframe; ++i) {
     paddr = frame_dequeue();
