@@ -22,10 +22,14 @@
 #include "sva/state.h"
 #include "sva/util.h"
 
-#ifdef VG_RANDOM
-
 /* Size of frame cache queue */
 #define FRAME_CACHE_SIZE 4096
+
+/*
+ * Maximum number of frames per allocation or deallocation,
+ * if not randomly.
+ */
+#define MAX_FRAMES_PER_OP 32
 
 extern u_long random(void);
 
@@ -45,8 +49,8 @@ static inline int frame_cache_full(void);
 static inline int frame_cache_empty(void);
 static inline void frame_enqueue(uintptr_t paddr);
 static inline uintptr_t frame_dequeue(void);
-static inline void fill_in_random_frames(void);
-static inline void release_random_frames(void);
+static inline void fill_in_frames(void);
+static inline void release_frames(void);
 
 /*
  * Function: frame_cache_used()
@@ -94,7 +98,7 @@ static inline void
 frame_enqueue(uintptr_t paddr) {
   /* If our cache is full, release some frames */
   if (frame_cache_full()) {
-    release_random_frames();
+    release_frames();
   }
 
   frame_cache[frame_cache_ed] = paddr;
@@ -113,7 +117,7 @@ frame_dequeue(void) {
 
   /* If we don't have any frames in cache, grab some */
   if (frame_cache_empty()) {
-    fill_in_random_frames();
+    fill_in_frames();
   }
 
   paddr = frame_cache[frame_cache_st];
@@ -124,58 +128,65 @@ frame_dequeue(void) {
 }
 
 /*
- * Function: fill_in_random_frames()
+ * Function: fill_in_frames()
  *
  * Description:
- *  Allocate some random number of frames and put them into the frame
- *  cache queue.
+ *  Allocate some number of frames and put them into the frame cache
+ *  queue.
  */
 static inline void
-fill_in_random_frames(void) {
+fill_in_frames(void) {
   int i, max_nframe, nframe;
   uintptr_t paddr;
 
   /*
-   * Generate a suitable random number (between 1 and current max
-   * capacity of frame cache queue) so that we can call frame_enqueue()
-   * without triggering release_random_frames().
+   * Generate a suitable number not so big that triggers
+   * release_frames() when calling frame_enqueue().
    */
   max_nframe = FRAME_CACHE_SIZE - 1 - frame_cache_used();
-  nframe = random() % max_nframe + 1;
+  if (vg_random) {
+    /* A random number between 1 and current capacity of frame cache queue */
+    nframe = random() % max_nframe + 1;
+  } else {
+    /* Minimum of a constant and current capacity of frame cache queue */
+    nframe = max_nframe < MAX_FRAMES_PER_OP ? max_nframe : MAX_FRAMES_PER_OP;
+  }
 
-  for (int i = 0; i < nframe; ++i) {
+  for (i = 0; i < nframe; ++i) {
     paddr = provideSVAMemory(X86_PAGE_SIZE);
     frame_enqueue(paddr);
   }
 }
 
 /*
- * Function: release_random_frames()
+ * Function: release_frames()
  *
  * Description:
- *  Dequeue and free some random number of frames in the frame cache
- *  queue.
+ *  Dequeue and free some number of frames in the frame cache queue.
  */
 static inline void
-release_random_frames(void) {
+release_frames(void) {
   int i, max_nframe, nframe;
   uintptr_t paddr;
 
   /*
-   * Generate a suitable random number (between 1 and current occupancy
-   * of frame cache queue) so that we can call frame_dequeue() without
-   * triggering fill_in_random_frames().
+   * Generate a suitable number not so big that triggers
+   * fill_in_frames() when calling frame_dequeue().
    */
   max_nframe = frame_cache_used();
-  nframe = random() % max_nframe + 1;
+  if (vg_random) {
+    /* A random number between 1 and current occupancy of frame cache queue */
+    nframe = random() % max_nframe + 1;
+  } else {
+    /* Minimum of a constant and current occupancy of frame cache queue */
+    nframe = max_nframe < MAX_FRAMES_PER_OP ? max_nframe : MAX_FRAMES_PER_OP;
+  }
 
   for (i = 0; i < nframe; ++i) {
     paddr = frame_dequeue();
     releaseSVAMemory(paddr, X86_PAGE_SIZE);
   }
 }
-
-#endif /* VG_RANDOM */
 
 /*
  * Function: alloc_frame()
@@ -185,11 +196,7 @@ release_random_frames(void) {
  */
 uintptr_t
 alloc_frame(void) {
-#ifdef VG_RANDOM
   return frame_dequeue();
-#else
-  return provideSVAMemory(X86_PAGE_SIZE);
-#endif
 }
 
 /*
@@ -200,11 +207,7 @@ alloc_frame(void) {
  */
 void
 free_frame(uintptr_t paddr) {
-#ifdef VG_RANDOM
   frame_enqueue(paddr);
-#else
-  releaseSVAMemory(paddr, X86_PAGE_SIZE);
-#endif
 }
 
 /*
