@@ -92,7 +92,7 @@ frame_cache_empty(void) {
  *  Enqueue a frame into the frame cache queue.
  *
  * Input:
- *  paddr - physical addree of the frame to enqueue
+ *  paddr - The physical address of the frame to enqueue
  */
 static inline void
 frame_enqueue(uintptr_t paddr) {
