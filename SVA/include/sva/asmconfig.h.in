@@ -19,6 +19,12 @@
 /* Let the configure script determine if we enable Virtual Ghost */
 #undef VG
 
+/*
+ * Let the configure script determine if we enable randomized Ghost Memory
+ * allocation.
+ */
+#undef VG_RANDOM
+
 /* Let the configure script determine if we enable SVA MMU Checks */
 #undef CHECKMMU
 

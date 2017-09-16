@@ -26,6 +26,13 @@ static const unsigned char vg = 1;
 static const unsigned char vg = 0;
 #endif
 
+/* Determine whether the randomized Ghost Memory allocation is enabled */
+#ifdef VG_RANDOM
+static const unsigned char vg_random = 1;
+#else
+static const unsigned char vg_random = 0;
+#endif
+
 /* Configure whether to use the hack that keeps page tables writeable */
 static unsigned char keepPTWriteableHack = 1;
 
