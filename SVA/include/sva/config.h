@@ -26,6 +26,13 @@ static const unsigned char vg = 1;
 static const unsigned char vg = 0;
 #endif
 
+/* Determine whether the randomized Ghost Memory allocation is enabled */
+#ifdef VG_RANDOM
+static const unsigned char vg_random = 1;
+#else
+static const unsigned char vg_random = 0;
+#endif
+
 /* Enable or Disable the use of MPX */
 #ifdef MPX
 static const unsigned char usempx = 1;

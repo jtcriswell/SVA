@@ -18,6 +18,17 @@ case "$enableval" in
   *) AC_MSG_ERROR([Invalid setting for --enable-vg. Use "yes" or "no"]) ;;
 esac
 
+dnl Enable Ghost Memory allocation randomization
+AC_ARG_ENABLE(vg-random,
+              AS_HELP_STRING([--enable-vg-random],
+                             [Enable Ghost Memory allocation randomization (default is YES)]),,
+                             enableval=default)
+case "$enableval" in
+  yes) AC_DEFINE(VG_RANDOM) ;;
+  no) AC_DEFINE(NOVG_RANDOM) ;;
+  *) AC_MSG_ERROR([Invalid setting for --enable-vg-random. Use "yes" or "no"]) ;;
+esac
+
 dnl Enable the use of MPX for SFI
 AC_ARG_ENABLE(mpx,
               AS_HELP_STRING([--enable-mpx],

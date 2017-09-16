@@ -631,6 +631,7 @@ ac_subst_files=''
 ac_user_opts='
 enable_option_checking
 enable_vg
+enable_vg_random
 enable_mpx
 enable_mmuchecks
 enable_targets
@@ -1695,6 +1696,21 @@ case "$enableval" in
   no) $as_echo "#define NOVG 1" >>confdefs.h
  ;;
   *) as_fn_error $? "Invalid setting for --enable-vg. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
+esac
+
+# Check whether --enable-vg-random was given.
+if test "${enable_vg_random+set}" = set; then :
+  enableval=$enable_vg_random;
+else
+  enableval=default
+fi
+
+case "$enableval" in
+  yes) $as_echo "#define VG_RANDOM 1" >>confdefs.h
+ ;;
+  no) $as_echo "#define NOVG_RANDOM 1" >>confdefs.h
+ ;;
+  *) as_fn_error $? "Invalid setting for --enable-vg-random. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
 esac
 
 # Check whether --enable-mpx was given.
