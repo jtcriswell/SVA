@@ -10,24 +10,24 @@ dnl
 dnl Enable the Virutal Ghost features
 AC_ARG_ENABLE(vg,
               AS_HELP_STRING([--enable-vg],
-                             [Enable Virtual Ghost (default is NO)]),,
-                             enableval=default)
-case "$enableval" in
-  yes) AC_DEFINE(VG) ;;
-  no) AC_DEFINE(NOVG) ;;
-  *) AC_MSG_ERROR([Invalid setting for --enable-vg. Use "yes" or "no"]) ;;
-esac
+                             [Enable Virtual Ghost (default is NO)]),
+                             [case "${enableval}" in
+                             	yes) AC_DEFINE(VG) ;;
+                             	no)  AC_DEFINE(NOVG) ;;
+                             	*)   AC_MSG_ERROR([bad value ${enableval} for --enable-vg]) ;;
+                             esac],
+                             AC_DEFINE(NOVG))
 
 dnl Enable the SVA MMU Checks
 AC_ARG_ENABLE(mmuchecks,
               AS_HELP_STRING([--enable-mmuchecks],
-                             [Enable SVA MMU Checks (default is YES)]),,
-                             enableval=default)
-case "$enableval" in
-  yes) AC_DEFINE(CHECKMMU) ;;
-  no) AC_DEFINE(NOCHECKMMU) ;;
-  *) AC_MSG_ERROR([Invalid setting for --enable-mmuchecks. Use "yes" or "no"]) ;;
-esac
+                             [Enable SVA MMU Checks (default is YES)]),
+                             [case "${enableval}" in
+                             	yes) AC_DEFINE(CHECKMMU) ;;
+                             	no)  AC_DEFINE(NOCHECKMMU) ;;
+                             	*)   AC_MSG_ERROR([bad value ${enableval} for --enable-mmuchecks]) ;;
+                             esac],
+                             AC_DEFINE(CHECKMMU))
 
 dnl
 dnl Include the command-line option to configure the targets used by LLVM
