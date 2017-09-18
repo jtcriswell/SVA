@@ -1682,18 +1682,18 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 # Check whether --enable-vg was given.
 if test "${enable_vg+set}" = set; then :
-  enableval=$enable_vg;
+  enableval=$enable_vg; case "${enableval}" in
+                             	yes) $as_echo "#define VG 1" >>confdefs.h
+ ;;
+                             	no)  $as_echo "#define NOVG 1" >>confdefs.h
+ ;;
+                             	*)   as_fn_error $? "bad value ${enableval} for --enable-vg" "$LINENO" 5 ;;
+                             esac
 else
-  enableval=default
+  $as_echo "#define NOVG 1" >>confdefs.h
+
 fi
 
-case "$enableval" in
-  yes) $as_echo "#define VG 1" >>confdefs.h
- ;;
-  no) $as_echo "#define NOVG 1" >>confdefs.h
- ;;
-  *) as_fn_error $? "Invalid setting for --enable-vg. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
-esac
 
 # Check whether --enable-vg-random was given.
 if test "${enable_vg_random+set}" = set; then :
@@ -1712,18 +1712,18 @@ esac
 
 # Check whether --enable-mmuchecks was given.
 if test "${enable_mmuchecks+set}" = set; then :
-  enableval=$enable_mmuchecks;
+  enableval=$enable_mmuchecks; case "${enableval}" in
+                             	yes) $as_echo "#define CHECKMMU 1" >>confdefs.h
+ ;;
+                             	no)  $as_echo "#define NOCHECKMMU 1" >>confdefs.h
+ ;;
+                             	*)   as_fn_error $? "bad value ${enableval} for --enable-mmuchecks" "$LINENO" 5 ;;
+                             esac
 else
-  enableval=default
+  $as_echo "#define CHECKMMU 1" >>confdefs.h
+
 fi
 
-case "$enableval" in
-  yes) $as_echo "#define CHECKMMU 1" >>confdefs.h
- ;;
-  no) $as_echo "#define NOCHECKMMU 1" >>confdefs.h
- ;;
-  *) as_fn_error $? "Invalid setting for --enable-mmuchecks. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
-esac
 
 # Check whether --enable-targets was given.
 if test "${enable_targets+set}" = set; then :
