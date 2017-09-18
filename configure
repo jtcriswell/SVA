@@ -1247,6 +1247,8 @@ Optional Features:
   --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
   --enable-vg             Enable Virtual Ghost (default is NO)
+  --enable-vg-random      Enable Ghost Memory allocation randomization
+                          (default is NO)
   --enable-mmuchecks      Enable SVA MMU Checks (default is YES)
 
 
@@ -1697,18 +1699,18 @@ fi
 
 # Check whether --enable-vg-random was given.
 if test "${enable_vg_random+set}" = set; then :
-  enableval=$enable_vg_random;
+  enableval=$enable_vg_random; case "${enableval}" in
+                             	yes) $as_echo "#define VG_RANDOM 1" >>confdefs.h
+ ;;
+                             	no)  $as_echo "#define NOVG_RANDOM 1" >>confdefs.h
+ ;;
+                             	*)   as_fn_error $? "bad value ${enableval} for --enable-vg" "$LINENO" 5 ;;
+                             esac
 else
-  enableval=default
+  $as_echo "#define NOVG_RANDOM 1" >>confdefs.h
+
 fi
 
-case "$enableval" in
-  yes) $as_echo "#define VG_RANDOM 1" >>confdefs.h
- ;;
-  no) $as_echo "#define NOVG_RANDOM 1" >>confdefs.h
- ;;
-  *) as_fn_error $? "Invalid setting for --enable-vg-random. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
-esac
 
 # Check whether --enable-mmuchecks was given.
 if test "${enable_mmuchecks+set}" = set; then :

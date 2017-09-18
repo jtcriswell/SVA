@@ -21,13 +21,13 @@ AC_ARG_ENABLE(vg,
 dnl Enable Ghost Memory allocation randomization
 AC_ARG_ENABLE(vg-random,
               AS_HELP_STRING([--enable-vg-random],
-                             [Enable Ghost Memory allocation randomization (default is YES)]),,
-                             enableval=default)
-case "$enableval" in
-  yes) AC_DEFINE(VG_RANDOM) ;;
-  no) AC_DEFINE(NOVG_RANDOM) ;;
-  *) AC_MSG_ERROR([Invalid setting for --enable-vg-random. Use "yes" or "no"]) ;;
-esac
+                             [Enable Ghost Memory allocation randomization (default is NO)]),
+                             [case "${enableval}" in
+                             	yes) AC_DEFINE(VG_RANDOM) ;;
+                             	no)  AC_DEFINE(NOVG_RANDOM) ;;
+                             	*)   AC_MSG_ERROR([bad value ${enableval} for --enable-vg]) ;;
+                             esac],
+                             AC_DEFINE(NOVG_RANDOM))
 
 dnl Enable the SVA MMU Checks
 AC_ARG_ENABLE(mmuchecks,
