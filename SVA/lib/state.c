@@ -417,7 +417,11 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
   sva_integer_state_t * old = &(oldThread->integerState);
 
   /* Get a pointer to the saved state (the ID is the pointer) */
-  struct SVAThread * newThread = (struct SVAThread *)(newint);
+  struct SVAThread * newThread = validateThreadPointer(newint);
+  if (! newThread) {
+	 panic("sva_swap_integer: Invalid new-thread pointer");
+	 return (uintptr_t)NULL;
+  }
   sva_integer_state_t * new =  newThread ? &(newThread->integerState) : 0;
 
   /* Variables for registers for debugging */
@@ -1027,7 +1031,12 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
 void
 sva_release_stack (uintptr_t id) {
   /* Get a pointer to the saved state (the ID is the pointer) */
-  struct SVAThread * newThread = (struct SVAThread *)(id);
+  struct SVAThread * newThread = validateThreadPointer(id);
+  if (! newThread) {
+	 panic("sva_release_stack: Invalid thread pointer");
+	 return;
+  }
+
   sva_integer_state_t * new =  newThread ? &(newThread->integerState) : 0;
 
   /*

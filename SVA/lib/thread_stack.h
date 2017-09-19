@@ -16,9 +16,11 @@
 #define _SVA_LIB_THREAD_STACK_H_
 
 #include "sva/state.h"
+#include <stdint.h>
 
 extern void init_threads(void);
 extern struct SVAThread * findNextFreeThread (void);
 extern void ftstack_push(struct SVAThread *thread);
+extern struct SVAThread * validateThreadPointer(uintptr_t p);
 
 #endif /* _SVA_LIB_THREAD_STACK_H_ */

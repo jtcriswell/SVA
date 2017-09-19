@@ -120,6 +120,42 @@ randomNumber (void) {
 }
 
 /*
+ * Function: validateThreadPointer()
+ *
+ * Description:
+ *  Determines that an unsigned integer provided as input is a valid pointer to
+ *  a SVAThread instance.
+ *
+ * Returns: NULL if pointer was invalid, else a pointer to the valid SVAThread instance
+ */
+struct SVAThread *
+validateThreadPointer(uintptr_t p) {
+  if (p < (uintptr_t) Threads) {
+    panic("SVA: validateThreadPointer: below start of array");
+    //p is below the start of the array
+    return NULL;
+  }
+
+  uintptr_t offset = p - (uintptr_t)Threads;
+  uintptr_t thread_alignment = ((uintptr_t)(Threads+1)) - ((uintptr_t)Threads);
+  uintptr_t index = offset / thread_alignment;
+  if (offset % thread_alignment){
+    //p does not point to the start of a thread
+    panic("SVA: validateThreadPointer: invalid offset");
+    return NULL;
+  }
+
+  if (index < THREAD_STACK_SIZE) {
+    //We've got a live one
+    return (struct SVAThread*)p;
+  }
+
+  //We weren't within the bounds of the array
+  panic("SVA: validateThreadPointer: above end of array");
+  return NULL;
+}
+
+/*
  * Function: findNextFreeThread()
  *
  * Description:
