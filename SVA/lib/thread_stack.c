@@ -25,23 +25,21 @@ static inline struct SVAThread *ftstack_pop(void);
 /* Definitions of functions and variables related to the stack
    that is used for finding the next free thread.
 */
-#define THREAD_SIZE 10000
+#define THREAD_STACK_SIZE 4096
 #define spin_lock(l)  while (__sync_lock_test_and_set((l), 1))
 #define spin_unlock(l) __sync_lock_release((l))
 #define init_lock(l) *(l) = 0
 #define NULL  0
 
 /* Pre-allocate a large number of SVA Threads */
-static struct SVAThread realThreads[4096] __attribute__ ((aligned (16)))
+static struct SVAThread Threads[THREAD_STACK_SIZE] __attribute__ ((aligned (16)))
 __attribute__ ((section ("svamem")));
-
-struct SVAThread *Threads = realThreads;
 
 typedef volatile int lock_t;
 
 /* Stack for storing the free treads */
 struct FT_stack{
-  struct SVAThread *threads[THREAD_SIZE];
+  struct SVAThread *threads[THREAD_STACK_SIZE];
   int top;
   int initialized;
   lock_t lock;
@@ -59,6 +57,12 @@ void ftstack_push(struct SVAThread *thread){
   spin_lock(&fthreads.lock);
 
   fthreads.top++;
+  if (fthreads.top >= THREAD_STACK_SIZE) {
+    spin_unlock(&fthreads.lock);
+    panic("SVA: ftstack_push: Free-thread stack is full.\n");
+    //This could only happen if we somehow double-free a thread.
+    return;
+  }
   fthreads.threads[fthreads.top] = thread;
 
   spin_unlock(&fthreads.lock);
@@ -73,7 +77,7 @@ static inline struct SVAThread *ftstack_pop(void) {
 
   if(!fthreads.initialized) {
 
-    for (unsigned index = 0; index < 4096; ++index) {
+    for (unsigned index = 0; index < THREAD_STACK_SIZE; ++index) {
       Threads[index].used = 0;
       fthreads.top++;
       fthreads.threads[fthreads.top] = &Threads[index];
@@ -84,7 +88,7 @@ static inline struct SVAThread *ftstack_pop(void) {
 
   if(fthreads.top == -1) {
     spin_unlock(&fthreads.lock);
-    panic("");
+    panic("SVA: ftstack_pop: No free threads available!\n");
     return NULL;
   }
 
