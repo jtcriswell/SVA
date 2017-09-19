@@ -14,6 +14,7 @@
 
 #include "sva/config.h"
 #include "sva/callbacks.h"
+#include "keys.h"
 #include "thread_stack.h"
 
 /*
@@ -152,7 +153,6 @@ findNextFreeThread (void) {
      * decrypted with the VirtualGhost private key.
      */
     if (vg) {
-      extern void init_thread_key (struct SVAThread * thread);
       init_thread_key(newThread);
     }
 
