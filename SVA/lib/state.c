@@ -1070,11 +1070,13 @@ sva_release_stack (uintptr_t id) {
  *  Pointer to the integer state identifier used for context switching.
  *
  * Inputs:
- *  start_stackp - A pointer to the *beginning* of the kernel stack.
- *  length       - Length of the kernel stack in bytes.
- *  func         - The kernel function to execute when the new integer state
- *                 is swapped on to the processor.
- *  arg          - The first argument to the function.
+ *  start_stackp    - A pointer to the *beginning* of the kernel stack.
+ *  length          - Length of the kernel stack in bytes.
+ *  is_fork         - Whether the parent forks a new process or just clones a new thread
+ *  new_cr3	    - The new process(thread)'s cr3
+ *  func            - The kernel function to execute when the new integer state
+ *                    is swapped on to the processor.
+ *  arg             - The first argument to the function.
  *
  * Return value:
  *  An identifier that can be passed to sva_swap_integer() to begin execution
@@ -1083,6 +1085,7 @@ sva_release_stack (uintptr_t id) {
 uintptr_t
 sva_init_stack (unsigned char * start_stackp,
                 uintptr_t length,
+		uintptr_t new_cr3,
                 void * func,
                 uintptr_t arg1,
                 uintptr_t arg2,
@@ -1225,6 +1228,7 @@ sva_init_stack (unsigned char * start_stackp,
   integerp->ss  = 0x3b;
   integerp->valid = 1;
   integerp->rflags = 0x202;
+  integerp->cr3 = new_cr3;
 #if 0
   integerp->ist3 = integerp->kstackp;
 #endif
@@ -1284,6 +1288,11 @@ sva_init_stack (unsigned char * start_stackp,
     icontextp->valid |= IC_is_valid;
   }
 
+  if(vg && (oldThread->secmemSize) && (oldThread->flags & 1))
+  { 
+  	ghostmemCOW(oldThread, newThread);
+	oldThread->flags &= ~1;
+  }
   /*
    * Re-enable interrupts.
    */

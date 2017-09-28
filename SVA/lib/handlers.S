@@ -507,24 +507,58 @@ SVAsyscall:
    * if this is the fork(), vfork(), rfork(), or pdfork() system calls.  The
    * system call number will be in %rax and can have the following values
    * (you can find these in syscalls.master) within the FreeBSD kernel source
-   * code):
+   * code).
+   * According to the type of fork and the flags, we make a decision about
+   * whether to COW on ghost memory or not, and save the decision in the flags
+   * filed of the current SVAThread. (1 is COW, and 0 is not COW.)
+   * In particular, fork() and pdfork() always incur COW, vfork() does not incur COW,
+   * and for rfork() it depends on its arguments.
    *
    *   2 - fork()
    *  66 - vfork()
    * 251 - rfork()
    * 518 - pdfork()
    */
+
+  /* Find the flags field of the current SVAThread */
+  movq %gs:0x260, %r14          
+  movq CPU_THREAD(%r14), %r14    
+  movq $0,  0x7d80(%r14)  
+  movq $0, %rbx
+  movq $1, %r11
+
   movq $1, %r12
   movq $3, %r13
   cmpq $2, IC_RAX(%rsp)
   cmoveq %r13, %r12
+  cmoveq %r11, %rbx
+  je DONE_FORK
+
   cmpq $66, IC_RAX(%rsp)
   cmoveq %r13, %r12
+  je DONE_FORK
+
   cmpq $251, IC_RAX(%rsp)
-  cmoveq %r13, %r12
+  jne NEXT_TEST_FORK
+  movq %r13, %r12
+  /* test the syscall argument flags, whether 
+   * (flags & RFPROC) && !(flags & RFMEM) is true. 
+   * If it is true, we need COW on ghost memory.
+   */
+  movq (%rdi), %r15
+  andq $48, %r15   
+  cmpq $16, %r15
+  cmoveq %r11, %rbx
+  jmp DONE_FORK  
+
+NEXT_TEST_FORK:
   cmpq $518, IC_RAX(%rsp)
   cmoveq %r13, %r12
+  cmoveq %r11, %rbx
+
+DONE_FORK: 
   movq %r12, IC_VALID(%rsp)
+  movq %rbx, 0x7d80(%r14)
 
   /*
    * Configure the process to trigger a floating point fault while in

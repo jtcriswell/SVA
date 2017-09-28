@@ -255,6 +255,10 @@ static page_desc_t page_desc[numPageDescEntries];
 #define NBPML4      (1UL<<PML4SHIFT)/* bytes/page map lev4 table */
 #define PML4MASK    (NBPML4-1)
 
+/* Page fault code flags*/
+#define PGEX_P      0x01    /* Protection violation vs. not present */
+#define PGEX_W      0x02    /* during a Write cycle */
+
 /*
  * ===========================================================================
  * END FreeBSD CODE BLOCK
@@ -461,6 +465,67 @@ setMappingReadWrite (page_entry_t mapping) {
   return (mapping | PG_RW); 
 }
 
+static inline pml4e_t *
+get_pml4eVaddr (unsigned char * cr3, uintptr_t vaddr) {
+  /* Offset into the page table */
+  uintptr_t offset = (vaddr >> (39 - 3)) & vmask;
+  return (pml4e_t *) getVirtual (((uintptr_t)cr3) | offset);
+}
+
+static inline pdpte_t *
+get_pdpteVaddr (pml4e_t * pml4e, uintptr_t vaddr) {
+  uintptr_t base   = (*pml4e) & 0x000ffffffffff000u;
+  uintptr_t offset = (vaddr >> (30 - 3)) & vmask;
+  return (pdpte_t *) getVirtual (base | offset);
+}
+
+static inline pde_t *
+get_pdeVaddr (pdpte_t * pdpte, uintptr_t vaddr) {
+  uintptr_t base   = (*pdpte) & 0x000ffffffffff000u;
+  uintptr_t offset = (vaddr >> (21 - 3)) & vmask;
+  return (pde_t *) getVirtual (base | offset);
+}
+
+static inline pte_t *
+get_pteVaddr (pde_t * pde, uintptr_t vaddr) {
+  uintptr_t base   = (*pde) & 0x000ffffffffff000u;
+  uintptr_t offset = (vaddr >> (12 - 3)) & vmask;
+  return (pte_t *) getVirtual (base | offset);
+}
+
+/*
+ * Functions for returing the physical address of page table pages.
+ */
+static inline uintptr_t
+get_pml4ePaddr (unsigned char * cr3, uintptr_t vaddr) {
+  /* Offset into the page table */
+  uintptr_t offset = ((vaddr >> 39) << 3) & vmask;
+  return (((uintptr_t)cr3) | offset);
+}
+
+static inline uintptr_t
+get_pdptePaddr (pml4e_t * pml4e, uintptr_t vaddr) {
+  uintptr_t offset = ((vaddr  >> 30) << 3) & vmask;
+  return ((*pml4e & 0x000ffffffffff000u) | offset);
+}
+
+static inline uintptr_t
+get_pdePaddr (pdpte_t * pdpte, uintptr_t vaddr) {
+  uintptr_t offset = ((vaddr  >> 21) << 3) & vmask;
+  return ((*pdpte & 0x000ffffffffff000u) | offset);
+}
+
+static inline uintptr_t
+get_ptePaddr (pde_t * pde, uintptr_t vaddr) {
+  uintptr_t offset = ((vaddr >> 12) << 3) & vmask;
+  return ((*pde & 0x000ffffffffff000u) | offset);
+}
+
+/* Functions for querying information about a page table entry */
+static inline unsigned char
+isPresent (uintptr_t * pte) {
+  return (*pte & 0x1u) ? 1u : 0u;
+}
 
 /*
  *****************************************************************************
