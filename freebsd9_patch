@@ -1,5 +1,224 @@
+diff --git a/lib/libc/stdlib/malloc.c b/lib/libc/stdlib/malloc.c
+index fb634f80..31eed581 100644
+--- a/lib/libc/stdlib/malloc.c
++++ b/lib/libc/stdlib/malloc.c
+@@ -155,7 +155,10 @@
+  * unnecessary, but we are burdened by history and the lack of resource limits
+  * for anonymous mapped memory.
+  */
++#if 0
++ /* SVA: No sbrk()! */
+ #define	MALLOC_DSS
++#endif
+ 
+ #include <sys/cdefs.h>
+ __FBSDID("$FreeBSD: release/9.0.0/lib/libc/stdlib/malloc.c 226405 2011-10-15 21:23:04Z kensmith $");
+@@ -204,6 +207,70 @@ __FBSDID("$FreeBSD: release/9.0.0/lib/libc/stdlib/malloc.c 226405 2011-10-15 21:
+ #include "ql.h"
+ #endif
+ 
++#if 1
++/*
++ * Function: secmemalloc()
++ *
++ * Description:
++ *  Ask the SVA VM to allocate some ghost memory.
++ */
++static inline void *
++secmemalloc (uintptr_t size) {
++  void * ptr;
++  __asm__ __volatile__ ("int $0x7f\n" : "=a" (ptr) : "D" (size));
++  return ptr;
++}
++
++/* SVA: ghost sbrk() */
++void *
++ghost_sbrk (intptr_t incr) {
++  static uintptr_t totalAllocated = 0;
++  static uintptr_t currentSize = 0;
++  static uintptr_t start = 0xffffff0000000000u;
++  void * oldBrk = (void *)(start + currentSize);
++
++  if (getenv ("GHOSTING") == NULL)
++    return sbrk (incr);
++
++  //
++  // If this is the first time we've been called, allocate some ghost
++  // memory so that we have something with which to start.
++  //
++  if (!start) {
++    start = (uintptr_t) secmemalloc (0x400000);
++    totalAllocated = 0x400000;
++    currentSize = 0;
++  }
++
++  // Caller is asking to increase the allocation space
++  if (incr > 0) {
++    //
++    // If we have enough space remaining, simply increase the current size.
++    // Otherwise, go allocate more secure memory.
++    //
++    if ((totalAllocated - currentSize) >= incr) {
++      currentSize += incr;
++    } else {
++      secmemalloc (incr - (totalAllocated - currentSize));
++      currentSize += incr;
++    }
++  }
++
++  // Caller is asking to decrease the allocation space
++  if (incr < 0) {
++    currentSize += incr;
++  }
++
++  //
++  // Return the previous break value: note that an input increment of zero
++  // returns the current (unchanged) break value.
++  //
++  return oldBrk;
++}
++
++
++#endif
++
+ #ifdef MALLOC_DEBUG
+    /* Disable inlining to make debugging easier. */
+ #  define inline
+@@ -215,6 +282,10 @@ __FBSDID("$FreeBSD: release/9.0.0/lib/libc/stdlib/malloc.c 226405 2011-10-15 21:
+ /*
+  * Minimum alignment of allocations is 2^LG_QUANTUM bytes.
+  */
++
++/* SVA: No TLS support for now */
++#define NO_TLS
++
+ #ifdef __i386__
+ #  define LG_QUANTUM		4
+ #  define LG_SIZEOF_PTR		2
+@@ -1586,7 +1657,7 @@ base_pages_alloc_dss(size_t minsize)
+ 
+ 		do {
+ 			/* Get the current end of the DSS. */
+-			dss_max = sbrk(0);
++			dss_max = ghost_sbrk(0);
+ 
+ 			/*
+ 			 * Calculate how much padding is necessary to
+@@ -1599,7 +1670,7 @@ base_pages_alloc_dss(size_t minsize)
+ 			if ((size_t)incr < minsize)
+ 				incr += csize;
+ 
+-			dss_prev = sbrk(incr);
++			dss_prev = ghost_sbrk(incr);
+ 			if (dss_prev == dss_max) {
+ 				/* Success. */
+ 				dss_max = (void *)((intptr_t)dss_prev + incr);
+@@ -1789,8 +1860,21 @@ pages_map(void *addr, size_t size)
+ 	 * We don't use MAP_FIXED here, because it can cause the *replacement*
+ 	 * of existing mappings, and we only want to create new mappings.
+ 	 */
+-	ret = mmap(addr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON,
+-	    -1, 0);
++  if (getenv ("GHOSTING")) {
++     /*
++      * SVA: Allocate secure ghost memory unless a virtual address is
++      * specified.  If that happens, refuse to allocate; the caller will
++      * think that the mmap() failed.
++      */
++    if (addr == NULL) {
++       __asm__ __volatile__ ("int $0x7f\n" : "=a" (ret) : "D" (size + 4096));
++    } else {
++      return NULL;
++    }
++  } else {
++    ret = mmap(addr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON,
++        -1, 0);
++  }
+ 	assert(ret != NULL);
+ 
+ 	if (ret == MAP_FAILED)
+@@ -1799,15 +1883,16 @@ pages_map(void *addr, size_t size)
+ 		/*
+ 		 * We succeeded in mapping memory, but not in the right place.
+ 		 */
+-		if (munmap(ret, size) == -1) {
+-			char buf[STRERROR_BUF];
+-
+-			strerror_r(errno, buf, sizeof(buf));
+-			_malloc_message(_getprogname(),
+-			    ": (malloc) Error in munmap(): ", buf, "\n");
+-			if (opt_abort)
+-				abort();
+-		}
++    if (getenv ("GHOSTING") == NULL)
++      if (munmap(ret, size) == -1) {
++        char buf[STRERROR_BUF];
++
++        strerror_r(errno, buf, sizeof(buf));
++        _malloc_message(_getprogname(),
++            ": (malloc) Error in munmap(): ", buf, "\n");
++        if (opt_abort)
++          abort();
++      }
+ 		ret = NULL;
+ 	}
+ 
+@@ -1820,7 +1905,7 @@ static void
+ pages_unmap(void *addr, size_t size)
+ {
+ 
+-	if (munmap(addr, size) == -1) {
++	if ((getenv ("GHOSTING") == NULL) && (munmap(addr, size) == -1)) {
+ 		char buf[STRERROR_BUF];
+ 
+ 		strerror_r(errno, buf, sizeof(buf));
+@@ -1859,7 +1944,7 @@ chunk_alloc_dss(size_t size, bool *zero)
+ 		 */
+ 		do {
+ 			/* Get the current end of the DSS. */
+-			dss_max = sbrk(0);
++			dss_max = ghost_sbrk(0);
+ 
+ 			/*
+ 			 * Calculate how much padding is necessary to
+@@ -1874,7 +1959,7 @@ chunk_alloc_dss(size_t size, bool *zero)
+ 				incr += size;
+ 			}
+ 
+-			dss_prev = sbrk(incr);
++			dss_prev = ghost_sbrk(incr);
+ 			if (dss_prev == dss_max) {
+ 				/* Success. */
+ 				dss_max = (void *)((intptr_t)dss_prev + incr);
+@@ -2168,7 +2253,7 @@ chunk_dealloc_dss(void *chunk, size_t size)
+ 		}
+ 
+ 		/* Get the current end of the DSS. */
+-		dss_max = sbrk(0);
++		dss_max = ghost_sbrk(0);
+ 
+ 		/*
+ 		 * Try to shrink the DSS if this chunk is at the end of the
+@@ -2178,7 +2263,7 @@ chunk_dealloc_dss(void *chunk, size_t size)
+ 		 * designed multi-threaded programs.
+ 		 */
+ 		if ((void *)((uintptr_t)chunk + size) == dss_max
+-		    && (dss_prev = sbrk(-(intptr_t)size)) == dss_max) {
++		    && (dss_prev = ghost_sbrk(-(intptr_t)size)) == dss_max) {
+ 			/* Success. */
+ 			dss_max = (void *)((intptr_t)dss_prev - (intptr_t)size);
+ 
+@@ -5781,7 +5866,7 @@ MALLOC_OUT:
+ 	extent_tree_ad_new(&huge);
+ #ifdef MALLOC_DSS
+ 	malloc_mutex_init(&dss_mtx);
+-	dss_base = sbrk(0);
++	dss_base = ghost_sbrk(0);
+ 	dss_prev = dss_base;
+ 	dss_max = dss_base;
+ 	extent_tree_szad_new(&dss_chunks_szad);
 diff --git a/sys/amd64/amd64/amd64_mem.c b/sys/amd64/amd64/amd64_mem.c
-index fd96eba..e1b1c81 100644
+index fd96eba6..e1b1c818 100644
 --- a/sys/amd64/amd64/amd64_mem.c
 +++ b/sys/amd64/amd64/amd64_mem.c
 @@ -27,6 +27,11 @@
@@ -39,7 +258,7 @@ index fd96eba..e1b1c81 100644
  
  	critical_exit();
 diff --git a/sys/amd64/amd64/apic_vector.S b/sys/amd64/amd64/apic_vector.S
-index f6f74d6..d14b3d8 100644
+index f6f74d68..d14b3d86 100644
 --- a/sys/amd64/amd64/apic_vector.S
 +++ b/sys/amd64/amd64/apic_vector.S
 @@ -43,6 +43,8 @@
@@ -116,7 +335,7 @@ index f6f74d6..d14b3d8 100644
  	movl	$0, LA_EOI(%rax)	/* End Of Interrupt to APIC */
  	jmp	doreti
 diff --git a/sys/amd64/amd64/atpic_vector.S b/sys/amd64/amd64/atpic_vector.S
-index d7693cb..4cf04b9 100644
+index d7693cb9..4cf04b98 100644
 --- a/sys/amd64/amd64/atpic_vector.S
 +++ b/sys/amd64/amd64/atpic_vector.S
 @@ -40,6 +40,8 @@
@@ -137,7 +356,7 @@ index d7693cb..4cf04b9 100644
  	jmp	doreti
  
 diff --git a/sys/amd64/amd64/cpu_switch.S b/sys/amd64/amd64/cpu_switch.S
-index b8015f9..4a2e192 100644
+index b8015f96..4a2e1921 100644
 --- a/sys/amd64/amd64/cpu_switch.S
 +++ b/sys/amd64/amd64/cpu_switch.S
 @@ -39,6 +39,8 @@
@@ -166,7 +385,7 @@ index b8015f9..4a2e192 100644
 +	RETQ
  END(savectx)
 diff --git a/sys/amd64/amd64/exception.S b/sys/amd64/amd64/exception.S
-index 4d346d7..cefefd0 100644
+index 4d346d7f..cefefd00 100644
 --- a/sys/amd64/amd64/exception.S
 +++ b/sys/amd64/amd64/exception.S
 @@ -46,6 +46,8 @@
@@ -363,7 +582,7 @@ index 4d346d7..cefefd0 100644
  	movq	TD_PCB(%r8),%r8
  	movq	$0,PCB_GSBASE(%r8)
 diff --git a/sys/amd64/amd64/fpu.c b/sys/amd64/amd64/fpu.c
-index b837c2a..da1ed79 100644
+index b837c2a8..da1ed791 100644
 --- a/sys/amd64/amd64/fpu.c
 +++ b/sys/amd64/amd64/fpu.c
 @@ -147,6 +147,7 @@ void
@@ -431,7 +650,7 @@ index b837c2a..da1ed79 100644
  
  /*
 diff --git a/sys/amd64/amd64/locore.S b/sys/amd64/amd64/locore.S
-index 0706fa6..e84c5ad 100644
+index 0706fa61..e84c5ad0 100644
 --- a/sys/amd64/amd64/locore.S
 +++ b/sys/amd64/amd64/locore.S
 @@ -33,6 +33,8 @@
@@ -455,7 +674,7 @@ index 0706fa6..e84c5ad 100644
  	jmp	0b
  
 diff --git a/sys/amd64/amd64/machdep.c b/sys/amd64/amd64/machdep.c
-index 0890c1b..52bcfb2 100644
+index 0890c1b0..52bcfb26 100644
 --- a/sys/amd64/amd64/machdep.c
 +++ b/sys/amd64/amd64/machdep.c
 @@ -55,6 +55,7 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/amd64/amd64/machdep.c 225617 2011-09-16 13
@@ -1195,7 +1414,7 @@ index 0890c1b..52bcfb2 100644
  
  /*
 diff --git a/sys/amd64/amd64/mp_machdep.c b/sys/amd64/amd64/mp_machdep.c
-index 64a712c..a0ed7f0 100644
+index 64a712c0..a0ed7f0d 100644
 --- a/sys/amd64/amd64/mp_machdep.c
 +++ b/sys/amd64/amd64/mp_machdep.c
 @@ -31,6 +31,7 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/amd64/amd64/mp_machdep.c 223758 2011-07-04
@@ -1268,7 +1487,7 @@ index 64a712c..a0ed7f0 100644
  	/* Set up the fast syscall stuff */
  	msr = rdmsr(MSR_EFER) | EFER_SCE;
 diff --git a/sys/amd64/amd64/pmap.c b/sys/amd64/amd64/pmap.c
-index 2c2ee83..e28ed9d 100644
+index 2c2ee834..43a919ea 100644
 --- a/sys/amd64/amd64/pmap.c
 +++ b/sys/amd64/amd64/pmap.c
 @@ -107,6 +107,12 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/amd64/amd64/pmap.c 225418 2011-09-06 10:30
@@ -1284,6 +1503,15 @@ index 2c2ee83..e28ed9d 100644
  
  #include <sys/param.h>
  #include <sys/systm.h>
+@@ -471,7 +477,7 @@ create_pagetables(vm_paddr_t *firstaddr)
+ 		ndmpdp = 4;
+ 	DMPDPphys = allocpages(firstaddr, NDMPML4E);
+ 	ndm1g = 0;
+-	if ((amd_feature & AMDID_PAGE1GB) != 0)
++	if ((amd_feature & AMDID_PAGE1GB) != 0 && FALSE)
+ 		ndm1g = ptoa(Maxmem) >> PDPSHIFT;
+ 	if (ndm1g < ndmpdp)
+ 		DMPDphys = allocpages(firstaddr, ndmpdp - ndm1g);
 @@ -485,11 +491,39 @@ create_pagetables(vm_paddr_t *firstaddr)
  		((pt_entry_t *)KPTphys)[i] |= PG_RW | PG_V | PG_G;
  	}
@@ -1766,7 +1994,9 @@ index 2c2ee83..e28ed9d 100644
  		    PG_RW | PG_V | PG_U;
 -	}
 +#endif
-+
+ 
+-	/* install self-referential address mapping entry(s) */
+-	pmap->pm_pml4[PML4PML4I] = VM_PAGE_TO_PHYS(pml4pg) | PG_V | PG_RW | PG_A | PG_M;
 +    }
 +
 +#ifdef SVA_MMU
@@ -1783,16 +2013,14 @@ index 2c2ee83..e28ed9d 100644
 +    pmap->pm_pml4[PML4PML4I] = VM_PAGE_TO_PHYS(pml4pg) | PG_V | PG_RW | PG_A | PG_M;
 +#endif
  
--	/* install self-referential address mapping entry(s) */
--	pmap->pm_pml4[PML4PML4I] = VM_PAGE_TO_PHYS(pml4pg) | PG_V | PG_RW | PG_A | PG_M;
+-	pmap->pm_root = NULL;
+-	CPU_ZERO(&pmap->pm_active);
 +#if SVA_DEBUG
 +    printf("pmap->pm_root: %p, *pmap->pm_root: %p\n",&pmap->pm_root,pmap->pm_root);
 +    printf("pmap: %p\n", pmap);
 +    printf("DMAP phys of pmap: %p, pmap->pm_root: %p\n", DMAP_TO_PHYS((unsigned long) pmap),
 +            DMAP_TO_PHYS((unsigned long)pmap->pm_root));
- 
--	pmap->pm_root = NULL;
--	CPU_ZERO(&pmap->pm_active);
++
 +    printf("CR0: %p, CR3: %p, CR4: %p\n",rcr0(), rcr3(), rcr4());
 +    //sva_load_cr0( (rcr0() & ~CR0_WP) );
 +    printf("CR0: %p, CR3: %p, CR4: %p\n",rcr0(), rcr3(), rcr4());
@@ -2130,7 +2358,18 @@ index 2c2ee83..e28ed9d 100644
  		newpte += PAGE_SIZE;
  	}
  }
-@@ -2526,6 +3016,13 @@ pmap_demote_pde(pmap_t pmap, pd_entry_t *pde, vm_offset_t va)
+@@ -2514,6 +3004,10 @@ pmap_demote_pde(pmap_t pmap, pd_entry_t *pde, vm_offset_t va)
+ 		}
+ 		if (va < VM_MAXUSER_ADDRESS)
+ 			pmap_resident_count_inc(pmap, 1);
++#ifdef SVA_MMU
++                mptepa = VM_PAGE_TO_PHYS(mpte);
++                sva_declare_l1_page (mptepa);
++#endif
+ 	}
+ 	mptepa = VM_PAGE_TO_PHYS(mpte);
+ 	firstpte = (pt_entry_t *)PHYS_TO_DMAP(mptepa);
+@@ -2526,6 +3020,13 @@ pmap_demote_pde(pmap_t pmap, pd_entry_t *pde, vm_offset_t va)
  	if ((newpte & PG_PDE_PAT) != 0)
  		newpte ^= PG_PDE_PAT | PG_PTE_PAT;
  
@@ -2138,13 +2377,13 @@ index 2c2ee83..e28ed9d 100644
 +	/*
 +	 * Declare the new PTE page as a page table page.
 +	 */
-+	sva_declare_l1_page (mptepa);
++	//sva_declare_l1_page (mptepa);
 +#endif
 +
  	/*
  	 * If the page table page is new, initialize it.
  	 */
-@@ -2552,9 +3049,16 @@ pmap_demote_pde(pmap_t pmap, pd_entry_t *pde, vm_offset_t va)
+@@ -2552,9 +3053,16 @@ pmap_demote_pde(pmap_t pmap, pd_entry_t *pde, vm_offset_t va)
  	 * the read above and the store below. 
  	 */
  	if (workaround_erratum383)
@@ -2164,7 +2403,7 @@ index 2c2ee83..e28ed9d 100644
  
  	/*
  	 * Invalidate a stale recursive mapping of the page table page.
-@@ -2595,7 +3099,15 @@ pmap_remove_pde(pmap_t pmap, pd_entry_t *pdq, vm_offset_t sva,
+@@ -2595,7 +3103,15 @@ pmap_remove_pde(pmap_t pmap, pd_entry_t *pdq, vm_offset_t sva,
  	PMAP_LOCK_ASSERT(pmap, MA_OWNED);
  	KASSERT((sva & PDRMASK) == 0,
  	    ("pmap_remove_pde: sva is not 2mpage aligned"));
@@ -2180,7 +2419,7 @@ index 2c2ee83..e28ed9d 100644
  	if (oldpde & PG_W)
  		pmap->pm_stats.wired_count -= NBPDR / PAGE_SIZE;
  
-@@ -2636,6 +3148,7 @@ pmap_remove_pde(pmap_t pmap, pd_entry_t *pdq, vm_offset_t sva,
+@@ -2636,6 +3152,7 @@ pmap_remove_pde(pmap_t pmap, pd_entry_t *pdq, vm_offset_t sva,
  			atomic_subtract_int(&cnt.v_wire_count, 1);
  		}
  	}
@@ -2188,7 +2427,7 @@ index 2c2ee83..e28ed9d 100644
  	return (pmap_unuse_pt(pmap, sva, *pmap_pdpe(pmap, sva), free));
  }
  
-@@ -2650,7 +3163,19 @@ pmap_remove_pte(pmap_t pmap, pt_entry_t *ptq, vm_offset_t va,
+@@ -2650,7 +3167,19 @@ pmap_remove_pte(pmap_t pmap, pt_entry_t *ptq, vm_offset_t va,
  	vm_page_t m;
  
  	PMAP_LOCK_ASSERT(pmap, MA_OWNED);
@@ -2208,7 +2447,7 @@ index 2c2ee83..e28ed9d 100644
  	if (oldpte & PG_W)
  		pmap->pm_stats.wired_count -= 1;
  	pmap_resident_count_dec(pmap, 1);
-@@ -2868,7 +3393,19 @@ pmap_remove_all(vm_page_t m)
+@@ -2868,7 +3397,19 @@ pmap_remove_all(vm_page_t m)
  		KASSERT((*pde & PG_PS) == 0, ("pmap_remove_all: found"
  		    " a 2mpage in page %p's pv list", m));
  		pte = pmap_pde_to_pte(pde, pv->pv_va);
@@ -2228,7 +2467,7 @@ index 2c2ee83..e28ed9d 100644
  		if (tpte & PG_W)
  			pmap->pm_stats.wired_count--;
  		if (tpte & PG_A)
-@@ -2919,8 +3456,12 @@ retry:
+@@ -2919,8 +3460,12 @@ retry:
  	if ((prot & VM_PROT_EXECUTE) == 0)
  		newpde |= pg_nx;
  	if (newpde != oldpde) {
@@ -2241,7 +2480,7 @@ index 2c2ee83..e28ed9d 100644
  		if (oldpde & PG_G)
  			pmap_invalidate_page(pmap, sva);
  		else
-@@ -3034,8 +3575,12 @@ retry:
+@@ -3034,8 +3579,12 @@ retry:
  				pbits |= pg_nx;
  
  			if (pbits != obits) {
@@ -2254,7 +2493,7 @@ index 2c2ee83..e28ed9d 100644
  				if (obits & PG_G)
  					pmap_invalidate_page(pmap, sva);
  				else
-@@ -3085,8 +3630,12 @@ setpde:
+@@ -3085,8 +3634,12 @@ setpde:
  		 * When PG_M is already clear, PG_RW can be cleared without
  		 * a TLB invalidation.
  		 */
@@ -2267,7 +2506,7 @@ index 2c2ee83..e28ed9d 100644
  		newpde &= ~PG_RW;
  	}
  
-@@ -3110,8 +3659,12 @@ setpte:
+@@ -3110,8 +3663,12 @@ setpte:
  			 * When PG_M is already clear, PG_RW can be cleared
  			 * without a TLB invalidation.
  			 */
@@ -2280,7 +2519,7 @@ index 2c2ee83..e28ed9d 100644
  			oldpte &= ~PG_RW;
  			oldpteva = (oldpte & PG_FRAME & PDRMASK) |
  			    (va & ~PDRMASK);
-@@ -3157,8 +3710,14 @@ setpte:
+@@ -3157,8 +3714,14 @@ setpte:
  	 */
  	if (workaround_erratum383)
  		pmap_update_pde(pmap, va, pde, PG_PS | newpde);
@@ -2297,7 +2536,7 @@ index 2c2ee83..e28ed9d 100644
  
  	pmap_pde_promotions++;
  	CTR2(KTR_PMAP, "pmap_promote_pde: success for va %#lx"
-@@ -3188,6 +3747,7 @@ pmap_enter(pmap_t pmap, vm_offset_t va, vm_prot_t access, vm_page_t m,
+@@ -3188,6 +3751,7 @@ pmap_enter(pmap_t pmap, vm_offset_t va, vm_prot_t access, vm_page_t m,
  	vm_paddr_t opa, pa;
  	vm_page_t mpte, om;
  	boolean_t invlva;
@@ -2305,7 +2544,7 @@ index 2c2ee83..e28ed9d 100644
  
  	va = trunc_page(va);
  	KASSERT(va <= VM_MAX_KERNEL_ADDRESS, ("pmap_enter: toobig"));
-@@ -3223,6 +3783,10 @@ pmap_enter(pmap_t pmap, vm_offset_t va, vm_prot_t access, vm_page_t m,
+@@ -3223,6 +3787,10 @@ pmap_enter(pmap_t pmap, vm_offset_t va, vm_prot_t access, vm_page_t m,
  	origpte = *pte;
  	opa = origpte & PG_FRAME;
  
@@ -2316,7 +2555,7 @@ index 2c2ee83..e28ed9d 100644
  	/*
  	 * Mapping has not changed, must be protection or wiring change.
  	 */
-@@ -3322,7 +3886,13 @@ validate:
+@@ -3322,7 +3890,13 @@ validate:
  			newpte |= PG_M;
  		if (origpte & PG_V) {
  			invlva = FALSE;
@@ -2330,7 +2569,7 @@ index 2c2ee83..e28ed9d 100644
  			if (origpte & PG_A) {
  				if (origpte & PG_MANAGED)
  					vm_page_aflag_set(om, PGA_REFERENCED);
-@@ -3342,8 +3912,14 @@ validate:
+@@ -3342,8 +3916,14 @@ validate:
  				vm_page_aflag_clear(om, PGA_WRITEABLE);
  			if (invlva)
  				pmap_invalidate_page(pmap, va);
@@ -2346,7 +2585,7 @@ index 2c2ee83..e28ed9d 100644
  	}
  
  	/*
-@@ -3419,8 +3995,14 @@ pmap_enter_pde(pmap_t pmap, vm_offset_t va, vm_page_t m, vm_prot_t prot)
+@@ -3419,8 +3999,14 @@ pmap_enter_pde(pmap_t pmap, vm_offset_t va, vm_page_t m, vm_prot_t prot)
  	/*
  	 * Map the superpage.
  	 */
@@ -2362,7 +2601,7 @@ index 2c2ee83..e28ed9d 100644
  	pmap_pde_mappings++;
  	CTR2(KTR_PMAP, "pmap_enter_pde: success for va %#lx"
  	    " in pmap %p", va, pmap);
-@@ -3459,7 +4041,12 @@ pmap_enter_object(pmap_t pmap, vm_offset_t start, vm_offset_t end,
+@@ -3459,7 +4045,12 @@ pmap_enter_object(pmap_t pmap, vm_offset_t start, vm_offset_t end,
  		    (VM_PAGE_TO_PHYS(m) & PDRMASK) == 0 &&
  		    pg_ps_enabled && vm_reserv_level_iffullpop(m) == 0 &&
  		    pmap_enter_pde(pmap, va, m, prot))
@@ -2375,7 +2614,7 @@ index 2c2ee83..e28ed9d 100644
  		else
  			mpte = pmap_enter_quick_locked(pmap, va, m, prot,
  			    mpte);
-@@ -3581,10 +4168,23 @@ pmap_enter_quick_locked(pmap_t pmap, vm_offset_t va, vm_page_t m,
+@@ -3581,10 +4172,23 @@ pmap_enter_quick_locked(pmap_t pmap, vm_offset_t va, vm_page_t m,
  	/*
  	 * Now validate mapping with RO protection
  	 */
@@ -2401,7 +2640,7 @@ index 2c2ee83..e28ed9d 100644
  	return (mpte);
  }
  
-@@ -3674,9 +4274,16 @@ pmap_object_init_pt(pmap_t pmap, vm_offset_t addr, vm_object_t object,
+@@ -3674,9 +4278,16 @@ pmap_object_init_pt(pmap_t pmap, vm_offset_t addr, vm_object_t object,
  			}
  			pde = (pd_entry_t *)PHYS_TO_DMAP(VM_PAGE_TO_PHYS(pdpg));
  			pde = &pde[pmap_pde_index(addr)];
@@ -2421,7 +2660,7 @@ index 2c2ee83..e28ed9d 100644
  				pmap_resident_count_inc(pmap, NBPDR / PAGE_SIZE);
  				pmap_pde_mappings++;
  			} else {
-@@ -3733,10 +4340,18 @@ retry:
+@@ -3733,10 +4344,18 @@ retry:
  	pte = pmap_pde_to_pte(pde, va);
  	if (wired && (*pte & PG_W) == 0) {
  		pmap->pm_stats.wired_count++;
@@ -2440,7 +2679,7 @@ index 2c2ee83..e28ed9d 100644
  	}
  out:
  	if (are_queues_locked)
-@@ -3817,7 +4432,12 @@ pmap_copy(pmap_t dst_pmap, pmap_t src_pmap, vm_offset_t dst_addr, vm_size_t len,
+@@ -3817,7 +4436,12 @@ pmap_copy(pmap_t dst_pmap, pmap_t src_pmap, vm_offset_t dst_addr, vm_size_t len,
  			if (*pde == 0 && ((srcptepaddr & PG_MANAGED) == 0 ||
  			    pmap_pv_insert_pde(dst_pmap, addr, srcptepaddr &
  			    PG_PS_FRAME))) {
@@ -2453,7 +2692,7 @@ index 2c2ee83..e28ed9d 100644
  				pmap_resident_count_inc(dst_pmap, NBPDR / PAGE_SIZE);
  			} else
  				dstmpde->wire_count--;
-@@ -3859,8 +4479,12 @@ pmap_copy(pmap_t dst_pmap, pmap_t src_pmap, vm_offset_t dst_addr, vm_size_t len,
+@@ -3859,8 +4483,12 @@ pmap_copy(pmap_t dst_pmap, pmap_t src_pmap, vm_offset_t dst_addr, vm_size_t len,
  					 * accessed (referenced) bits
  					 * during the copy.
  					 */
@@ -2466,7 +2705,7 @@ index 2c2ee83..e28ed9d 100644
  					pmap_resident_count_inc(dst_pmap, 1);
  	 			} else {
  					free = NULL;
-@@ -4122,7 +4746,12 @@ pmap_remove_pages(pmap_t pmap)
+@@ -4122,7 +4750,12 @@ pmap_remove_pages(pmap_t pmap)
  					("pmap_remove_pages: bad tpte %#jx",
  					(uintmax_t)tpte));
  
@@ -2479,7 +2718,7 @@ index 2c2ee83..e28ed9d 100644
  
  				/*
  				 * Update the vm_page_t clean/reference bits.
-@@ -4361,9 +4990,13 @@ pmap_remove_write(vm_page_t m)
+@@ -4361,9 +4994,13 @@ pmap_remove_write(vm_page_t m)
  retry:
  		oldpte = *pte;
  		if (oldpte & PG_RW) {
@@ -2493,7 +2732,7 @@ index 2c2ee83..e28ed9d 100644
  			if ((oldpte & PG_M) != 0)
  				vm_page_dirty(m);
  			pmap_invalidate_page(pmap, pv->pv_va);
-@@ -4444,7 +5077,11 @@ pmap_ts_referenced(vm_page_t m)
+@@ -4444,7 +5081,11 @@ pmap_ts_referenced(vm_page_t m)
  			    " found a 2mpage in page %p's pv list", m));
  			pte = pmap_pde_to_pte(pde, pv->pv_va);
  			if ((*pte & PG_A) != 0) {
@@ -2505,7 +2744,7 @@ index 2c2ee83..e28ed9d 100644
  				pmap_invalidate_page(pmap, pv->pv_va);
  				rtval++;
  				if (rtval > 4)
-@@ -4505,10 +5142,14 @@ pmap_clear_modify(vm_page_t m)
+@@ -4505,10 +5146,14 @@ pmap_clear_modify(vm_page_t m)
  					pte = pmap_pde_to_pte(pde, va);
  					oldpte = *pte;
  					if ((oldpte & PG_V) != 0) {
@@ -2520,7 +2759,7 @@ index 2c2ee83..e28ed9d 100644
  						vm_page_dirty(m);
  						pmap_invalidate_page(pmap, va);
  					}
-@@ -4525,7 +5166,11 @@ pmap_clear_modify(vm_page_t m)
+@@ -4525,7 +5170,11 @@ pmap_clear_modify(vm_page_t m)
  		    " a 2mpage in page %p's pv list", m));
  		pte = pmap_pde_to_pte(pde, pv->pv_va);
  		if ((*pte & (PG_M | PG_RW)) == (PG_M | PG_RW)) {
@@ -2532,7 +2771,7 @@ index 2c2ee83..e28ed9d 100644
  			pmap_invalidate_page(pmap, pv->pv_va);
  		}
  		PMAP_UNLOCK(pmap);
-@@ -4582,7 +5227,11 @@ pmap_clear_reference(vm_page_t m)
+@@ -4582,7 +5231,11 @@ pmap_clear_reference(vm_page_t m)
  		    " a 2mpage in page %p's pv list", m));
  		pte = pmap_pde_to_pte(pde, pv->pv_va);
  		if (*pte & PG_A) {
@@ -2544,7 +2783,7 @@ index 2c2ee83..e28ed9d 100644
  			pmap_invalidate_page(pmap, pv->pv_va);
  		}
  		PMAP_UNLOCK(pmap);
-@@ -4604,11 +5253,20 @@ pmap_pte_attr(pt_entry_t *pte, int cache_bits)
+@@ -4604,11 +5257,20 @@ pmap_pte_attr(pt_entry_t *pte, int cache_bits)
  	 * The cache mode bits are all in the low 32-bits of the
  	 * PTE, so we can just spin on updating the low 32-bits.
  	 */
@@ -2565,7 +2804,7 @@ index 2c2ee83..e28ed9d 100644
  }
  
  /* Adjust the cache mode for a 2MB page mapped via a PDE. */
-@@ -4621,11 +5279,21 @@ pmap_pde_attr(pd_entry_t *pde, int cache_bits)
+@@ -4621,11 +5283,21 @@ pmap_pde_attr(pd_entry_t *pde, int cache_bits)
  	 * The cache mode bits are all in the low 32-bits of the
  	 * PDE, so we can just spin on updating the low 32-bits.
  	 */
@@ -2587,7 +2826,7 @@ index 2c2ee83..e28ed9d 100644
  }
  
  /*
-@@ -4696,6 +5364,7 @@ pmap_unmapdev(vm_offset_t va, vm_size_t size)
+@@ -4696,6 +5368,7 @@ pmap_unmapdev(vm_offset_t va, vm_size_t size)
  /*
   * Tries to demote a 1GB page mapping.
   */
@@ -2595,7 +2834,7 @@ index 2c2ee83..e28ed9d 100644
  static boolean_t
  pmap_demote_pdpe(pmap_t pmap, pdp_entry_t *pdpe, vm_offset_t va)
  {
-@@ -4715,6 +5384,9 @@ pmap_demote_pdpe(pmap_t pmap, pdp_entry_t *pdpe, vm_offset_t va)
+@@ -4715,6 +5388,9 @@ pmap_demote_pdpe(pmap_t pmap, pdp_entry_t *pdpe, vm_offset_t va)
  		return (FALSE);
  	}
  	mpdepa = VM_PAGE_TO_PHYS(mpde);
@@ -2605,7 +2844,7 @@ index 2c2ee83..e28ed9d 100644
  	firstpde = (pd_entry_t *)PHYS_TO_DMAP(mpdepa);
  	newpdpe = mpdepa | PG_M | PG_A | (oldpdpe & PG_U) | PG_RW | PG_V;
  	KASSERT((oldpdpe & PG_A) != 0,
-@@ -4727,14 +5399,24 @@ pmap_demote_pdpe(pmap_t pmap, pdp_entry_t *pdpe, vm_offset_t va)
+@@ -4727,14 +5403,24 @@ pmap_demote_pdpe(pmap_t pmap, pdp_entry_t *pdpe, vm_offset_t va)
  	 * Initialize the page directory page.
  	 */
  	for (pde = firstpde; pde < firstpde + NPDEPG; pde++) {
@@ -2631,7 +2870,7 @@ index 2c2ee83..e28ed9d 100644
  	/*
  	 * Invalidate a stale recursive mapping of the page directory page.
 diff --git a/sys/amd64/amd64/sigtramp.S b/sys/amd64/amd64/sigtramp.S
-index 4047f1c..fe5b332 100644
+index 4047f1c5..fe5b332e 100644
 --- a/sys/amd64/amd64/sigtramp.S
 +++ b/sys/amd64/amd64/sigtramp.S
 @@ -39,7 +39,15 @@
@@ -2651,7 +2890,7 @@ index 4047f1c..fe5b332 100644
  	pushq	$0			/* junk to fake return addr. */
  	movq	$SYS_sigreturn,%rax
 diff --git a/sys/amd64/amd64/support.S b/sys/amd64/amd64/support.S
-index 2f73775..27b571c 100644
+index 2f737758..27b571c2 100644
 --- a/sys/amd64/amd64/support.S
 +++ b/sys/amd64/amd64/support.S
 @@ -38,6 +38,8 @@
@@ -3133,7 +3372,7 @@ index 2f73775..27b571c 100644
 +	RETQ
 diff --git a/sys/amd64/amd64/sva_support.c b/sys/amd64/amd64/sva_support.c
 new file mode 100644
-index 0000000..ed8ff1d
+index 00000000..ed8ff1dc
 --- /dev/null
 +++ b/sys/amd64/amd64/sva_support.c
 @@ -0,0 +1,247 @@
@@ -3385,7 +3624,7 @@ index 0000000..ed8ff1d
 +  }
 +}
 diff --git a/sys/amd64/amd64/sys_machdep.c b/sys/amd64/amd64/sys_machdep.c
-index 743a120..519f6ec 100644
+index 743a1200..519f6ec5 100644
 --- a/sys/amd64/amd64/sys_machdep.c
 +++ b/sys/amd64/amd64/sys_machdep.c
 @@ -318,6 +318,8 @@ amd64_set_ioperm(td, uap)
@@ -3398,7 +3637,7 @@ index 743a120..519f6ec 100644
  	 * XXX
  	 * While this is restricted to root, we should probably figure out
 diff --git a/sys/amd64/amd64/trap.c b/sys/amd64/amd64/trap.c
-index f3db837..af0769c 100644
+index f3db837e..af0769c3 100644
 --- a/sys/amd64/amd64/trap.c
 +++ b/sys/amd64/amd64/trap.c
 @@ -123,6 +123,9 @@ extern void syscall(struct trapframe *frame);
@@ -4346,7 +4585,7 @@ index f3db837..af0769c 100644
  }
 +#endif
 diff --git a/sys/amd64/amd64/vm_machdep.c b/sys/amd64/amd64/vm_machdep.c
-index c0be720..10107ff 100644
+index c0be7202..10107ff7 100644
 --- a/sys/amd64/amd64/vm_machdep.c
 +++ b/sys/amd64/amd64/vm_machdep.c
 @@ -83,6 +83,10 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/amd64/amd64/vm_machdep.c 223758 2011-07-04
@@ -4591,7 +4830,7 @@ index c0be720..10107ff 100644
   * Set that machine state for performing an upcall that has to
 diff --git a/sys/amd64/conf/SVA b/sys/amd64/conf/SVA
 new file mode 100644
-index 0000000..aeb2399
+index 00000000..aeb23998
 --- /dev/null
 +++ b/sys/amd64/conf/SVA
 @@ -0,0 +1,352 @@
@@ -4949,7 +5188,7 @@ index 0000000..aeb2399
 +#device		snd_via8233	# VIA VT8233x Audio
 diff --git a/sys/amd64/conf/SVAMAC b/sys/amd64/conf/SVAMAC
 new file mode 100644
-index 0000000..a20e7e5
+index 00000000..a20e7e5b
 --- /dev/null
 +++ b/sys/amd64/conf/SVAMAC
 @@ -0,0 +1,342 @@
@@ -5296,7 +5535,7 @@ index 0000000..a20e7e5
 +device		snd_uaudio	# USB Audio
 +device		snd_via8233	# VIA VT8233x Audio
 diff --git a/sys/amd64/ia32/ia32_syscall.c b/sys/amd64/ia32/ia32_syscall.c
-index 0e27f04..1a46058 100644
+index 0e27f04b..1a46058a 100644
 --- a/sys/amd64/ia32/ia32_syscall.c
 +++ b/sys/amd64/ia32/ia32_syscall.c
 @@ -209,8 +209,11 @@ ia32_syscall_disable(void *dummy)
@@ -5312,7 +5551,7 @@ index 0e27f04..1a46058 100644
  #ifdef COMPAT_43
  int
 diff --git a/sys/amd64/include/apicvar.h b/sys/amd64/include/apicvar.h
-index 58b6228..40f705a 100644
+index 58b6228d..40f705ae 100644
 --- a/sys/amd64/include/apicvar.h
 +++ b/sys/amd64/include/apicvar.h
 @@ -216,7 +216,11 @@ int	lapic_ipi_wait(int delay);
@@ -5328,7 +5567,7 @@ index 58b6228..40f705a 100644
  void	lapic_set_logical_id(u_int apic_id, u_int cluster, u_int cluster_id);
  int	lapic_set_lvt_mask(u_int apic_id, u_int lvt, u_char masked);
 diff --git a/sys/amd64/include/asm.h b/sys/amd64/include/asm.h
-index c0e6de1..17f07d0 100644
+index c0e6de10..17f07d0f 100644
 --- a/sys/amd64/include/asm.h
 +++ b/sys/amd64/include/asm.h
 @@ -46,6 +46,10 @@
@@ -5357,7 +5596,7 @@ index c0e6de1..17f07d0 100644
  #ifdef PROF
  #define	ALTENTRY(x)	_ENTRY(x); \
 diff --git a/sys/amd64/include/asmacros.h b/sys/amd64/include/asmacros.h
-index 3dc8a40..4b97269 100644
+index 3dc8a403..4b972692 100644
 --- a/sys/amd64/include/asmacros.h
 +++ b/sys/amd64/include/asmacros.h
 @@ -34,6 +34,10 @@
@@ -5392,7 +5631,7 @@ index 3dc8a40..4b97269 100644
  
  #define	END(name)		.size name, . - name
 diff --git a/sys/amd64/include/cpufunc.h b/sys/amd64/include/cpufunc.h
-index 5523666..d482d69 100644
+index 5523666e..d482d695 100644
 --- a/sys/amd64/include/cpufunc.h
 +++ b/sys/amd64/include/cpufunc.h
 @@ -39,6 +39,10 @@
@@ -5445,9 +5684,18 @@ index 5523666..d482d69 100644
  
  static __inline u_long
 diff --git a/sys/amd64/include/pmap.h b/sys/amd64/include/pmap.h
-index 174d493..8586de1 100644
+index 174d4934..6e8dedbd 100644
 --- a/sys/amd64/include/pmap.h
 +++ b/sys/amd64/include/pmap.h
+@@ -115,7 +115,7 @@
+ 
+ /* Initial number of kernel page tables. */
+ #ifndef NKPT
+-#define	NKPT		32
++#define	NKPT		256	
+ #endif
+ 
+ #define NKPML4E		1		/* number of kernel PML4 slots */
 @@ -221,8 +221,7 @@ pte_load_store(pt_entry_t *ptep, pt_entry_t pte)
  static __inline void
  pte_store(pt_entry_t *ptep, pt_entry_t pte)
@@ -5459,7 +5707,7 @@ index 174d493..8586de1 100644
  
  #define	pte_clear(ptep)		pte_store((ptep), (pt_entry_t)0ULL)
 diff --git a/sys/amd64/linux32/linux32_locore.s b/sys/amd64/linux32/linux32_locore.s
-index af8024a..d90b830 100644
+index af8024a5..d90b830f 100644
 --- a/sys/amd64/linux32/linux32_locore.s
 +++ b/sys/amd64/linux32/linux32_locore.s
 @@ -8,7 +8,7 @@
@@ -5472,7 +5720,7 @@ index af8024a..d90b830 100644
  	leal	LINUX_SIGF_SC(%esp),%ebx	/* linux scp */
  	movl	%esp, %ebx			/* pass sigframe */
 diff --git a/sys/conf/NOTES b/sys/conf/NOTES
-index 5c8fa2b..d678697 100644
+index 5c8fa2b7..d678697f 100644
 --- a/sys/conf/NOTES
 +++ b/sys/conf/NOTES
 @@ -79,7 +79,8 @@ maxusers	10
@@ -5486,7 +5734,7 @@ index 5c8fa2b..d678697 100644
  #makeoptions	KERNEL=foo		#Build kernel "foo" and install "/foo"
  # Only build ext2fs module plus those parts of the sound system I need.
 diff --git a/sys/conf/files b/sys/conf/files
-index 0fcd5bf..1cbda5e 100644
+index 0fcd5bf5..1cbda5e1 100644
 --- a/sys/conf/files
 +++ b/sys/conf/files
 @@ -2349,6 +2349,7 @@ kern/kern_sema.c		standard
@@ -5498,7 +5746,7 @@ index 0fcd5bf..1cbda5e 100644
  kern/kern_synch.c		standard
  kern/kern_syscalls.c		standard
 diff --git a/sys/conf/files.amd64 b/sys/conf/files.amd64
-index 5d0db27..9ae2daf 100644
+index 5d0db273..9ae2daf8 100644
 --- a/sys/conf/files.amd64
 +++ b/sys/conf/files.amd64
 @@ -123,6 +123,7 @@ amd64/amd64/prof_machdep.c	optional	profiling-routine
@@ -5510,7 +5758,7 @@ index 5d0db27..9ae2daf 100644
  amd64/amd64/trap.c		standard
  amd64/amd64/uio_machdep.c	standard
 diff --git a/sys/conf/kern.mk b/sys/conf/kern.mk
-index b6e3060..1a404a4 100644
+index b6e30607..1a404a46 100644
 --- a/sys/conf/kern.mk
 +++ b/sys/conf/kern.mk
 @@ -82,6 +82,8 @@ INLINE_LIMIT?=	15000
@@ -5538,7 +5786,7 @@ index b6e3060..1a404a4 100644
  #
  # Enable CTF conversation on request
 diff --git a/sys/conf/kern.post.mk b/sys/conf/kern.post.mk
-index f2752f8..38e690c 100644
+index f2752f86..38e690ca 100644
 --- a/sys/conf/kern.post.mk
 +++ b/sys/conf/kern.post.mk
 @@ -90,10 +90,10 @@ gdbinit:
@@ -5556,7 +5804,7 @@ index f2752f8..38e690c 100644
  .if !defined(DEBUG)
  	${OBJCOPY} --strip-debug ${.TARGET}
 diff --git a/sys/conf/ldscript.amd64 b/sys/conf/ldscript.amd64
-index ce020d2..5e85b4e 100644
+index ce020d21..5e85b4e5 100644
 --- a/sys/conf/ldscript.amd64
 +++ b/sys/conf/ldscript.amd64
 @@ -8,6 +8,7 @@ SECTIONS
@@ -5606,7 +5854,7 @@ index ce020d2..5e85b4e 100644
    _edata = .; PROVIDE (edata = .);
    __bss_start = .;
 diff --git a/sys/conf/options b/sys/conf/options
-index 46495ac..d55c831 100644
+index 46495ac2..d55c831d 100644
 --- a/sys/conf/options
 +++ b/sys/conf/options
 @@ -30,6 +30,9 @@
@@ -5620,7 +5868,7 @@ index 46495ac..d55c831 100644
  AHC_ALLOW_MEMIO		opt_aic7xxx.h
  AHC_TMODE_ENABLE	opt_aic7xxx.h
 diff --git a/sys/dev/aic7xxx/aicasm/Makefile b/sys/dev/aic7xxx/aicasm/Makefile
-index babd5b6..8e5670c 100644
+index babd5b6f..8e5670c4 100644
 --- a/sys/dev/aic7xxx/aicasm/Makefile
 +++ b/sys/dev/aic7xxx/aicasm/Makefile
 @@ -40,3 +40,4 @@ LFLAGS+= -d
@@ -5629,7 +5877,7 @@ index babd5b6..8e5670c 100644
  .include <bsd.prog.mk>
 +CC=gcc
 diff --git a/sys/kern/kern_fork.c b/sys/kern/kern_fork.c
-index c5476b3..6981dfe 100644
+index c5476b32..6981dfe3 100644
 --- a/sys/kern/kern_fork.c
 +++ b/sys/kern/kern_fork.c
 @@ -1049,6 +1049,13 @@ fork_return(struct thread *td, struct trapframe *frame)
@@ -5647,7 +5895,7 @@ index c5476b3..6981dfe 100644
  	if (KTRPOINT(td, KTR_SYSRET))
  		ktrsysret(SYS_fork, 0, 0);
 diff --git a/sys/kern/kern_kthread.c b/sys/kern/kern_kthread.c
-index 1578a66..66ba8bb 100644
+index 1578a66b..66ba8bba 100644
 --- a/sys/kern/kern_kthread.c
 +++ b/sys/kern/kern_kthread.c
 @@ -278,9 +278,18 @@ kthread_add(void (*func)(void *), void *arg, struct proc *p,
@@ -5671,7 +5919,7 @@ index 1578a66..66ba8bb 100644
  	newtd->td_ucred = crhold(p->p_ucred);
 diff --git a/sys/kern/kern_sva.c b/sys/kern/kern_sva.c
 new file mode 100644
-index 0000000..05b63a5
+index 00000000..05b63a53
 --- /dev/null
 +++ b/sys/kern/kern_sva.c
 @@ -0,0 +1,147 @@
@@ -5823,7 +6071,7 @@ index 0000000..05b63a5
 +}
 +
 diff --git a/sys/kern/sched_4bsd.c b/sys/kern/sched_4bsd.c
-index 06d55cd..ba6f7bf 100644
+index 06d55cd1..ba6f7bfd 100644
 --- a/sys/kern/sched_4bsd.c
 +++ b/sys/kern/sched_4bsd.c
 @@ -68,6 +68,11 @@ int				dtrace_vtime_active;
@@ -5863,7 +6111,7 @@ index 06d55cd..ba6f7bf 100644
  
  void
 diff --git a/sys/kern/sched_ule.c b/sys/kern/sched_ule.c
-index f5db70e..052eb77 100644
+index f5db70ed..052eb77e 100644
 --- a/sys/kern/sched_ule.c
 +++ b/sys/kern/sched_ule.c
 @@ -76,6 +76,10 @@ dtrace_vtime_switch_func_t	dtrace_vtime_switch_func;
@@ -5907,7 +6155,7 @@ index f5db70e..052eb77 100644
  
  /*
 diff --git a/sys/kern/subr_pcpu.c b/sys/kern/subr_pcpu.c
-index 2b3d59c..8e3529d 100644
+index 2b3d59c8..8e3529dc 100644
 --- a/sys/kern/subr_pcpu.c
 +++ b/sys/kern/subr_pcpu.c
 @@ -61,6 +61,10 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/kern/subr_pcpu.c 224218 2011-07-19 14:57:5
@@ -5930,7 +6178,7 @@ index 2b3d59c..8e3529d 100644
  	KASSERT(cpuid >= 0 && cpuid < MAXCPU,
  	    ("pcpu_init: invalid cpuid %d", cpuid));
 diff --git a/sys/kern/subr_trap.c b/sys/kern/subr_trap.c
-index fd848db..65a2317 100644
+index fd848dbd..65a23178 100644
 --- a/sys/kern/subr_trap.c
 +++ b/sys/kern/subr_trap.c
 @@ -123,11 +123,20 @@ userret(struct thread *td, struct trapframe *frame)
@@ -5970,7 +6218,7 @@ index fd848db..65a2317 100644
  	p = td->td_proc;
  
 diff --git a/sys/sys/pcpu.h b/sys/sys/pcpu.h
-index 84bc95c..837b051 100644
+index 84bc95cf..837b051b 100644
 --- a/sys/sys/pcpu.h
 +++ b/sys/sys/pcpu.h
 @@ -191,6 +191,17 @@ struct pcpu {
@@ -5992,21 +6240,23 @@ index 84bc95c..837b051 100644
  
  #ifdef _KERNEL
 diff --git a/sys/sys/proc.h b/sys/sys/proc.h
-index adfa07e..ee3702e 100644
+index adfa07ef..e82f3ad0 100644
 --- a/sys/sys/proc.h
 +++ b/sys/sys/proc.h
-@@ -65,6 +65,10 @@
+@@ -65,6 +65,12 @@
  #include <sys/ucred.h>
  #include <machine/proc.h>		/* Machine-dependent proc substruct. */
  
 +#if 1
++#ifdef _KERNEL
 +#include <sva/state.h>
++#endif
 +#endif
 +
  /*
   * One structure allocated per session.
   *
-@@ -309,6 +313,15 @@ struct thread {
+@@ -309,6 +315,15 @@ struct thread {
  	struct vnet	*td_vnet;	/* (k) Effective vnet. */
  	const char	*td_vnet_lpush;	/* (k) Debugging vnet push / pop. */
  	struct trapframe *td_intr_frame;/* (k) Frame of the current irq */
@@ -6023,7 +6273,7 @@ index adfa07e..ee3702e 100644
  
  struct mtx *thread_lock_block(struct thread *);
 diff --git a/sys/vm/vm_glue.c b/sys/vm/vm_glue.c
-index c7d43c7..8bbc1ab 100644
+index c7d43c76..8bbc1ab6 100644
 --- a/sys/vm/vm_glue.c
 +++ b/sys/vm/vm_glue.c
 @@ -363,6 +363,16 @@ vm_thread_new(struct thread *td, int pages)
@@ -6044,7 +6294,7 @@ index c7d43c7..8bbc1ab 100644
  	if (pages <= 1)
  		pages = KSTACK_PAGES;
 diff --git a/sys/x86/x86/local_apic.c b/sys/x86/x86/local_apic.c
-index 2eb1fe1..8cf54bf 100644
+index 2eb1fe1b..8cf54bf3 100644
 --- a/sys/x86/x86/local_apic.c
 +++ b/sys/x86/x86/local_apic.c
 @@ -133,6 +133,7 @@ static struct lvt lvts[LVT_MAX + 1] = {

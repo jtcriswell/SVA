@@ -36,9 +36,6 @@ llvm:
 freebsd9_patch:
   A patch that will modify the FreeBSD 9.0 kernel source code to work on SVA.
 
-freebsd9_libc_patch:
-  A patch that will modify the FreeBSD 9.0 C library source code to SVA.
-
 autoconf:
   The source code to the AutoConf configure script.
 
@@ -84,7 +81,6 @@ o Apply the SVA patches to the FreeBSD source code
   - cd usr/src
 
   - patch -p1 < ../../freebsd9_patch
-  - patch -p1 < ../../freebsd9_libc_patch
 
 o Build the kernel, setting INSTKERNNAME to the name of the kernel
 
