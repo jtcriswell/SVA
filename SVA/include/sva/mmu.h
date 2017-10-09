@@ -259,6 +259,10 @@ static page_desc_t page_desc[numPageDescEntries];
 #define PGEX_P      0x01    /* Protection violation vs. not present */
 #define PGEX_W      0x02    /* during a Write cycle */
 
+/* Fork code flags */
+#define RFPROC      (1<<4)  /* change child (else changes curproc) */
+#define RFMEM       (1<<5)  /* share `address space' */
+
 /*
  * ===========================================================================
  * END FreeBSD CODE BLOCK

@@ -1288,10 +1288,16 @@ sva_init_stack (unsigned char * start_stackp,
     icontextp->valid |= IC_is_valid;
   }
 
-  if(vg && (oldThread->secmemSize) && (oldThread->flags & 1))
-  { 
-  	ghostmemCOW(oldThread, newThread);
-	oldThread->flags &= ~1;
+  if(vg && (oldThread->secmemSize))
+  {
+    /* If the system call is fork or pdfork, COW on the ghost memory of the parent process;
+     * If the system call is rfork and the flags indicate the child process will be 
+     * a separate process and have its own address space, COW on the ghost memory of
+     * the parent process*/	
+    if((cpup->newCurrentIC->rax == 2) || (cpup->newCurrentIC->rax == 518) || \
+       ((cpup->newCurrentIC->rax == 251) && (cpup->newCurrentIC->rdi & RFPROC) \
+       && !(cpup->newCurrentIC->rdi & RFMEM)))	
+      ghostmemCOW(oldThread, newThread);
   }
   /*
    * Re-enable interrupts.

@@ -502,6 +502,17 @@ freeSecureMemory (void) {
   return;
 }
 
+/*
+ * Function: sva_ghost_fault()
+ *
+ * Description:
+ *  Handle page faults of ghost memory pages.
+ *
+ * Inputs:
+ *  vaddr - The virtual address of the faulting ghost memory page.
+ *  code  - The page fault code.
+ *
+ */
 void
 sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
   /* Old interrupt flags */
@@ -553,7 +564,7 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
      else
      {
         uintptr_t vaddr_old = (uintptr_t) getVirtual(paddr);
-        uintptr_t paddr_new = provideSVAMemory (X86_PAGE_SIZE);
+        uintptr_t paddr_new = alloc_frame (X86_PAGE_SIZE);
         page_desc_t * pgDesc_new = getPageDescPtr (paddr_new);
         if (pgRefCount (pgDesc_new) > 1) {
                 panic ("SVA: Ghost page still in use somewhere else!\n");

@@ -1341,16 +1341,16 @@ ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
    
     unprotect_paging(); 
     if (!isPresent (pml4e)) {
-    /* Page table page index */
-    unsigned int ptindex;
+      /* Page table page index */
+      unsigned int ptindex;
 
-    /* Fetch a new page table page */
-    ptindex = allocPTPage ();
-    /*
-     * Install a new PDPTE entry using the page.
-     */
-    uintptr_t paddr = PTPages[ptindex].paddr;
-    *pml4e = (paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
+      /* Fetch a new page table page */
+      ptindex = allocPTPage ();
+      /*
+       * Install a new PDPTE entry using the page.
+       */
+      uintptr_t paddr = PTPages[ptindex].paddr;
+      *pml4e = (paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
     }
     
     /*
@@ -1393,7 +1393,7 @@ ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
            updateUses (pdpte);
 
            if ((*pdpte) & PTE_PS) {
-              printf ("ghostmemCOW: PDPTE has PS BIT\n");
+             printf ("ghostmemCOW: PDPTE has PS BIT\n");
            }
 
            pde_t * src_pde = get_pdeVaddr (src_pdpte, vaddr_pdp);
@@ -1406,53 +1406,53 @@ ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
            pde ++) 
            {
 
-                 /*
-                  * Get the PDE entry (or add it if it is not present).
-                  */
-                  if(!isPresent (src_pde))
-		           continue;
+             /*
+              * Get the PDE entry (or add it if it is not present).
+              */
+              if(!isPresent (src_pde))
+	        continue;
 		  
-		  if (!isPresent (pde)) {
-                  /* Page table page index */
-     	                   unsigned int ptindex;
+	      if (!isPresent (pde)) {
+                /* Page table page index */
+     	        unsigned int ptindex;
 
-                  /* Fetch a new page table page */
-	                   ptindex = allocPTPage ();
+                /* Fetch a new page table page */
+	        ptindex = allocPTPage ();
 
-                 /*
-                  * Install a new PDE entry.
-                  */
-                  uintptr_t pde_paddr = PTPages[ptindex].paddr;
-                  *pde = (pde_paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
-           	  }
-           	  *pde |= PTE_CANUSER;
+                /*
+                 * Install a new PDE entry.
+                 */
+                uintptr_t pde_paddr = PTPages[ptindex].paddr;
+                *pde = (pde_paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
+               }
+               *pde |= PTE_CANUSER;
 
-          	 /*
-          	  * Note that we've added another translation to the pdpte.
-           	  */
-           	  updateUses (pde);
+               /*
+          	* Note that we've added another translation to the pdpte.
+           	*/
+               updateUses (pde);
 
-           	if ((*pde) & PTE_PS) {
-                 	 printf ("ghostmemCOW: PDE has PS BIT\n");
-           	}
+               if ((*pde) & PTE_PS) {
+                 printf ("ghostmemCOW: PDE has PS BIT\n");
+               }
        
        
-           	pte_t * src_pte = get_pteVaddr (src_pde, vaddr_pde);
-           	pte_t * pte = get_pteVaddr (pde, vaddr_pde);	
+               pte_t * src_pte = get_pteVaddr (src_pde, vaddr_pde);
+               pte_t * pte = get_pteVaddr (pde, vaddr_pde);	
 
-           	for(uintptr_t vaddr_pte = vaddr_pde;
-           	vaddr_pte < vaddr_pde + NBPDR; 
-           	vaddr_pte += PAGE_SIZE,\
-           	src_pte ++,\
-           	pte ++)
-           	{
-               	  if(!isPresent (src_pte))
-			continue;
+               for(uintptr_t vaddr_pte = vaddr_pde;
+               vaddr_pte < vaddr_pde + NBPDR; 
+               vaddr_pte += PAGE_SIZE,\
+               src_pte ++,\
+               pte ++)
+               {
+                  if(!isPresent (src_pte))
+	            continue;
 
 	       	  page_desc_t * pgDesc = getPageDescPtr (*src_pte & PG_FRAME);
 		  
 		  if(pgDesc->type != PG_GHOST)
-                  	panic("ghostmemCOW: page is not a ghost memory page! vaddr = 0x%lx, src_pte = 0x%lx, *src_pte = 0x%lx, src_pde = 0x%lx, *src_pde = 0x%lx\n", vaddr_pte, src_pte, *src_pte, src_pde, *src_pde);
+                    panic("ghostmemCOW: page is not a ghost memory page! vaddr = 0x%lx, src_pte = 0x%lx, *src_pte = 0x%lx, src_pde = 0x%lx, *src_pde = 0x%lx\n", vaddr_pte, src_pte, *src_pte, src_pde, *src_pde);
 
                	  *src_pte &= ~PTE_CANWRITE; 
                   *pte = *src_pte;

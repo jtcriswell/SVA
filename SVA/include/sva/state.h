@@ -278,8 +278,6 @@ struct SVAThread {
   /* Randomly created identifier */
   uintptr_t rid;
   
-  /* Save necessary flags of system calls */
-  unsigned int flags;
 } __attribute__ ((aligned (16)));
 
 /*
