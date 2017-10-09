@@ -1072,7 +1072,6 @@ sva_release_stack (uintptr_t id) {
  * Inputs:
  *  start_stackp    - A pointer to the *beginning* of the kernel stack.
  *  length          - Length of the kernel stack in bytes.
- *  is_fork         - Whether the parent forks a new process or just clones a new thread
  *  new_cr3	    - The new process(thread)'s cr3
  *  func            - The kernel function to execute when the new integer state
  *                    is swapped on to the processor.
