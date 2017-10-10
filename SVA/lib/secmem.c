@@ -534,16 +534,32 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
 
   /* copy-on-write page fault */
   if((code & PGEX_P) && (code & PGEX_W)){
+#ifdef SVA_DMAP
+     pml4e_t * pml4e_ptr = get_svaDmap_pml4eVaddr (get_pagetable(), vaddr);
+#else
      pml4e_t * pml4e_ptr = get_pml4eVaddr (get_pagetable(), vaddr);
+#endif
      if(!isPresent (pml4e_ptr)) 
         panic("sva_ghost_fault: cow pgfault pml4e %p does not exist\n", pml4e);
+#ifdef SVA_DMAP     
+     pdpte_t * pdpte = get_svaDmap_pdpteVaddr (pml4e_ptr, vaddr);
+#else
      pdpte_t * pdpte = get_pdpteVaddr (pml4e_ptr, vaddr);
+#endif
      if(!isPresent (pdpte)) 
         panic("sva_ghost_fault: cow pgfault pdpte %p does not exist\n", pdpte);
+#ifdef SVA_DMAP
+     pde_t * pde = get_svaDmap_pdeVaddr (pdpte, vaddr);
+#else
      pde_t * pde = get_pdeVaddr (pdpte, vaddr);
+#endif
      if(!isPresent (pde)) 
         panic("sva_ghost_fault: cow pgfault pde %p does not exist\n", pde);
+#ifdef SVA_DMAP
+     pte_t * pte = get_svaDmap_pteVaddr (pde, vaddr);
+#else
      pte_t * pte = get_pteVaddr (pde, vaddr);
+#endif
      uintptr_t paddr = *pte & PG_FRAME;
      page_desc_t * pgDesc = getPageDescPtr (paddr);
 
@@ -551,8 +567,9 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
 	panic("SVA: sva_ghost_fault: vaddr = 0x%lx paddr = 0x%lx is not a ghost memory page!\n", vaddr, paddr); 
      /* If only one process maps this page, directly grant this process write permission */
 
-
+#ifndef SVA_DMAP
      unprotect_paging();
+#endif
      if(pgDesc->count == 1)
      {
         * pte = (* pte) | PTE_CANWRITE;
@@ -560,8 +577,12 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
      /* Otherwise copy-on-write */
      else
      {
+#ifdef SVA_DMAP
+        uintptr_t vaddr_old = (uintptr_t) getVirtualSVADMAP(paddr);
+#else
         uintptr_t vaddr_old = (uintptr_t) getVirtual(paddr);
-        uintptr_t paddr_new = provideSVAMemory (X86_PAGE_SIZE);
+#endif
+	uintptr_t paddr_new = provideSVAMemory (X86_PAGE_SIZE);
         page_desc_t * pgDesc_new = getPageDescPtr (paddr_new);
         if (pgRefCount (pgDesc_new) > 1) {
                 panic ("SVA: Ghost page still in use somewhere else!\n");
@@ -578,9 +599,9 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
         getPageDescPtr (paddr_new)->count = 1;
         pgDesc->count --;
      }
-     
+#ifndef SVA_DMAP 
      protect_paging();
-
+#endif
      return; 
    }
 

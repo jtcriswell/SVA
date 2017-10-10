@@ -1564,9 +1564,16 @@ ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
     * table, add one.
     */
     sva_integer_state_t integerState = newThread->integerState;
+#ifdef SVA_DMAP
+    pml4e_t * pml4e =  (pml4e_t *) getVirtualSVADMAP(integerState.cr3 + secmemOffset);
+#else
     pml4e_t * pml4e =  (pml4e_t *) getVirtual(integerState.cr3 + secmemOffset);
-   
+#endif
+
+#ifndef SVA_DMAP
     unprotect_paging(); 
+#endif
+
     if (!isPresent (pml4e)) {
       /* Page table page index */
       unsigned int ptindex;
@@ -1586,10 +1593,15 @@ ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
     *pml4e |= PTE_CANUSER;
      
     newThread->secmemPML4e = *pml4e;
-    
+
+#ifdef SVA_DMAP
+    pdpte_t * src_pdpte = (pdpte_t *) get_svaDmap_pdpteVaddr (&(oldThread->secmemPML4e), vaddr_start);
+    pdpte_t * pdpte = get_svaDmap_pdpteVaddr (pml4e, vaddr_start);   
+#else    
     pdpte_t * src_pdpte = (pdpte_t *) get_pdpteVaddr (&(oldThread->secmemPML4e), vaddr_start);
     pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr_start);   
-   
+#endif   
+    
     for(uintptr_t vaddr_pdp = vaddr_start;
     vaddr_pdp < vaddr_end; 
     vaddr_pdp += NBPDP,\
@@ -1623,9 +1635,13 @@ ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
              printf ("ghostmemCOW: PDPTE has PS BIT\n");
            }
 
+#ifdef SVA_DMAP
+	   pde_t * src_pde = get_svaDmap_pdeVaddr (src_pdpte, vaddr_pdp);
+           pde_t * pde = get_svaDmap_pdeVaddr (pdpte, vaddr_pdp);
+#else
            pde_t * src_pde = get_pdeVaddr (src_pdpte, vaddr_pdp);
            pde_t * pde = get_pdeVaddr (pdpte, vaddr_pdp);
- 
+#endif 
            for(uintptr_t vaddr_pde = vaddr_pdp;
            vaddr_pde < vaddr_pdp + NBPDP; 
            vaddr_pde += NBPDR,\
@@ -1662,11 +1678,14 @@ ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
                if ((*pde) & PTE_PS) {
                  printf ("ghostmemCOW: PDE has PS BIT\n");
                }
-       
-       
+
+#ifdef SVA_DMAP
+               pte_t * src_pte = get_svaDmap_pteVaddr (src_pde, vaddr_pde);
+               pte_t * pte = get_svaDmap_pteVaddr (pde, vaddr_pde);	
+#else
                pte_t * src_pte = get_pteVaddr (src_pde, vaddr_pde);
                pte_t * pte = get_pteVaddr (pde, vaddr_pde);	
-
+#endif
                for(uintptr_t vaddr_pte = vaddr_pde;
                vaddr_pte < vaddr_pde + NBPDR; 
                vaddr_pte += PAGE_SIZE,\
@@ -1689,8 +1708,9 @@ ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
            	} 
      	}
      }
-
+#ifndef SVA_DMAP
     protect_paging(); 
+#endif
 }
 
 /*
@@ -1751,13 +1771,17 @@ sva_mm_load_pgtable (void * pg_ptr) {
      * Unset page protection so that we can write into the top-level page-table
      * page if necessary.
      */
+#ifndef SVA_DMAP
     unprotect_paging();
-
+#endif
     /*
      * Get a pointer into the page tables for the secure memory region.
      */
+#ifdef SVA_DMAP
+    pml4e_t * secmemp = (pml4e_t *) getVirtualSVADMAP ((uintptr_t)get_pagetable() + secmemOffset);
+#else
     pml4e_t * secmemp = (pml4e_t *) getVirtual ((uintptr_t)get_pagetable() + secmemOffset);
-
+#endif
     /*
      * Restore the PML4E entry for the secure memory region.
      */
@@ -1766,7 +1790,9 @@ sva_mm_load_pgtable (void * pg_ptr) {
     /*
      * Mark the page table pages as read-only again.
      */
+#ifndef SVA_DMAP
     protect_paging();
+#endif
   }
 
   /* Restore interrupts */
@@ -2254,8 +2280,9 @@ remap_internal_memory (uintptr_t * firstpaddr) {
   /*
    * Disable protections.
    */
+#ifndef SVA_DMAP
   unprotect_paging();
-
+#endif
   /*
    * Create a PML4E for the SVA address space.
    */
@@ -2266,7 +2293,11 @@ remap_internal_memory (uintptr_t * firstpaddr) {
    * table, add one.
    */
   uintptr_t vaddr = 0xffffff8000000000u;
+#ifdef SVA_DMAP
+  pml4e_t * pml4e = get_svaDmap_pml4eVaddr (get_pagetable(), vaddr);
+#else
   pml4e_t * pml4e = get_pml4eVaddr (get_pagetable(), vaddr);
+#endif
   if (!isPresent (pml4e)) {
     /* Allocate a new frame */
     uintptr_t paddr = *(firstpaddr);
@@ -2277,8 +2308,11 @@ remap_internal_memory (uintptr_t * firstpaddr) {
     ++(getPageDescPtr(paddr)->count);
 
     /* Zero the contents of the frame */
+#ifdef SVA_DMAP
+    memset (getVirtualSVADMAP (paddr), 0, X86_PAGE_SIZE);
+#else
     memset (getVirtual (paddr), 0, X86_PAGE_SIZE);
-
+#endif
     /* Install a new PDPTE entry using the page  */
     *pml4e = (paddr & addrmask) | PTE_CANWRITE | PTE_PRESENT;
   }
@@ -2286,7 +2320,11 @@ remap_internal_memory (uintptr_t * firstpaddr) {
   /*
    * Get the PDPTE entry (or add it if it is not present).
    */
+#ifdef SVA_DMAP
+  pdpte_t * pdpte = get_svaDmap_pdpteVaddr (pml4e, vaddr);
+#else
   pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr);
+#endif
   if (!isPresent (pdpte)) {
     /* Allocate a new frame */
     uintptr_t pdpte_paddr = *(firstpaddr);
@@ -2297,8 +2335,11 @@ remap_internal_memory (uintptr_t * firstpaddr) {
     ++(getPageDescPtr(pdpte_paddr)->count);
 
     /* Zero the contents of the frame */
+#ifdef SVA_DMAP
+    memset (getVirtualSVADMAP (pdpte_paddr), 0, X86_PAGE_SIZE);
+#else
     memset (getVirtual (pdpte_paddr), 0, X86_PAGE_SIZE);
-
+#endif
     /* Install a new PDE entry using the page. */
     *pdpte = (pdpte_paddr & addrmask) | PTE_CANWRITE | PTE_PRESENT;
   }
@@ -2319,8 +2360,11 @@ remap_internal_memory (uintptr_t * firstpaddr) {
     /*
      * Get the PDE entry.
      */
+#ifdef SVA_DMAP
+    pde_t * pde = get_svaDmap_pdeVaddr (pdpte, vaddr);
+#else
     pde_t * pde = get_pdeVaddr (pdpte, vaddr);
-
+#endif
     /* Allocate a new frame */
     uintptr_t pde_paddr = *(firstpaddr);
     (*firstpaddr) += (2 * 1024 * 1024);
@@ -2343,8 +2387,11 @@ remap_internal_memory (uintptr_t * firstpaddr) {
      * Verify that the mapping works.
      */
     unsigned char * p = (unsigned char *) vaddr;
+#ifdef SVA_DMAP
+    unsigned char * q = (unsigned char *) getVirtualSVADMAP (pde_paddr);
+#else
     unsigned char * q = (unsigned char *) getVirtual (pde_paddr);
-
+#endif
     for (unsigned index = 0; index < 100; ++index) {
       (*(p + index)) = ('a' + index);
     }
@@ -2361,7 +2408,9 @@ remap_internal_memory (uintptr_t * firstpaddr) {
   /*
    * Re-enable page protections.
    */
+#ifndef SVA_DMAP
   protect_paging();
+#endif
   return;
 }
 
