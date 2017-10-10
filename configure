@@ -1254,6 +1254,8 @@ Optional Features:
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
   --enable-vg             Enable Virtual Ghost (default is NO)
   --enable-mpx            Enable MPX for SFI (default is NO)
+  --enable-vg-random      Enable Ghost Memory allocation randomization
+                          (default is NO)
   --enable-mmuchecks      Enable SVA MMU Checks (default is YES)
   --enable-sva-dmap       Enable SVA Direct Map Feature (default is YES)
   --enable-asid           Enable SVA ASID Feature (default is YES)
@@ -1692,33 +1694,33 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 # Check whether --enable-vg was given.
 if test "${enable_vg+set}" = set; then :
-  enableval=$enable_vg;
+  enableval=$enable_vg; case "${enableval}" in
+                             	yes) $as_echo "#define VG 1" >>confdefs.h
+ ;;
+                             	no)  $as_echo "#define NOVG 1" >>confdefs.h
+ ;;
+                             	*)   as_fn_error $? "bad value ${enableval} for --enable-vg" "$LINENO" 5 ;;
+                             esac
 else
-  enableval=default
+  $as_echo "#define NOVG 1" >>confdefs.h
+
 fi
 
-case "$enableval" in
-  yes) $as_echo "#define VG 1" >>confdefs.h
- ;;
-  no) $as_echo "#define NOVG 1" >>confdefs.h
- ;;
-  *) as_fn_error $? "Invalid setting for --enable-vg. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
-esac
 
 # Check whether --enable-vg-random was given.
 if test "${enable_vg_random+set}" = set; then :
-  enableval=$enable_vg_random;
+  enableval=$enable_vg_random; case "${enableval}" in
+                             	yes) $as_echo "#define VG_RANDOM 1" >>confdefs.h
+ ;;
+                             	no)  $as_echo "#define NOVG_RANDOM 1" >>confdefs.h
+ ;;
+                             	*)   as_fn_error $? "bad value ${enableval} for --enable-vg" "$LINENO" 5 ;;
+                             esac
 else
-  enableval=default
+  $as_echo "#define NOVG_RANDOM 1" >>confdefs.h
+
 fi
 
-case "$enableval" in
-  yes) $as_echo "#define VG_RANDOM 1" >>confdefs.h
- ;;
-  no) $as_echo "#define NOVG_RANDOM 1" >>confdefs.h
- ;;
-  *) as_fn_error $? "Invalid setting for --enable-vg-random. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
-esac
 
 # Check whether --enable-mpx was given.
 if test "${enable_mpx+set}" = set; then :
@@ -1745,18 +1747,18 @@ esac
 
 # Check whether --enable-mmuchecks was given.
 if test "${enable_mmuchecks+set}" = set; then :
-  enableval=$enable_mmuchecks;
+  enableval=$enable_mmuchecks; case "${enableval}" in
+                             	yes) $as_echo "#define CHECKMMU 1" >>confdefs.h
+ ;;
+                             	no)  $as_echo "#define NOCHECKMMU 1" >>confdefs.h
+ ;;
+                             	*)   as_fn_error $? "bad value ${enableval} for --enable-mmuchecks" "$LINENO" 5 ;;
+                             esac
 else
-  enableval=default
+  $as_echo "#define CHECKMMU 1" >>confdefs.h
+
 fi
 
-case "$enableval" in
-  yes) $as_echo "#define CHECKMMU 1" >>confdefs.h
- ;;
-  no) $as_echo "#define NOCHECKMMU 1" >>confdefs.h
- ;;
-  *) as_fn_error $? "Invalid setting for --enable-mmuchecks. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
-esac
 
 # Check whether --enable-sva-dmap was given.
 if test "${enable_sva_dmap+set}" = set; then :

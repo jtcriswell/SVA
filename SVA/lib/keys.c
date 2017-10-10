@@ -29,6 +29,7 @@
 #include "sva/keys.h"
 #include "sva/state.h"
 #include "sva/util.h"
+#include "keys.h"
 
 #define DEBUG               1
 #define INCOMPLETE_ON       1

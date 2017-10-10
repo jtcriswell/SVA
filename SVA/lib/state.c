@@ -25,6 +25,7 @@
 #include <sva/mmu.h>
 #include "sva/mmu_intrinsics.h"
 #include <sva/x86.h>
+#include "thread_stack.h"
 
 /*****************************************************************************
  * Externally Visibile Utility Functions
@@ -441,7 +442,11 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
   sva_integer_state_t * old = &(oldThread->integerState);
 
   /* Get a pointer to the saved state (the ID is the pointer) */
-  struct SVAThread * newThread = (struct SVAThread *)(newint);
+  struct SVAThread * newThread = validateThreadPointer(newint);
+  if (! newThread) {
+	 panic("sva_swap_integer: Invalid new-thread pointer");
+	 return (uintptr_t)NULL;
+  }
   sva_integer_state_t * new =  newThread ? &(newThread->integerState) : 0;
 
   /* Variables for registers for debugging */
@@ -1114,7 +1119,12 @@ sva_release_stack (uintptr_t id) {
   kernel_to_usersva_pcid();
  
   /* Get a pointer to the saved state (the ID is the pointer) */
-  struct SVAThread * newThread = (struct SVAThread *)(id);
+  struct SVAThread * newThread = validateThreadPointer(id);
+  if (! newThread) {
+	 panic("sva_release_stack: Invalid thread pointer");
+	 return;
+  }
+
   sva_integer_state_t * new =  newThread ? &(newThread->integerState) : 0;
 
   /*
@@ -1148,7 +1158,6 @@ sva_release_stack (uintptr_t id) {
   newThread->used = 0;
 
   /* Push the thread into the stack of free threads since it can be reused */
-  extern void ftstack_push(struct SVAThread *thread);
   ftstack_push(newThread);
   usersva_to_kernel_pcid();
   record_tsc(sva_release_stack_2_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
@@ -1259,7 +1268,6 @@ sva_init_stack (unsigned char * start_stackp,
   /*
    * Allocate a new SVA thread.
    */
-  extern struct SVAThread * findNextFreeThread (void);
   struct SVAThread * newThread = findNextFreeThread();
 
 

@@ -86,6 +86,7 @@
 #include "sva/util.h"
 #include "sva/mmu.h"
 #include "sva/interrupt.h"
+#include "thread_stack.h"
 
 #include <string.h>
 #include <limits.h>
@@ -602,7 +603,6 @@ sva_init_primary () {
   /* Initialize the processor ID */
   init_procID();
 
-  extern void init_threads(void);
   init_threads();
 
   /* Initialize the IDT of the primary processor */
