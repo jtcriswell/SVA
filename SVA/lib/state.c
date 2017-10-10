@@ -1164,6 +1164,7 @@ sva_release_stack (uintptr_t id) {
  * Inputs:
  *  start_stackp - A pointer to the *beginning* of the kernel stack.
  *  length       - Length of the kernel stack in bytes.
+ *  new_cr3	 - The new process(thread)'s cr3
  *  func         - The kernel function to execute when the new integer state
  *                 is swapped on to the processor.
  *  arg          - The first argument to the function.
@@ -1175,6 +1176,7 @@ sva_release_stack (uintptr_t id) {
 uintptr_t
 sva_init_stack (unsigned char * start_stackp,
                 uintptr_t length,
+		uintptr_t new_cr3,
                 void * func,
                 uintptr_t arg1,
                 uintptr_t arg2,
@@ -1323,6 +1325,7 @@ sva_init_stack (unsigned char * start_stackp,
   integerp->ss  = 0x3b;
   integerp->valid = 1;
   integerp->rflags = 0x202;
+  integerp->cr3 = new_cr3;
 #if 0
   integerp->ist3 = integerp->kstackp;
 #endif
@@ -1382,6 +1385,17 @@ sva_init_stack (unsigned char * start_stackp,
     icontextp->valid |= IC_is_valid;
   }
 
+  if(vg && (oldThread->secmemSize))
+  {
+    /* If the system call is fork or pdfork, COW on the ghost memory of the parent process;
+     * If the system call is rfork and the flags indicate the child process will be 
+     * a separate process and have its own address space, COW on the ghost memory of
+     * the parent process*/	
+    if((cpup->newCurrentIC->rax == 2) || (cpup->newCurrentIC->rax == 518) || \
+       ((cpup->newCurrentIC->rax == 251) && (cpup->newCurrentIC->rdi & RFPROC) \
+       && !(cpup->newCurrentIC->rdi & RFMEM)))	
+      ghostmemCOW(oldThread, newThread);
+  }
   /*
    * Re-enable interrupts.
    */

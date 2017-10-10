@@ -59,6 +59,7 @@
 #define SVA_MMU_INTRINSICS_H
 
 #include "mmu_types.h"
+#include "state.h"
 
 /*
  *****************************************************************************
@@ -88,6 +89,9 @@ extern void sva_mmu_init(pml4e_t * kpml4Mapping,
 
 /* Key initialization and secure storage allocation */
 extern void * sva_translate(void * entryPoint);
+
+/* COW on ghost memory at fork */
+extern void ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread);
 
 /*
  *****************************************************************************

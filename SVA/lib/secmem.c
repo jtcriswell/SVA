@@ -465,7 +465,8 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
          *  implementation in which it only releases one page at a time to the
          *  OS.
          */
-        free_frame(paddr);
+	if(getPageDescPtr(paddr)->count == 0)
+          free_frame(paddr);
       }
     }
   }
@@ -505,7 +506,7 @@ freeSecureMemory (void) {
 }
 
 void
-sva_ghost_fault (uintptr_t vaddr) {
+sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
   uint64_t tsc_tmp;
   if(tsc_read_enable_sva)
      tsc_tmp = sva_read_tsc();
@@ -530,6 +531,58 @@ sva_ghost_fault (uintptr_t vaddr) {
    */
   struct CPUState * cpup = getCPUState();
   struct SVAThread * threadp = cpup->currentThread;
+
+  /* copy-on-write page fault */
+  if((code & PGEX_P) && (code & PGEX_W)){
+     pml4e_t * pml4e_ptr = get_pml4eVaddr (get_pagetable(), vaddr);
+     if(!isPresent (pml4e_ptr)) 
+        panic("sva_ghost_fault: cow pgfault pml4e %p does not exist\n", pml4e);
+     pdpte_t * pdpte = get_pdpteVaddr (pml4e_ptr, vaddr);
+     if(!isPresent (pdpte)) 
+        panic("sva_ghost_fault: cow pgfault pdpte %p does not exist\n", pdpte);
+     pde_t * pde = get_pdeVaddr (pdpte, vaddr);
+     if(!isPresent (pde)) 
+        panic("sva_ghost_fault: cow pgfault pde %p does not exist\n", pde);
+     pte_t * pte = get_pteVaddr (pde, vaddr);
+     uintptr_t paddr = *pte & PG_FRAME;
+     page_desc_t * pgDesc = getPageDescPtr (paddr);
+
+     if(pgDesc->type != PG_GHOST)
+	panic("SVA: sva_ghost_fault: vaddr = 0x%lx paddr = 0x%lx is not a ghost memory page!\n", vaddr, paddr); 
+     /* If only one process maps this page, directly grant this process write permission */
+
+
+     unprotect_paging();
+     if(pgDesc->count == 1)
+     {
+        * pte = (* pte) | PTE_CANWRITE;
+     }
+     /* Otherwise copy-on-write */
+     else
+     {
+        uintptr_t vaddr_old = (uintptr_t) getVirtual(paddr);
+        uintptr_t paddr_new = provideSVAMemory (X86_PAGE_SIZE);
+        page_desc_t * pgDesc_new = getPageDescPtr (paddr_new);
+        if (pgRefCount (pgDesc_new) > 1) {
+                panic ("SVA: Ghost page still in use somewhere else!\n");
+        }
+        if (isPTP(pgDesc_new) || isCodePG (pgDesc_new)) {
+                panic ("SVA: Ghost page has wrong type!\n");
+        }
+        	
+        *pte = (paddr_new & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
+     	memcpy((void *)vaddr, (void *) vaddr_old, X86_PAGE_SIZE);   
+       
+       
+        getPageDescPtr (paddr_new)->type = PG_GHOST;
+        getPageDescPtr (paddr_new)->count = 1;
+        pgDesc->count --;
+     }
+     
+     protect_paging();
+
+     return; 
+   }
 
   /*
    * Determine if this is the first secure memory allocation.
