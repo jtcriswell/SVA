@@ -463,11 +463,8 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
           unsigned char * dmapAddr = getVirtualSVADMAP (paddr);
           memset (dmapAddr, 0, X86_PAGE_SIZE);
 #else
-          if (threadp == currentThread) {
-            memset (ptr, 0, X86_PAGE_SIZE);
-          }
+          memset (ptr, 0, X86_PAGE_SIZE);
 #endif
-
           free_frame(paddr);
 	}
       }
