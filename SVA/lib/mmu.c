@@ -865,11 +865,7 @@ getPhysicalAddrFromPML4E (void * v, pml4e_t * pml4e, uintptr_t * paddr) {
   /*
    * Use the PML4E to get the address of the PDPTE.
    */
-#ifdef SVA_DMAP
-  pdpte_t * pdpte = get_svaDmap_pdpteVaddr (pml4e, vaddr);
-#else
   pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr);
-#endif
 
   /*
    * Determine if the PDPTE is present.  If not, stop the page table walk.
@@ -890,11 +886,7 @@ getPhysicalAddrFromPML4E (void * v, pml4e_t * pml4e, uintptr_t * paddr) {
   /*
    * Find the page directory entry table from the PDPTE value.
    */
-#if SVA_DMAP
-  pde_t * pde = get_svaDmap_pdeVaddr (pdpte, vaddr);
-#else
   pde_t * pde = get_pdeVaddr (pdpte, vaddr);
-#endif
 
   /*
    * Determine if the PDE is present.  If not, stop the page table walk.
@@ -915,11 +907,7 @@ getPhysicalAddrFromPML4E (void * v, pml4e_t * pml4e, uintptr_t * paddr) {
   /*
    * Find the PTE pointed to by this PDE.
    */
-#if SVA_DMAP
-  pte_t * pte = get_svaDmap_pteVaddr (pde, vaddr);
-#else
   pte_t * pte = get_pteVaddr (pde, vaddr);
-#endif
 
   /*
    * Compute the physical address.
@@ -977,11 +965,7 @@ getPhysicalAddr (void * v) {
   /*
    * Get the address of the PML4e.
    */
-#if SVA_DMAP
-  pml4e_t * pml4e = get_svaDmap_pml4eVaddr (cr3, vaddr);
-#else
   pml4e_t * pml4e = get_pml4eVaddr (cr3, vaddr);
-#endif
 
   /*
    * Perform the rest of the page table walk.
@@ -1026,12 +1010,12 @@ removeOSDirectMap (void * v) {
   /*
    * Get the address of the PML4e.
    */
-  pml4e_t * pml4e = get_svaDmap_pml4eVaddr (cr3, vaddr);
+  pml4e_t * pml4e = get_pml4eVaddr (cr3, vaddr);
 
   /*
    * Use the PML4E to get the address of the PDPTE.
    */
-  pdpte_t * pdpte = get_svaDmap_pdpteVaddr (pml4e, vaddr);
+  pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr);
 
   /*
    * Determine if the PDPTE has the PS flag set.  If so, then it's pointing to
@@ -1045,7 +1029,7 @@ removeOSDirectMap (void * v) {
   /*
    * Find the page directory entry table from the PDPTE value.
    */
-  pde_t * pde = get_svaDmap_pdeVaddr (pdpte, vaddr);
+  pde_t * pde = get_pdeVaddr (pdpte, vaddr);
 
   /*
    * Determine if the PDE has the PS flag set.  If so, then it's pointing to a
@@ -1059,7 +1043,7 @@ removeOSDirectMap (void * v) {
   /*
    * Find the PTE pointed to by this PDE.
    */
-  pte_t * pte = get_svaDmap_pteVaddr (pde, vaddr);
+  pte_t * pte = get_pteVaddr (pde, vaddr);
 
   if(*pte == 0)
   	panic("The direct mapping PTE of the SVA PTP does not exist");
@@ -1275,11 +1259,7 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
    * Get the PML4E of the current page table.  If there isn't one in the
    * table, add one.
    */
-#ifdef SVA_DMAP
-  pml4e_t * pml4e = get_svaDmap_pml4eVaddr (get_pagetable(), vaddr);
-#else
   pml4e_t * pml4e = get_pml4eVaddr (get_pagetable(), vaddr);
-#endif
   if (!isPresent (pml4e)) {
     /* Page table page index */
     unsigned int ptindex;
@@ -1307,11 +1287,7 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
   /*
    * Get the PDPTE entry (or add it if it is not present).
    */
-#ifdef SVA_DMAP
-  pdpte_t * pdpte = get_svaDmap_pdpteVaddr (pml4e, vaddr);
-#else
   pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr);
-#endif
   if (!isPresent (pdpte)) {
     /* Page table page index */
     unsigned int ptindex;
@@ -1339,11 +1315,7 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
   /*
    * Get the PDE entry (or add it if it is not present).
    */
-#ifdef SVA_DMAP
-  pde_t * pde = get_svaDmap_pdeVaddr (pdpte, vaddr);
-#else
   pde_t * pde = get_pdeVaddr (pdpte, vaddr);
-#endif
   if (!isPresent (pde)) {
     /* Page table page index */
     unsigned int ptindex;
@@ -1371,11 +1343,7 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
   /*
    * Get the PTE entry (or add it if it is not present).
    */
-#ifdef SVA_DMAP 
-  pte_t * pte = get_svaDmap_pteVaddr (pde, vaddr);
-#else
   pte_t * pte = get_pteVaddr (pde, vaddr);
-#endif
 #if 0
   if (isPresent (pte)) {
     panic ("SVA: mapSecurePage: PTE is present: %p!\n", pte);
@@ -1443,11 +1411,7 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
    */
   uintptr_t vaddr = (uintptr_t) v;
   uintptr_t paddr = 0;
-#ifdef SVA_DMAP
-  pdpte_t * pdpte = get_svaDmap_pdpteVaddr (&(threadp->secmemPML4e), vaddr);
-#else
   pdpte_t * pdpte = get_pdpteVaddr (&(threadp->secmemPML4e), vaddr);
-#endif
   if (!isPresent (pdpte)) {
     return 0;
   }
@@ -1459,11 +1423,7 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
   /*
    * Get the PDE entry (or add it if it is not present).
    */
-#ifdef SVA_DMAP 
-  pde_t * pde = get_svaDmap_pdeVaddr (pdpte, vaddr);
-#else
   pde_t * pde = get_pdeVaddr (pdpte, vaddr);
-#endif
   if (!isPresent (pde)) {
     return 0;
   }
@@ -1475,11 +1435,7 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
   /*
    * Get the PTE entry (or add it if it is not present).
    */
-#ifdef SVA_DMAP
-  pte_t * pte = get_svaDmap_pteVaddr (pde, vaddr);
-#else
   pte_t * pte = get_pteVaddr (pde, vaddr);
-#endif
   if (!isPresent (pte)) {
     return 0;
   }
@@ -1593,13 +1549,8 @@ ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
      
     newThread->secmemPML4e = *pml4e;
 
-#ifdef SVA_DMAP
-    pdpte_t * src_pdpte = (pdpte_t *) get_svaDmap_pdpteVaddr (&(oldThread->secmemPML4e), vaddr_start);
-    pdpte_t * pdpte = get_svaDmap_pdpteVaddr (pml4e, vaddr_start);   
-#else    
     pdpte_t * src_pdpte = (pdpte_t *) get_pdpteVaddr (&(oldThread->secmemPML4e), vaddr_start);
     pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr_start);   
-#endif   
     
     for(uintptr_t vaddr_pdp = vaddr_start;
     vaddr_pdp < vaddr_end; 
@@ -1634,13 +1585,8 @@ ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
              printf ("ghostmemCOW: PDPTE has PS BIT\n");
            }
 
-#ifdef SVA_DMAP
-	   pde_t * src_pde = get_svaDmap_pdeVaddr (src_pdpte, vaddr_pdp);
-           pde_t * pde = get_svaDmap_pdeVaddr (pdpte, vaddr_pdp);
-#else
            pde_t * src_pde = get_pdeVaddr (src_pdpte, vaddr_pdp);
            pde_t * pde = get_pdeVaddr (pdpte, vaddr_pdp);
-#endif 
            for(uintptr_t vaddr_pde = vaddr_pdp;
            vaddr_pde < vaddr_pdp + NBPDP; 
            vaddr_pde += NBPDR,\
@@ -1678,13 +1624,8 @@ ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
                  printf ("ghostmemCOW: PDE has PS BIT\n");
                }
 
-#ifdef SVA_DMAP
-               pte_t * src_pte = get_svaDmap_pteVaddr (src_pde, vaddr_pde);
-               pte_t * pte = get_svaDmap_pteVaddr (pde, vaddr_pde);	
-#else
                pte_t * src_pte = get_pteVaddr (src_pde, vaddr_pde);
                pte_t * pte = get_pteVaddr (pde, vaddr_pde);	
-#endif
                for(uintptr_t vaddr_pte = vaddr_pde;
                vaddr_pte < vaddr_pde + NBPDR; 
                vaddr_pte += PAGE_SIZE,\
@@ -2291,11 +2232,7 @@ remap_internal_memory (uintptr_t * firstpaddr) {
    * table, add one.
    */
   uintptr_t vaddr = 0xffffff8000000000u;
-#ifdef SVA_DMAP
-  pml4e_t * pml4e = get_svaDmap_pml4eVaddr (get_pagetable(), vaddr);
-#else
   pml4e_t * pml4e = get_pml4eVaddr (get_pagetable(), vaddr);
-#endif
   if (!isPresent (pml4e)) {
     /* Allocate a new frame */
     uintptr_t paddr = *(firstpaddr);
@@ -2318,11 +2255,7 @@ remap_internal_memory (uintptr_t * firstpaddr) {
   /*
    * Get the PDPTE entry (or add it if it is not present).
    */
-#ifdef SVA_DMAP
-  pdpte_t * pdpte = get_svaDmap_pdpteVaddr (pml4e, vaddr);
-#else
   pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr);
-#endif
   if (!isPresent (pdpte)) {
     /* Allocate a new frame */
     uintptr_t pdpte_paddr = *(firstpaddr);
@@ -2358,11 +2291,7 @@ remap_internal_memory (uintptr_t * firstpaddr) {
     /*
      * Get the PDE entry.
      */
-#ifdef SVA_DMAP
-    pde_t * pde = get_svaDmap_pdeVaddr (pdpte, vaddr);
-#else
     pde_t * pde = get_pdeVaddr (pdpte, vaddr);
-#endif
     /* Allocate a new frame */
     uintptr_t pde_paddr = *(firstpaddr);
     (*firstpaddr) += (2 * 1024 * 1024);

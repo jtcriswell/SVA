@@ -536,32 +536,16 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
 
   /* copy-on-write page fault */
   if((code & PGEX_P) && (code & PGEX_W)){
-#ifdef SVA_DMAP
-     pml4e_t * pml4e_ptr = get_svaDmap_pml4eVaddr (get_pagetable(), vaddr);
-#else
      pml4e_t * pml4e_ptr = get_pml4eVaddr (get_pagetable(), vaddr);
-#endif
      if(!isPresent (pml4e_ptr)) 
         panic("sva_ghost_fault: cow pgfault pml4e %p does not exist\n", pml4e);
-#ifdef SVA_DMAP     
-     pdpte_t * pdpte = get_svaDmap_pdpteVaddr (pml4e_ptr, vaddr);
-#else
      pdpte_t * pdpte = get_pdpteVaddr (pml4e_ptr, vaddr);
-#endif
      if(!isPresent (pdpte)) 
         panic("sva_ghost_fault: cow pgfault pdpte %p does not exist\n", pdpte);
-#ifdef SVA_DMAP
-     pde_t * pde = get_svaDmap_pdeVaddr (pdpte, vaddr);
-#else
      pde_t * pde = get_pdeVaddr (pdpte, vaddr);
-#endif
      if(!isPresent (pde)) 
         panic("sva_ghost_fault: cow pgfault pde %p does not exist\n", pde);
-#ifdef SVA_DMAP
-     pte_t * pte = get_svaDmap_pteVaddr (pde, vaddr);
-#else
      pte_t * pte = get_pteVaddr (pde, vaddr);
-#endif
      uintptr_t paddr = *pte & PG_FRAME;
      page_desc_t * pgDesc = getPageDescPtr (paddr);
 

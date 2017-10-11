@@ -360,63 +360,47 @@ static inline pml4e_t *
 get_pml4eVaddr (unsigned char * cr3, uintptr_t vaddr) {
   /* Offset into the page table */
   uintptr_t offset = (vaddr >> (39 - 3)) & vmask;
+#ifdef SVA_DMAP
+  return (pml4e_t *) getVirtualSVADMAP (((uintptr_t)cr3) | offset);
+#else
   return (pml4e_t *) getVirtual (((uintptr_t)cr3) | offset);
+#endif
 }
  
 static inline pdpte_t *
 get_pdpteVaddr (pml4e_t * pml4e, uintptr_t vaddr) {
   uintptr_t base   = (*pml4e) & 0x000ffffffffff000u;
   uintptr_t offset = (vaddr >> (30 - 3)) & vmask;
+#ifdef SVA_DMAP
+  return (pdpte_t *) getVirtualSVADMAP (base | offset);
+#else
   return (pdpte_t *) getVirtual (base | offset);
+#endif
 }
 
 static inline pde_t *
 get_pdeVaddr (pdpte_t * pdpte, uintptr_t vaddr) {
   uintptr_t base   = (*pdpte) & 0x000ffffffffff000u;
   uintptr_t offset = (vaddr >> (21 - 3)) & vmask;
+#ifdef SVA_DMAP
+  return (pde_t *) getVirtualSVADMAP (base | offset);
+#else
   return (pde_t *) getVirtual (base | offset);
+#endif
 }
 
 static inline pte_t *
 get_pteVaddr (pde_t * pde, uintptr_t vaddr) {
   uintptr_t base   = (*pde) & 0x000ffffffffff000u;
   uintptr_t offset = (vaddr >> (12 - 3)) & vmask;
-  return (pte_t *) getVirtual (base | offset);
-}
-
-/* 
- * Function prototypes for finding the virtual address of 
- * page table components based on SVA Direct MAP
- */
-
-static inline pml4e_t *
-get_svaDmap_pml4eVaddr (unsigned char * cr3, uintptr_t vaddr) {
-  /* Offset into the page table */
-  uintptr_t offset = (vaddr >> (39 - 3)) & vmask;
-  return (pml4e_t *) getVirtualSVADMAP (((uintptr_t)cr3) | offset);
-}
-
-static inline pdpte_t *
-get_svaDmap_pdpteVaddr (pml4e_t * pml4e, uintptr_t vaddr) {
-  uintptr_t base   = (*pml4e) & 0x000ffffffffff000u;
-  uintptr_t offset = (vaddr >> (30 - 3)) & vmask;
-  return (pdpte_t *) getVirtualSVADMAP (base | offset);
-}
-
-static inline pde_t *
-get_svaDmap_pdeVaddr (pdpte_t * pdpte, uintptr_t vaddr) {
-  uintptr_t base   = (*pdpte) & 0x000ffffffffff000u;
-  uintptr_t offset = (vaddr >> (21 - 3)) & vmask;
-  return (pde_t *) getVirtualSVADMAP (base | offset);
-}
-
-static inline pte_t *
-get_svaDmap_pteVaddr (pde_t * pde, uintptr_t vaddr) {
-  uintptr_t base   = (*pde) & 0x000ffffffffff000u;
-  uintptr_t offset = (vaddr >> (12 - 3)) & vmask;
+#ifdef SVA_DMAP  
   return (pte_t *) getVirtualSVADMAP (base | offset);
+#else
+  return (pte_t *) getVirtual (base | offset);
+#endif
 }
- 
+
+
  /*
   * Functions for returing the physical address of page table pages.
   */
