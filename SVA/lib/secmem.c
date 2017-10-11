@@ -461,7 +461,8 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
            * Zero out the contents of the ghost memory if it has been mapped
            * in the current address space.
            */
-          memset (ptr, 0, X86_PAGE_SIZE);
+	  if(threadp == currentThread)
+            memset (ptr, 0, X86_PAGE_SIZE);
           
 	  free_frame(paddr);
 	}
