@@ -1486,7 +1486,6 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
 
   page_desc_t * pageDesc = getPageDescPtr (*pte & PG_FRAME);
   pageDesc->count --;
-
   /*
    * Mark the physical page is a regular type page now.
    */
@@ -1704,7 +1703,6 @@ ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
                   *pte = *src_pte;
        
                	  pgDesc->count ++;
-           
            	} 
      	}
      }
