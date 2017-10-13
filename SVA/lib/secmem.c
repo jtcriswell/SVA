@@ -566,7 +566,7 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
      else
      {
         uintptr_t vaddr_old = (uintptr_t) getVirtual(paddr);
-        uintptr_t paddr_new = alloc_frame (X86_PAGE_SIZE);
+        uintptr_t paddr_new = alloc_frame ();
         page_desc_t * pgDesc_new = getPageDescPtr (paddr_new);
         if (pgRefCount (pgDesc_new) > 1) {
                 panic ("SVA: Ghost page still in use somewhere else!\n");
