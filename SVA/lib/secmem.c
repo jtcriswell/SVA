@@ -539,7 +539,6 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
 
   /* copy-on-write page fault */
   if((code & PGEX_P) && (code & PGEX_W)){
-     printf("sva_ghost_fault COW enters\n");
      pml4e_t * pml4e_ptr = get_pml4eVaddr (get_pagetable(), vaddr);
      if(!isPresent (pml4e_ptr)) 
         panic("sva_ghost_fault: cow pgfault pml4e %p does not exist\n", pml4e);
