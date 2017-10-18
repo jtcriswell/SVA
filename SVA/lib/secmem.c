@@ -576,9 +576,9 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
         }
 
 
+     	memcpy(getVirtual(paddr_new), (void *) vaddr_old, X86_PAGE_SIZE);   
         *pte = (paddr_new & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
         invlpg(vaddr);	
-     	memcpy((void *)vaddr, (void *) vaddr_old, X86_PAGE_SIZE);   
 	
 	getPageDescPtr (paddr_new)->type = PG_GHOST;
         getPageDescPtr (paddr_new)->count = 1;
