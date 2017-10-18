@@ -1456,7 +1456,7 @@ ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
 
                	  *src_pte &= ~PTE_CANWRITE; 
                   *pte = *src_pte;
-       
+      		  updateUses(pte); 
                	  pgDesc->count ++;
            
            	} 

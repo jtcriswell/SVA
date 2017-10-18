@@ -539,6 +539,7 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
 
   /* copy-on-write page fault */
   if((code & PGEX_P) && (code & PGEX_W)){
+     printf("sva_ghost_fault COW enters\n");
      pml4e_t * pml4e_ptr = get_pml4eVaddr (get_pagetable(), vaddr);
      if(!isPresent (pml4e_ptr)) 
         panic("sva_ghost_fault: cow pgfault pml4e %p does not exist\n", pml4e);
@@ -556,7 +557,6 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
 	panic("SVA: sva_ghost_fault: vaddr = 0x%lx paddr = 0x%lx is not a ghost memory page!\n", vaddr, paddr); 
      /* If only one process maps this page, directly grant this process write permission */
 
-
      unprotect_paging();
      if(pgDesc->count == 1)
      {
@@ -566,7 +566,7 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
      else
      {
         uintptr_t vaddr_old = (uintptr_t) getVirtual(paddr);
-        uintptr_t paddr_new = alloc_frame (X86_PAGE_SIZE);
+        uintptr_t paddr_new = alloc_frame();
         page_desc_t * pgDesc_new = getPageDescPtr (paddr_new);
         if (pgRefCount (pgDesc_new) > 1) {
                 panic ("SVA: Ghost page still in use somewhere else!\n");
@@ -574,12 +574,13 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
         if (isPTP(pgDesc_new) || isCodePG (pgDesc_new)) {
                 panic ("SVA: Ghost page has wrong type!\n");
         }
-        	
+
+
         *pte = (paddr_new & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
+        invlpg(vaddr);	
      	memcpy((void *)vaddr, (void *) vaddr_old, X86_PAGE_SIZE);   
-       
-       
-        getPageDescPtr (paddr_new)->type = PG_GHOST;
+	
+	getPageDescPtr (paddr_new)->type = PG_GHOST;
         getPageDescPtr (paddr_new)->count = 1;
         pgDesc->count --;
      }

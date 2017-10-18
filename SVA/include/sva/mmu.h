@@ -405,6 +405,14 @@ print_regs(void) {
     printf("\t CR4: %p\n", _rcr4());
 }
 
+static __inline void
+invlpg(u_long addr)
+{
+
+    __asm __volatile("invlpg %0" : : "m" (*(char *)addr) : "memory");
+}
+
+
 /*
  *****************************************************************************
  * MMU declare, update, and verification helper routines
