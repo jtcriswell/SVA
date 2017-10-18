@@ -114,8 +114,8 @@ init_threads(void) {
 static inline uintptr_t
 randomNumber (void) {
   uintptr_t rand;
-  __asm__ __volatile__ ("1: rdrand %0\n"
-                        "jae 1\n" : "=r" (rand));
+  __asm__ __volatile__ ("h: rdrand %0\n"
+                        "jae h\n" : "=r" (rand));
   return rand;
 }
 
