@@ -565,6 +565,19 @@ invltlb_all(void)
     
 }
 
+/*
+ * Invalidate all the TLB entries with a specific virtual address
+ * (including global entries)
+ */
+
+static __inline void
+invlpg(u_long addr)
+{
+
+  __asm __volatile("invlpg %0" : : "m" (*(char *)addr) : "memory");
+
+}
+
 static inline void
 print_regs(void) {
     printf("Printing Active Reg Values:\n");

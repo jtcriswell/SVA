@@ -568,7 +568,7 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
 #else
         uintptr_t vaddr_old = (uintptr_t) getVirtual(paddr);
 #endif
-	uintptr_t paddr_new = provideSVAMemory (X86_PAGE_SIZE);
+	uintptr_t paddr_new = alloc_frame();
         page_desc_t * pgDesc_new = getPageDescPtr (paddr_new);
         if (pgRefCount (pgDesc_new) > 1) {
                 panic ("SVA: Ghost page still in use somewhere else!\n");
@@ -577,9 +577,9 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
                 panic ("SVA: Ghost page has wrong type!\n");
         }
         	
+     	memcpy(getVirtualSVADMAP(paddr_new), (void *) vaddr_old, X86_PAGE_SIZE);   
         *pte = (paddr_new & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
-     	memcpy((void *)vaddr, (void *) vaddr_old, X86_PAGE_SIZE);   
-       
+	invlpg(vaddr);
        
         getPageDescPtr (paddr_new)->type = PG_GHOST;
         getPageDescPtr (paddr_new)->count = 1;
