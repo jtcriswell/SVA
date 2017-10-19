@@ -1358,35 +1358,27 @@ ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
     size = oldThread->secmemSize;
     vaddr_end = vaddr_start + size;    
 
-   /*
-    * Get the PML4E of the new process's page table.  If there isn't one in the
-    * table, add one.
-    */
-    sva_integer_state_t integerState = newThread->integerState;
-    pml4e_t * pml4e =  (pml4e_t *) getVirtualSVADMAP(integerState.cr3 + secmemOffset);
-   
-    if (!isPresent (pml4e)) {
-      /* Page table page index */
-      unsigned int ptindex;
+    /* Create a new pml4e of the ghost memory for the child */
+    pml4e_t  pml4e_val;
+    unsigned int ptindex;
 
-      /* Fetch a new page table page */
-      ptindex = allocPTPage ();
-      /*
-       * Install a new PDPTE entry using the page.
-       */
-      uintptr_t paddr = PTPages[ptindex].paddr;
-      *pml4e = (paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
-    }
+    /* Fetch a new page table page */
+    ptindex = allocPTPage ();
+    /*
+     * Install a new PDPTE entry using the page.
+     */
+    uintptr_t paddr = PTPages[ptindex].paddr;
+    pml4e_val = (paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
     
     /*
      * Enable writing to the virtual address space used for secure memory.
      */
-    *pml4e |= PTE_CANUSER;
+    pml4e_val |= PTE_CANUSER;
      
-    newThread->secmemPML4e = *pml4e;
+    newThread->secmemPML4e = pml4e_val;
     
     pdpte_t * src_pdpte = (pdpte_t *) get_pdpteVaddr (&(oldThread->secmemPML4e), vaddr_start);
-    pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr_start);   
+    pdpte_t * pdpte = get_pdpteVaddr (&pml4e_val, vaddr_start);   
    
     for(uintptr_t vaddr_pdp = vaddr_start;
     vaddr_pdp < vaddr_end; 
