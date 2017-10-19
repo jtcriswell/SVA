@@ -461,9 +461,11 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
            * Zero out the contents of the ghost memory if it has been mapped
            * in the current address space.
            */
-	  if(threadp == currentThread)
-            memset (ptr, 0, X86_PAGE_SIZE);
-          
+	  if(threadp == currentThread){
+	    unsigned char * dmapAddr = getVirtualSVADMAP (paddr);
+            memset (dmapAddr, 0, X86_PAGE_SIZE);
+
+	  }
 	  free_frame(paddr);
 	}
       }
@@ -556,7 +558,6 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
 	panic("SVA: sva_ghost_fault: vaddr = 0x%lx paddr = 0x%lx is not a ghost memory page!\n", vaddr, paddr); 
      /* If only one process maps this page, directly grant this process write permission */
 
-     unprotect_paging();
      if(pgDesc->count == 1)
      {
         * pte = (* pte) | PTE_CANWRITE;
@@ -564,7 +565,7 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
      /* Otherwise copy-on-write */
      else
      {
-        uintptr_t vaddr_old = (uintptr_t) getVirtual(paddr);
+        uintptr_t vaddr_old = (uintptr_t) getVirtualSVADMAP(paddr);
         uintptr_t paddr_new = alloc_frame();
         page_desc_t * pgDesc_new = getPageDescPtr (paddr_new);
         if (pgRefCount (pgDesc_new) > 1) {
@@ -575,7 +576,7 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
         }
 
 
-     	memcpy(getVirtual(paddr_new), (void *) vaddr_old, X86_PAGE_SIZE);   
+     	memcpy(getVirtualSVADMAP(paddr_new), (void *) vaddr_old, X86_PAGE_SIZE);   
         *pte = (paddr_new & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
         invlpg(vaddr);	
 	
@@ -584,8 +585,6 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
         pgDesc->count --;
      }
      
-     protect_paging();
-
      return; 
    }
 
