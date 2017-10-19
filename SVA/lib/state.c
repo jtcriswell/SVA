@@ -1173,7 +1173,6 @@ sva_release_stack (uintptr_t id) {
  * Inputs:
  *  start_stackp - A pointer to the *beginning* of the kernel stack.
  *  length       - Length of the kernel stack in bytes.
- *  new_cr3	 - The new process(thread)'s cr3
  *  func         - The kernel function to execute when the new integer state
  *                 is swapped on to the processor.
  *  arg          - The first argument to the function.
@@ -1185,7 +1184,6 @@ sva_release_stack (uintptr_t id) {
 uintptr_t
 sva_init_stack (unsigned char * start_stackp,
                 uintptr_t length,
-		uintptr_t new_cr3,
                 void * func,
                 uintptr_t arg1,
                 uintptr_t arg2,
@@ -1333,7 +1331,6 @@ sva_init_stack (unsigned char * start_stackp,
   integerp->ss  = 0x3b;
   integerp->valid = 1;
   integerp->rflags = 0x202;
-  integerp->cr3 = new_cr3;
 #if 0
   integerp->ist3 = integerp->kstackp;
 #endif

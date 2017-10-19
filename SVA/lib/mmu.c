@@ -1515,43 +1515,35 @@ ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
     vaddr_end = vaddr_start + size;    
 
    /*
-    * Get the PML4E of the new process's page table.  If there isn't one in the
-    * table, add one.
+    * Create the PML4E of the new process's page table. 
     */
-    sva_integer_state_t integerState = newThread->integerState;
-#ifdef SVA_DMAP
-    pml4e_t * pml4e =  (pml4e_t *) getVirtualSVADMAP(integerState.cr3 + secmemOffset);
-#else
-    pml4e_t * pml4e =  (pml4e_t *) getVirtual(integerState.cr3 + secmemOffset);
-#endif
+    pml4e_t pml4e_val;
 
-#ifndef SVA_DMAP
-    unprotect_paging(); 
-#endif
+    /* Page table page index */
+    unsigned int ptindex;
 
-    if (!isPresent (pml4e)) {
-      /* Page table page index */
-      unsigned int ptindex;
-
-      /* Fetch a new page table page */
-      ptindex = allocPTPage ();
-      /*
-       * Install a new PDPTE entry using the page.
-       */
-      uintptr_t paddr = PTPages[ptindex].paddr;
-      *pml4e = (paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
-    }
+    /* Fetch a new page table page */
+    ptindex = allocPTPage ();
+    /*
+     * Install a new PDPTE entry using the page.
+     */
+    uintptr_t paddr = PTPages[ptindex].paddr;
+    pml4e_val = (paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
     
     /*
      * Enable writing to the virtual address space used for secure memory.
      */
-    *pml4e |= PTE_CANUSER;
+    pml4e_val |= PTE_CANUSER;
      
-    newThread->secmemPML4e = *pml4e;
+    newThread->secmemPML4e = pml4e_val;
 
     pdpte_t * src_pdpte = (pdpte_t *) get_pdpteVaddr (&(oldThread->secmemPML4e), vaddr_start);
-    pdpte_t * pdpte = get_pdpteVaddr (pml4e, vaddr_start);   
-    
+    pdpte_t * pdpte = get_pdpteVaddr (&pml4e_val, vaddr_start);   
+
+#ifndef SVA_DMAP
+    unprotect_paging(); 
+#endif
+   
     for(uintptr_t vaddr_pdp = vaddr_start;
     vaddr_pdp < vaddr_end; 
     vaddr_pdp += NBPDP,\

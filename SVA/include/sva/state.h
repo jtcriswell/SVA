@@ -418,7 +418,6 @@ sva_invokestrncpy (char * dst, const char * src, uintptr_t count);
 extern uintptr_t sva_swap_integer  (uintptr_t new, uintptr_t * state);
 extern uintptr_t sva_init_stack (unsigned char * sp,
                                  uintptr_t length,
-				 uintptr_t cr3,
                                  void * f,
                                  uintptr_t arg1,
                                  uintptr_t arg2,
