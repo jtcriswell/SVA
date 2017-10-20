@@ -936,6 +936,12 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
    * Remove mappings to the secure memory for this thread.
    */
   if (vg && (threadp->secmemSize)) {
+    
+    extern void
+    ghostFree (struct SVAThread * tp, unsigned char * p, intptr_t size);
+    unsigned char * secmemStart = (unsigned char *)(SECMEMSTART);
+    ghostFree (threadp, secmemStart, threadp->secmemSize);
+
     /*
      * Get a pointer into the page tables for the secure memory region.
      */
