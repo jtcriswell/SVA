@@ -480,11 +480,6 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
  *
  * Description:
  *  Free a single page of secure memory.
- *
- * Inputs:
- *  p    - The first virtual address of the secure memory to free.
- *  size - The amount of secure memory to allocate measured in bytes.
- *
  */
 void
 freeSecureMemory (void) {
