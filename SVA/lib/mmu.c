@@ -1445,7 +1445,7 @@ sva_mm_load_pgtable (void * pg_ptr) {
      * Mark the page table pages as read-only again.
      */
 
-    sva_mm_flush_tlb(secmemp);
+    invltlb();
     protect_paging();
   }
 
