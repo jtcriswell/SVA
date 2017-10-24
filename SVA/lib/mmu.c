@@ -1392,6 +1392,7 @@ void
 sva_mm_load_pgtable (void * pg_ptr) {
   /* Cast the page table pointer to an integer */
   uintptr_t pg = (uintptr_t) pg_ptr;
+  u_long data = 0;
 
   /*
    * Disable interrupts so that we appear to execute as a single instruction.
@@ -1445,7 +1446,9 @@ sva_mm_load_pgtable (void * pg_ptr) {
      * Mark the page table pages as read-only again.
      */
 
-    invltlb();
+    __asm __volatile("movq %%cr3,%0" : "=r" (data));
+    __asm __volatile("movq %0,%%cr3" : : "r" (data) : "memory");
+
     protect_paging();
   }
 
