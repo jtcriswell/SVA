@@ -1392,7 +1392,7 @@ void
 sva_mm_load_pgtable (void * pg_ptr) {
   /* Cast the page table pointer to an integer */
   uintptr_t pg = (uintptr_t) pg_ptr;
-  u_long data = 0;
+  uintptr_t data = 0;
 
   /*
    * Disable interrupts so that we appear to execute as a single instruction.
