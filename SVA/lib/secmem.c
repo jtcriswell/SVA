@@ -31,8 +31,6 @@
  */
 #define MAX_FRAMES_PER_OP 32
 
-extern u_long random(void);
-
 /* Frame cache queue */
 static uintptr_t frame_cache[FRAME_CACHE_SIZE];
 
@@ -146,7 +144,7 @@ fill_in_frames(void) {
   max_nframe = FRAME_CACHE_SIZE - 1 - frame_cache_used();
   if (vg_random) {
     /* A random number between 1 and current capacity of frame cache queue */
-    nframe = random() % max_nframe + 1;
+    nframe = sva_random() % max_nframe + 1;
   } else {
     /* Minimum of a constant and current capacity of frame cache queue */
     nframe = max_nframe < MAX_FRAMES_PER_OP ? max_nframe : MAX_FRAMES_PER_OP;
@@ -176,7 +174,7 @@ release_frames(void) {
   max_nframe = frame_cache_used();
   if (vg_random) {
     /* A random number between 1 and current occupancy of frame cache queue */
-    nframe = random() % max_nframe + 1;
+    nframe = sva_random() % max_nframe + 1;
   } else {
     /* Minimum of a constant and current occupancy of frame cache queue */
     nframe = max_nframe < MAX_FRAMES_PER_OP ? max_nframe : MAX_FRAMES_PER_OP;
