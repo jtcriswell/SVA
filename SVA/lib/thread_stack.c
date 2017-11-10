@@ -14,6 +14,7 @@
 
 #include "sva/config.h"
 #include "sva/callbacks.h"
+#include "sva/util.h"
 #include "keys.h"
 #include "thread_stack.h"
 
@@ -103,20 +104,6 @@ static inline struct SVAThread *ftstack_pop(void) {
 void
 init_threads(void) {
   return;
-}
-
-/*
- * Function: randomNumber()
- *
- * Description:
- *  Use the rdrand instruction to generate a 64-bit random number.
- */
-static inline uintptr_t
-randomNumber (void) {
-  uintptr_t rand;
-  __asm__ __volatile__ ("1: rdrand %0\n"
-                        "jae 1b\n" : "=r" (rand));
-  return rand;
 }
 
 /*
@@ -217,7 +204,7 @@ findNextFreeThread (void) {
      * Generate a random identifier for the new thread.
      */
     if (vg) {
-      newThread->rid = randomNumber();
+      newThread->rid = sva_random();
     }
     return newThread;
   }
