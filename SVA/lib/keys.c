@@ -28,6 +28,7 @@
 #include "sva/mmu_intrinsics.h"
 #include "sva/keys.h"
 #include "sva/state.h"
+#include "keys.h"
 
 #define DEBUG               1
 #define INCOMPLETE_ON       1
