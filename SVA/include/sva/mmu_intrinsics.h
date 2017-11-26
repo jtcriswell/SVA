@@ -72,6 +72,7 @@ extern void sva_declare_l1_page (uintptr_t frame);
 extern void sva_declare_l2_page (uintptr_t frame);
 extern void sva_declare_l3_page (uintptr_t frame);
 extern void sva_declare_l4_page (uintptr_t frame);
+extern void sva_declare_dmap_page(uintptr_t frame);
 extern void sva_remove_page     (uintptr_t frame);
 extern void sva_update_l1_mapping (pte_t * ptePtr, page_entry_t val);
 extern void sva_update_l2_mapping (pde_t * pdePtr, page_entry_t val);
