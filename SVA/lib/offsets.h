@@ -77,3 +77,7 @@
 #define INVOKE_STRNCPY  3
 #define INVOKE_MEMSET   2
 
+/*
+ * Entries in the Interrupt Descriptor Table (IDT)
+ */
+#define IDT_PF      14  /* #PF: Page Fault */

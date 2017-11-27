@@ -560,13 +560,8 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
      /* Otherwise copy-on-write */
      else
      {
-<<<<<<< HEAD
-        uintptr_t vaddr_old = (uintptr_t) getVirtual(paddr);
-        uintptr_t paddr_new = alloc_frame ();
-=======
         uintptr_t vaddr_old = (uintptr_t) getVirtualSVADMAP(paddr);
         uintptr_t paddr_new = alloc_frame();
->>>>>>> a744465036d28f2277849618c39614d2846e2ec2
         page_desc_t * pgDesc_new = getPageDescPtr (paddr_new);
         if (pgRefCount (pgDesc_new) > 1) {
                 panic ("SVA: Ghost page still in use somewhere else!\n");
@@ -629,5 +624,14 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
   /* Re-enable interrupts if necessary */
   sva_exit_critical (rflags);
   return;
+}
+
+void
+trap_pfault_ghost(unsigned trapno, void * trapAddr) {
+  printf("[trap_pfault_ghost] trapno = 0x%u, trapAddr = 0x%lx\n", trapno, (uintptr_t)trapAddr);
+  /*struct CPUState * cpup = getCPUState();
+  sva_icontext_t * p = getCPUState()->newCurrentIC;
+  uintptr_t vaddr = (unsigned long)(trapAddr) & ~(PAGE_MASK);
+  sva_ghost_fault(vaddr, p->code); */
 }
 
