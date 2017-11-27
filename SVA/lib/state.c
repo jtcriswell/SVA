@@ -941,6 +941,12 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
    * Remove mappings to the secure memory for this thread.
    */
   if (vg && (threadp->secmemSize)) {
+    
+    extern void
+    ghostFree (struct SVAThread * tp, unsigned char * p, intptr_t size);
+    unsigned char * secmemStart = (unsigned char *)(SECMEMSTART);
+    ghostFree (threadp, secmemStart, threadp->secmemSize);
+
     /*
      * Get a pointer into the page tables for the secure memory region.
      */
@@ -1079,11 +1085,12 @@ sva_release_stack (uintptr_t id) {
  *  Pointer to the integer state identifier used for context switching.
  *
  * Inputs:
- *  start_stackp - A pointer to the *beginning* of the kernel stack.
- *  length       - Length of the kernel stack in bytes.
- *  func         - The kernel function to execute when the new integer state
- *                 is swapped on to the processor.
- *  arg          - The first argument to the function.
+ *  start_stackp    - A pointer to the *beginning* of the kernel stack.
+ *  length          - Length of the kernel stack in bytes.
+ *  new_cr3	    - The new process(thread)'s cr3
+ *  func            - The kernel function to execute when the new integer state
+ *                    is swapped on to the processor.
+ *  arg             - The first argument to the function.
  *
  * Return value:
  *  An identifier that can be passed to sva_swap_integer() to begin execution
@@ -1292,6 +1299,17 @@ sva_init_stack (unsigned char * start_stackp,
     icontextp->valid |= IC_is_valid;
   }
 
+  if(vg && (oldThread->secmemSize))
+  {
+    /* If the system call is fork or pdfork, COW on the ghost memory of the parent process;
+     * If the system call is rfork and the flags indicate the child process will be 
+     * a separate process and have its own address space, COW on the ghost memory of
+     * the parent process*/	
+    if((cpup->newCurrentIC->rax == 2) || (cpup->newCurrentIC->rax == 518) || \
+       ((cpup->newCurrentIC->rax == 251) && (cpup->newCurrentIC->rdi & RFPROC) \
+       && !(cpup->newCurrentIC->rdi & RFMEM)))	
+      ghostmemCOW(oldThread, newThread);
+  }
   /*
    * Re-enable interrupts.
    */

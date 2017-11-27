@@ -51,18 +51,6 @@
  * Function prototypes for finding the virtual address of page table components
  */
 static inline page_entry_t * get_pgeVaddr (uintptr_t vaddr);
-static inline pml4e_t * get_pml4eVaddr (unsigned char * cr3, uintptr_t vaddr);
-static inline pdpte_t * get_pdpteVaddr (pml4e_t * pml4e, uintptr_t vaddr);
-static inline pde_t * get_pdeVaddr (pdpte_t * pdpte, uintptr_t vaddr);
-static inline pte_t * get_pteVaddr (pde_t * pde, uintptr_t vaddr);
-
-/*
- * Function prototypes for returning the physical address of page table pages.
- */
-static inline uintptr_t get_pml4ePaddr (unsigned char * cr3, uintptr_t vaddr);
-static inline uintptr_t get_pdptePaddr (pml4e_t * pml4e, uintptr_t vaddr);
-static inline uintptr_t get_pdePaddr (pdpte_t * pdpte, uintptr_t vaddr);
-static inline uintptr_t get_ptePaddr (pde_t * pde, uintptr_t vaddr);
 
 /*
  * Mapping update function prototypes.
@@ -179,14 +167,21 @@ init_mmu () {
  */
 static inline void
 page_entry_store (unsigned long *page_entry, page_entry_t newVal) {
-  /* Disable page protection so we can write to the referencing table entry */
-  unprotect_paging();
+
+  uintptr_t phys;
+  unsigned long* page_entry_svadm;
+  page_desc_t * pgDescPtr; 
+
+  phys = getPhysicalAddr(page_entry);
+  page_entry_svadm = (unsigned long*)getVirtualSVADMAP(phys);
+  pgDescPtr = getPageDescPtr(phys);
+
+  if(pgDescPtr->dmap)
+    newVal |= PG_RW;
     
   /* Write the new value to the page_entry */
-  *page_entry = newVal;
-
-  /* Reenable page protection */
-  protect_paging();
+  *page_entry_svadm = newVal;
+  
 }
 
 /*
@@ -758,67 +753,9 @@ get_pgeVaddr (uintptr_t vaddr) {
   return pge;
 }
 
-static inline pml4e_t *
-get_pml4eVaddr (unsigned char * cr3, uintptr_t vaddr) {
-  /* Offset into the page table */
-  uintptr_t offset = (vaddr >> (39 - 3)) & vmask;
-  return (pml4e_t *) getVirtual (((uintptr_t)cr3) | offset);
-}
 
-static inline pdpte_t *
-get_pdpteVaddr (pml4e_t * pml4e, uintptr_t vaddr) {
-  uintptr_t base   = (*pml4e) & 0x000ffffffffff000u;
-  uintptr_t offset = (vaddr >> (30 - 3)) & vmask;
-  return (pdpte_t *) getVirtual (base | offset);
-}
 
-static inline pde_t *
-get_pdeVaddr (pdpte_t * pdpte, uintptr_t vaddr) {
-  uintptr_t base   = (*pdpte) & 0x000ffffffffff000u;
-  uintptr_t offset = (vaddr >> (21 - 3)) & vmask;
-  return (pde_t *) getVirtual (base | offset);
-}
 
-static inline pte_t *
-get_pteVaddr (pde_t * pde, uintptr_t vaddr) {
-  uintptr_t base   = (*pde) & 0x000ffffffffff000u;
-  uintptr_t offset = (vaddr >> (12 - 3)) & vmask;
-  return (pte_t *) getVirtual (base | offset);
-}
-
-/*
- * Functions for returing the physical address of page table pages.
- */
-static inline uintptr_t
-get_pml4ePaddr (unsigned char * cr3, uintptr_t vaddr) {
-  /* Offset into the page table */
-  uintptr_t offset = ((vaddr >> 39) << 3) & vmask;
-  return (((uintptr_t)cr3) | offset);
-}
-
-static inline uintptr_t
-get_pdptePaddr (pml4e_t * pml4e, uintptr_t vaddr) {
-  uintptr_t offset = ((vaddr  >> 30) << 3) & vmask;
-  return ((*pml4e & 0x000ffffffffff000u) | offset);
-}
-
-static inline uintptr_t
-get_pdePaddr (pdpte_t * pdpte, uintptr_t vaddr) {
-  uintptr_t offset = ((vaddr  >> 21) << 3) & vmask;
-  return ((*pdpte & 0x000ffffffffff000u) | offset);
-}
-
-static inline uintptr_t
-get_ptePaddr (pde_t * pde, uintptr_t vaddr) {
-  uintptr_t offset = ((vaddr >> 12) << 3) & vmask;
-  return ((*pde & 0x000ffffffffff000u) | offset);
-}
-
-/* Functions for querying information about a page table entry */
-static inline unsigned char
-isPresent (uintptr_t * pte) {
-  return (*pte & 0x1u) ? 1u : 0u;
-}
 
 /*
  * Function: getPhysicalAddrFromPML4E()
@@ -917,6 +854,31 @@ getPhysicalAddrFromPML4E (void * v, pml4e_t * pml4e, uintptr_t * paddr) {
 }
 
 /*
+ * Function: getPhysicalAddrDMAP()
+ *
+ * Description:
+ *  Find the physical page number of the specified virtual address based on kernel direct mapping.
+ */
+
+static inline uintptr_t
+getPhysicalAddrKDMAP (void * v) {
+ return  ((uintptr_t) v & ~0xfffffe0000000000u);
+}
+
+
+/*
+ * Function: getPhysicalAddrSVADMAP()
+ *
+ * Description:
+ *  Find the physical page number of the specified virtual address based on SVA direct mapping.
+ */
+
+static inline uintptr_t
+getPhysicalAddrSVADMAP (void * v) {
+ return  ((uintptr_t) v & ~SVADMAPSTART);
+}
+
+/*
  * Function: getPhysicalAddr()
  *
  * Description:
@@ -933,6 +895,21 @@ getPhysicalAddr (void * v) {
 
   /* Physical address */
   uintptr_t paddr;
+
+  /*
+   * If the pointer is within the kernel's direct map, use a simple
+   * bit-masking operation to convert the virtual address to a physical
+   * address.
+   */
+  if (((uintptr_t) v >= 0xfffffe0000000000u) && ((uintptr_t) v < 0xffffff0000000000u))
+       return getPhysicalAddrKDMAP(v);
+
+  /*
+   * If the virtual address falls within the SVA VM's direct map, use a simple
+   * bit-masking operation to find the physical address.
+   */
+  if (((uintptr_t) v >= SVADMAPSTART) && ((uintptr_t) v <= SVADMAPEND))
+       return getPhysicalAddrSVADMAP(v);
 
   /*
    * Get the currently active page table.
@@ -953,6 +930,7 @@ getPhysicalAddr (void * v) {
 
   return 0;
 }
+
 
 /* Cache of page table pages */
 extern unsigned char
@@ -992,20 +970,11 @@ allocPTPage (void) {
   /*
    * Ask the system software for a page of memory.
    */
-  if ((p = SVAPTPages[ptindex]) != NULL) {
+  if ((p = PTPages[ptindex].vosaddr) != NULL) {
     /*
      * Initialize the memory.
      */
     memset (p, 0, X86_PAGE_SIZE);
-
-    /*
-     * Record the information about the page in the page table page array.
-     * We'll need the virtual address by which the system software knows the
-     * page as well as the physical address so that the SVA VM can unmap it
-     * later.
-     */
-    PTPages[ptindex].vosaddr = p;
-    PTPages[ptindex].paddr   = getPhysicalAddr (p);
 
     /*
      * Set the type of the page to be a ghost page table page.
@@ -1148,11 +1117,6 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
   }
 
   /*
-   * Disable protections.
-   */
-  unprotect_paging();
-
-  /*
    * Get the PML4E of the current page table.  If there isn't one in the
    * table, add one.
    */
@@ -1263,6 +1227,7 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
    */
   getPageDescPtr (paddr)->type = PG_GHOST;
 
+  getPageDescPtr (paddr)->count = 1;
   /*
    * Mark the physical page frames used to map the entry as Ghost Page Table
    * Pages.  Note that we don't mark the PML4E as a ghost page table page
@@ -1272,11 +1237,6 @@ mapSecurePage (uintptr_t vaddr, uintptr_t paddr) {
   getPageDescPtr (get_pdptePaddr (pml4e, vaddr))->ghostPTP = 1;
   getPageDescPtr (get_pdePaddr (pdpte, vaddr))->ghostPTP = 1;
   getPageDescPtr (get_ptePaddr (pde, vaddr))->ghostPTP = 1;
-
-  /*
-   * Re-enable page protections.
-   */
-  protect_paging();
 
   return pml4eVal;
 }
@@ -1331,16 +1291,17 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
     return;
   }
 
+  page_desc_t * pageDesc = getPageDescPtr (*pte & PG_FRAME);
+  pageDesc->count --;
   /*
    * Mark the physical page is a regular type page now.
    */
-  getPageDescPtr (*pte & PG_FRAME)->type = PG_UNUSED;
-  getPageDescPtr (*pte & PG_FRAME)->count = 0;
+  if(pageDesc->count == 0)
+     pageDesc->type = PG_UNUSED;
 
   /*
    * Modify the PTE so that the page is not present.
    */
-  unprotect_paging();
   *pte = 0;
 
   /*
@@ -1374,9 +1335,151 @@ unmapSecurePage (struct SVAThread * threadp, unsigned char * v) {
     }
   }
 
-  /* Re-enable protection of page table pages */
-  protect_paging();
   return;
+}
+
+/*   Function: ghostmemCOW()
+ *   
+ *   Description: 
+ *   Copy the parent's page table of ghost memory to the child. 
+ *   Write protect these page table entries for both the parent and the child.
+ *
+ *   Inputs:
+ *   oldThread - the SVAThread variable of the parent process
+ *   newThread - the SVAThread variable of the child process   
+ */
+void
+ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread)
+{
+    
+    uintptr_t vaddr_start, vaddr_end, size;
+    
+    vaddr_start = (uintptr_t) SECMEMSTART;
+    size = oldThread->secmemSize;
+    vaddr_end = vaddr_start + size;    
+
+    /* Create a new pml4e of the ghost memory for the child */
+    pml4e_t  pml4e_val;
+    unsigned int ptindex;
+
+    /* Fetch a new page table page */
+    ptindex = allocPTPage ();
+    /*
+     * Install a new PDPTE entry using the page.
+     */
+    uintptr_t paddr = PTPages[ptindex].paddr;
+    pml4e_val = (paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
+    
+    /*
+     * Enable writing to the virtual address space used for secure memory.
+     */
+    pml4e_val |= PTE_CANUSER;
+     
+    newThread->secmemPML4e = pml4e_val;
+    
+    pdpte_t * src_pdpte = (pdpte_t *) get_pdpteVaddr (&(oldThread->secmemPML4e), vaddr_start);
+    pdpte_t * pdpte = get_pdpteVaddr (&pml4e_val, vaddr_start);   
+   
+    for(uintptr_t vaddr_pdp = vaddr_start;
+    vaddr_pdp < vaddr_end; 
+    vaddr_pdp += NBPDP,\
+    src_pdpte ++,\
+    pdpte ++)
+    {
+      
+           if(!isPresent (src_pdpte))
+              continue;
+           if (!isPresent (pdpte)) {
+             /* Page table page index */
+             unsigned int ptindex;
+
+             /* Fetch a new page table page */
+             ptindex = allocPTPage ();
+
+             /*
+              * Install a new PDPTE entry using the page.
+              */
+             uintptr_t pdpte_paddr = PTPages[ptindex].paddr;
+             *pdpte = (pdpte_paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
+           }
+           *pdpte |= PTE_CANUSER;
+
+          /*
+           * Note that we've added another translation to the pml4e.
+           */
+           updateUses (pdpte);
+
+           if ((*pdpte) & PTE_PS) {
+             printf ("ghostmemCOW: PDPTE has PS BIT\n");
+           }
+
+           pde_t * src_pde = get_pdeVaddr (src_pdpte, vaddr_pdp);
+           pde_t * pde = get_pdeVaddr (pdpte, vaddr_pdp);
+ 
+           for(uintptr_t vaddr_pde = vaddr_pdp;
+           vaddr_pde < vaddr_pdp + NBPDP; 
+           vaddr_pde += NBPDR,\
+           src_pde ++,\
+           pde ++) 
+           {
+
+             /*
+              * Get the PDE entry (or add it if it is not present).
+              */
+              if(!isPresent (src_pde))
+	        continue;
+		  
+	      if (!isPresent (pde)) {
+                /* Page table page index */
+     	        unsigned int ptindex;
+
+                /* Fetch a new page table page */
+	        ptindex = allocPTPage ();
+
+                /*
+                 * Install a new PDE entry.
+                 */
+                uintptr_t pde_paddr = PTPages[ptindex].paddr;
+                *pde = (pde_paddr & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
+               }
+               *pde |= PTE_CANUSER;
+
+               /*
+          	* Note that we've added another translation to the pdpte.
+           	*/
+               updateUses (pde);
+
+               if ((*pde) & PTE_PS) {
+                 printf ("ghostmemCOW: PDE has PS BIT\n");
+               }
+       
+       
+               pte_t * src_pte = get_pteVaddr (src_pde, vaddr_pde);
+               pte_t * pte = get_pteVaddr (pde, vaddr_pde);	
+
+               for(uintptr_t vaddr_pte = vaddr_pde;
+               vaddr_pte < vaddr_pde + NBPDR; 
+               vaddr_pte += PAGE_SIZE,\
+               src_pte ++,\
+               pte ++)
+               {
+                  if(!isPresent (src_pte))
+	            continue;
+
+	       	  page_desc_t * pgDesc = getPageDescPtr (*src_pte & PG_FRAME);
+		  
+		  if(pgDesc->type != PG_GHOST)
+                    panic("ghostmemCOW: page is not a ghost memory page! vaddr = 0x%lx, src_pte = 0x%lx, *src_pte = 0x%lx, src_pde = 0x%lx, *src_pde = 0x%lx\n", vaddr_pte, src_pte, *src_pte, src_pde, *src_pde);
+
+               	  *src_pte &= ~PTE_CANWRITE; 
+                  *pte = *src_pte;
+      		  updateUses(pte); 
+               	  pgDesc->count ++;
+           
+           	} 
+     	}
+     }
+
 }
 
 /*
@@ -1425,26 +1528,15 @@ sva_mm_load_pgtable (void * pg_ptr) {
    */
   struct SVAThread * threadp = getCPUState()->currentThread;
   if (vg && threadp->secmemSize) {
-    /* 
-     * Unset page protection so that we can write into the top-level page-table
-     * page if necessary.
-     */
-    unprotect_paging();
-
     /*
      * Get a pointer into the page tables for the secure memory region.
      */
-    pml4e_t * secmemp = (pml4e_t *) getVirtual ((uintptr_t)get_pagetable() + secmemOffset);
+    pml4e_t * secmemp = (pml4e_t *) getVirtualSVADMAP ((uintptr_t)get_pagetable() + secmemOffset);
 
     /*
      * Restore the PML4E entry for the secure memory region.
      */
     *secmemp = threadp->secmemPML4e;
-
-    /*
-     * Mark the page table pages as read-only again.
-     */
-    protect_paging();
   }
 
   /* Restore interrupts */
@@ -1840,11 +1932,6 @@ remap_internal_memory (uintptr_t * firstpaddr) {
   uintptr_t svaSize = ((uintptr_t) _svaend) - ((uintptr_t) _svastart);
 
   /*
-   * Disable protections.
-   */
-  unprotect_paging();
-
-  /*
    * Create a PML4E for the SVA address space.
    */
   pml4e_t pml4eVal;
@@ -1865,7 +1952,7 @@ remap_internal_memory (uintptr_t * firstpaddr) {
     ++(getPageDescPtr(paddr)->count);
 
     /* Zero the contents of the frame */
-    memset (getVirtual (paddr), 0, X86_PAGE_SIZE);
+    memset (getVirtualSVADMAP (paddr), 0, X86_PAGE_SIZE);
 
     /* Install a new PDPTE entry using the page  */
     *pml4e = (paddr & addrmask) | PTE_CANWRITE | PTE_PRESENT;
@@ -1885,7 +1972,7 @@ remap_internal_memory (uintptr_t * firstpaddr) {
     ++(getPageDescPtr(pdpte_paddr)->count);
 
     /* Zero the contents of the frame */
-    memset (getVirtual (pdpte_paddr), 0, X86_PAGE_SIZE);
+    memset (getVirtualSVADMAP (pdpte_paddr), 0, X86_PAGE_SIZE);
 
     /* Install a new PDE entry using the page. */
     *pdpte = (pdpte_paddr & addrmask) | PTE_CANWRITE | PTE_PRESENT;
@@ -1931,7 +2018,7 @@ remap_internal_memory (uintptr_t * firstpaddr) {
      * Verify that the mapping works.
      */
     unsigned char * p = (unsigned char *) vaddr;
-    unsigned char * q = (unsigned char *) getVirtual (pde_paddr);
+    unsigned char * q = (unsigned char *) getVirtualSVADMAP (pde_paddr);
 
     for (unsigned index = 0; index < 100; ++index) {
       (*(p + index)) = ('a' + index);
@@ -1946,11 +2033,90 @@ remap_internal_memory (uintptr_t * firstpaddr) {
     vaddr += (2 * 1024 * 1024);
   }
 
-  /*
-   * Re-enable page protections.
-   */
-  protect_paging();
   return;
+}
+
+/*
+ * Function: sva_create_dmap()
+ *
+ * Description:
+ *  This function sets up the SVA direct mapping region.
+ *
+ * Input:
+ * KPML4phys - phys addr of kernel level 4 page table page
+ * DMPDPphys - phys addr of SVA direct mapping level 3 page table page
+ * DMPDphys -  phys addr of SVA direct mapping level 2 page table page
+ * DMPTphys -  phys addr of SVA direct mapping level 1 page table page
+ * ndmpdp   -  number of SVA direct mapping level 3 page table pages
+ * ndm1g    -  number of 1GB pages used for SVA direct mapping
+ */
+
+void
+sva_create_dmap(void * KPML4phys, void * DMPDPphys,
+void * DMPDphys, void * DMPTphys, int ndmpdp, int ndm1g)
+{
+  int i, j;
+
+  for (i = 0; i < NPTEPG * NPDEPG * ndmpdp; i++) {
+	        ((pte_t *)DMPTphys)[i] = (uintptr_t) i << PAGE_SHIFT;
+		((pte_t *)DMPTphys)[i] |= PG_RW | PG_V | PG_G;
+       }
+
+  for (i = NPDEPG * ndm1g, j = 0; i < NPDEPG * ndmpdp; i++, j++) {
+                ((pde_t *)DMPDphys)[j] = (uintptr_t)DMPTphys + ((uintptr_t)j << PAGE_SHIFT);
+                /* Preset PG_M and PG_A because demotion expects it. */
+                ((pde_t *)DMPDphys)[j] |= PG_RW | PG_V; 
+       }
+
+  for (i = 0; i < ndm1g; i++) {
+                ((pdpte_t *)DMPDPphys)[i] = (uintptr_t) i << PDPSHIFT;
+                /* Preset PG_M and PG_A because demotion expects it. */
+                ((pdpte_t *)DMPDPphys)[i] |= PG_RW | PG_V | PG_PS | PG_G | PG_M | PG_A;
+  }
+  for (j = 0; i < ndmpdp; i++, j++) {
+                ((pdpte_t *)DMPDPphys)[i] = (uintptr_t)DMPDphys + (uintptr_t)(j << PAGE_SHIFT);
+                ((pdpte_t *)DMPDPphys)[i] |= PG_RW | PG_V | PG_U;
+
+  }
+
+
+  /* Connect the Direct Map slot(s) up to the PML4. */
+  for (i = 0; i < NDMPML4E; i++) {
+                ((pdpte_t *)KPML4phys)[DMPML4I + i] = (uintptr_t)DMPDPphys + (uintptr_t)
+                    (i << PAGE_SHIFT);
+                ((pdpte_t *)KPML4phys)[DMPML4I + i] |= PG_RW | PG_V | PG_U;
+  }
+
+
+  for(i = 0; i < NDMPML4E; i++)
+  {
+	sva_declare_dmap_page((unsigned long)DMPDPphys + (i << PAGE_SHIFT));
+  }
+
+  for(i = 0; i < ndmpdp - ndm1g; i ++)
+  {
+	sva_declare_dmap_page((unsigned long)DMPDphys + (i << PAGE_SHIFT));
+  }
+
+  return;
+}
+
+/*
+ * Instrinsic: sva_update_l4_dmap
+ *
+ * Description:
+ *  This function updates the pml4 entries of a process with the SVA direct mapping.
+ *
+ * Input:
+ *  pml4pg - the virtual address of the pml4 page table page to be updated
+ *  index  - the index of the SVA direct mapping pml4 entry
+ *  val    - the page table entry to be populated in
+ */
+
+void sva_update_l4_dmap(void * pml4pg, int index, page_entry_t val)
+{
+  if(index < NDMPML4E)
+  sva_update_l4_mapping(&(((pdpte_t *)pml4pg)[DMPML4I + index]), val);
 }
 
 /*
@@ -2032,6 +2198,17 @@ sva_mmu_init (pml4e_t * kpml4Mapping,
    * Note that the MMU is now initialized.
    */
   mmuIsInitialized = 1;
+
+  int ptindex;
+  unsigned char * p;
+  for(ptindex = 0; ptindex < 1024; ++ptindex)
+  {
+    if((p = SVAPTPages[ptindex]) == NULL)
+      panic("SVAPTPages[%d] is not allocated\n", ptindex);  
+    PTPages[ptindex].paddr   = getPhysicalAddr (p);
+    PTPages[ptindex].vosaddr = getVirtualSVADMAP(PTPages[ptindex].paddr);
+  }
+ 
 }
 
 /*
@@ -2069,6 +2246,9 @@ sva_declare_l1_page (uintptr_t frameAddr) {
       panic ("SVA: Declaring L1 for wrong page: frameAddr = %lx, pgDesc=%lx, type=%x\n", frameAddr, pgDesc, pgDesc->type);
       break;
   }
+
+  /* A page can only be declared as a page table page if its reference count is less than 2.*/
+  SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l1_page: more than one virtual addresses are still using this page!");
 
   /* 
    * Declare the page as an L1 page (unless it is already an L1 page).
@@ -2135,6 +2315,8 @@ sva_declare_l2_page (uintptr_t frameAddr) {
       break;
   }
 
+  /* A page can only be declared as a page table page if its reference count is less than 2.*/
+  SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l2_page: more than one virtual addresses are still using this page!");
   /* 
    * Declare the page as an L2 page (unless it is already an L2 page).
    */
@@ -2195,6 +2377,9 @@ sva_declare_l3_page (uintptr_t frameAddr) {
       panic ("SVA: Declaring L3 for wrong page: frameAddr = %lx, pgDesc=%lx, type=%x count=%x\n", frameAddr, pgDesc, pgDesc->type, pgDesc->count);
       break;
   }
+ 
+  /* A page can only be declared as a page table page if its reference count is less than 2.*/
+  SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l3_page: more than one virtual addresses are still using this page!");
 
   /* 
    * Declare the page as an L3 page (unless it is already an L3 page).
@@ -2236,6 +2421,7 @@ sva_declare_l3_page (uintptr_t frameAddr) {
 void
 sva_declare_l4_page (uintptr_t frameAddr) {
   /* Disable interrupts so that we appear to execute as a single instruction. */
+  
   unsigned long rflags = sva_enter_critical();
 
   /* Get the page_desc for the newly declared l4 page frame */
@@ -2265,6 +2451,9 @@ sva_declare_l4_page (uintptr_t frameAddr) {
       break;
   }
 
+  /* A page can only be declared as a page table page if its reference count is 0 or 1.*/
+  SVA_ASSERT((pgRefCount(pgDesc) <= 2), "sva_declare_l4_page: more than one virtual addresses are still using this page!");
+
   /* 
    * Declare the page as an L4 page (unless it is already an L4 page).
    */
@@ -2288,6 +2477,20 @@ sva_declare_l4_page (uintptr_t frameAddr) {
   /* Restore interrupts */
   sva_exit_critical (rflags);
 }
+
+/*
+ * Function: sva_declare_dmap_page()
+ *
+ * Description:
+ *   Declare a physical page frame to be a page for SVA direct mapping
+ *
+ * Input:
+ *   frameAddr - the address of a physical page frame
+ */
+void sva_declare_dmap_page(uintptr_t frameAddr)
+ {
+    getPageDescPtr(frameAddr)->dmap = 1;
+ }
 
 static inline page_entry_t * 
 printPTES (uintptr_t vaddr) {
@@ -2386,7 +2589,7 @@ sva_remove_page (uintptr_t paddr) {
    * Note that we check for a reference count of 1 because the page is always
    * mapped into the direct map.
    */
-  if ((pgDesc->count == 1) || (pgDesc->count == 0)) {
+  if (pgDesc->count <= 2) {
     /*
      * Mark the page frame as an unused page.
      */

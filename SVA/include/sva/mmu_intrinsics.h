@@ -59,6 +59,7 @@
 #define SVA_MMU_INTRINSICS_H
 
 #include "mmu_types.h"
+#include "state.h"
 
 /*
  *****************************************************************************
@@ -71,6 +72,7 @@ extern void sva_declare_l1_page (uintptr_t frame);
 extern void sva_declare_l2_page (uintptr_t frame);
 extern void sva_declare_l3_page (uintptr_t frame);
 extern void sva_declare_l4_page (uintptr_t frame);
+extern void sva_declare_dmap_page(uintptr_t frame);
 extern void sva_remove_page     (uintptr_t frame);
 extern void sva_update_l1_mapping (pte_t * ptePtr, page_entry_t val);
 extern void sva_update_l2_mapping (pde_t * pdePtr, page_entry_t val);
@@ -85,6 +87,9 @@ extern void sva_mmu_init(pml4e_t * kpml4Mapping,
 
 /* Key initialization and secure storage allocation */
 extern void * sva_translate(void * entryPoint);
+
+/* COW on ghost memory at fork */
+extern void ghostmemCOW(struct SVAThread* oldThread, struct SVAThread* newThread);
 
 /*
  *****************************************************************************

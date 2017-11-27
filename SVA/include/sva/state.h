@@ -277,6 +277,7 @@ struct SVAThread {
 
   /* Randomly created identifier */
   uintptr_t rid;
+  
 } __attribute__ ((aligned (16)));
 
 /*
