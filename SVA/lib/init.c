@@ -83,6 +83,8 @@
 
 #include "sva/config.h"
 #include "sva/state.h"
+#include "sva/util.h"
+#include "sva/mmu.h"
 #include "sva/interrupt.h"
 #include "thread_stack.h"
 
@@ -90,9 +92,6 @@
 #include <limits.h>
 
 #include <sys/types.h>
-
-extern int printf(const char *, ...);
-extern void panic(const char *, ...);
 
 void register_x86_interrupt (int number, void *interrupt, unsigned char priv);
 void register_x86_trap (int number, void *trap);
@@ -467,6 +466,121 @@ init_fpu (void) {
 }
 
 /*
+ * Function: init_mpx()
+ *
+ * Description:
+ *  This function initializes the Intel MPX bounds checking registers for use
+ *  with software fault isolation (SFI).
+ *
+ * Notes:
+ *  This function will initialize the bounds register so that it contains
+ *  the 1 TB direct map, the SVA VM internal memory, and the 512 GB kernel
+ *  memory.  This is because the initial SVA implementation puts the SVA VM
+ *  internal memory between the direct map and the kernel memory.  Therefore,
+ *  this configuration will allow us to measure performance but will not
+ *  actually protect SVA VM memory; we need to move SVA internal memory so
+ *  that it does not sit between two regions of memory which the kernel needs
+ *  to access.
+ */
+static void
+init_mpx (void) {
+#ifdef MPX
+  /* First address of kernel memory */
+  static uintptr_t const kernelBase = SECMEMEND - SECMEMSTART;
+  static uintptr_t const kernelSize = (0xffffffffffffffffu - kernelBase);
+
+  /* Bits within control register 4 (CR4) */
+  static const uintptr_t oxsave = (1u << 18);
+
+  /* Bits to configure in the extended control register XCR0 */
+  static unsigned char bndreg = (1u << 3);
+  static unsigned char bndcsr = (1u << 4);
+  static unsigned char enableX87 = (1u << 0);
+
+  /* Bits to configure the BNDCFGS register */
+  static unsigned char bndEnable   = (1u << 0);
+  static unsigned char bndPreserve = (1u << 1);
+
+  /* ID number of the configuration register for MPX kernel mode code */
+  static const unsigned IA32_BNDCFGS = 0x0d90;
+
+  unsigned long cr4;
+  unsigned long cpuid;
+
+  /*
+   * Only configure MPX if we are configured to do so.
+   */
+  if (usempx) {
+    /*
+     * Enable the OSXSAVE feature in CR4.  This is needed to enable MPX.
+     */
+    __asm__ __volatile__ ("movq %%cr4, %0\n"
+                          "orq %1, %0\n"
+                          "movq %0, %%cr4\n"
+                          : "=r" (cr4)
+                          : "i" (oxsave));
+
+    /*
+     * Enable the XCR0.BNDREG and XCR0.BNDCSR bits in XCR0.  We must also
+     * enable XCR0.X87 to prevent a general protection fault.
+     */
+    __asm__ __volatile__ ("xgetbv\n"
+                          "orq %1, %%rax\n"
+                          "xsetbv\n"
+                          :
+                          : "c" (0), "i" (bndreg | bndcsr | enableX87)
+                          : "%rax", "%rdx");
+
+    /*
+     * Enable bounds checking for kernel mode code.  We enable the
+     * bndEnable bit to enable bounds checking and the bndPreserve bit to
+     * ensure that control flow instructions do not clear the bounds registers.
+     */
+    __asm__ __volatile__ ("wrmsr\n"
+                          :
+                          : "c" (IA32_BNDCFGS), "A" (bndEnable | bndPreserve));
+
+    /*
+     * Load bounds information for kernel memory into the first bounds register.
+     */
+    __asm__ __volatile__ ("bndmk (%0,%1), %%bnd0\n"
+                          :
+                          : "a" (kernelBase), "d" (kernelSize));
+
+  }
+#endif
+  return;
+}
+
+/*
+ * Function: testmpx()
+ *
+ * Description:
+ *  This function can be called by the kernel to test the MPX functionality.
+ */
+void
+testmpx (void) {
+#ifdef MPX
+  struct sillyStruct {
+    unsigned long a;
+    unsigned long b;
+  } foo;
+
+  /*
+   * Load bounds information into the first bounds register.
+   */
+  __asm__ __volatile__ ("bndmk (%0,%1), %%bnd1\n"
+                        :
+                        : "a" (&foo), "d" (sizeof(foo) - 1));
+
+  __asm__ __volatile__ ("bndcl %0, %%bnd0\n" :: "a" (&(testmpx)));
+  __asm__ __volatile__ ("bndcu %0, %%bnd0\n" :: "a" (&(foo.b)));
+#endif
+  return;
+}
+
+extern int cache_part_enable_sva;
+/*
  * Intrinsic: sva_init_primary()
  *
  * Description:
@@ -481,6 +595,11 @@ sva_init_primary () {
   init_segs ();
   init_debug ();
 #endif
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+   	tsc_tmp = sva_read_tsc();
+
+
   /* Initialize the processor ID */
   init_procID();
 
@@ -492,11 +611,18 @@ sva_init_primary () {
   init_dispatcher ();
 
   init_mmu ();
+  init_mpx ();
   init_fpu ();
 #if 0
   llva_reset_counters();
   llva_reset_local_counters();
 #endif
+
+#ifdef SVA_LLC_PART
+  cache_part_enable_sva = 0;
+#endif
+
+  record_tsc(sva_init_primary_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
 /*
@@ -509,6 +635,10 @@ sva_init_primary () {
  */
 void
 sva_init_secondary () {
+
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
 #if 0
   init_segs ();
   init_debug ();
@@ -529,11 +659,13 @@ sva_init_secondary () {
 #if 0
   init_mmu ();
 #endif
+  init_mpx ();
   init_fpu ();
 #if 0
   llva_reset_counters();
   llva_reset_local_counters();
 #endif
+  record_tsc(sva_init_secondary_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
 }
 
 #define REGISTER_EXCEPTION(number) \

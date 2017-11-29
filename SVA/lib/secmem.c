@@ -346,7 +346,7 @@ allocSecureMemory (void) {
    */
   unsigned char * vaddrStart = 0;
   struct SVAThread * threadp = cpup->currentThread;
-  if (threadp->secmemSize) {
+  if (threadp->secmemSize && !pgdef) {
     /*
      * Pretend to allocate more ghost memory (but let demand paging actually
      * map it in.
@@ -363,7 +363,6 @@ allocSecureMemory (void) {
      */
     memset (vaddrStart, 0, size);
   }
-
   /*
    * Set the return value in the Interrupt Context to be a pointer to the
    * newly allocated memory.
@@ -439,14 +438,7 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
        */
       uintptr_t paddr;
       if (getPhysicalAddrFromPML4E (ptr, secmemPML4Ep, &paddr)) {
-        /*
-         * Zero out the contents of the ghost memory if it has been mapped
-         * in the current address space.
-         */
-        if (threadp == currentThread) {
-          memset (ptr, 0, X86_PAGE_SIZE);
-        }
-
+        
         /*
          * Unmap the memory from the secure memory virtual address space.
          */
@@ -462,7 +454,21 @@ ghostFree (struct SVAThread * threadp, unsigned char * p, intptr_t size) {
          *  implementation in which it only releases one page at a time to the
          *  OS.
          */
-        free_frame(paddr);
+	if(getPageDescPtr(paddr)->count == 0) {
+
+      	  /*
+           * Zero out the contents of the ghost memory.
+           */
+	  if(threadp == currentThread) {
+#ifdef SVA_DMAP
+            unsigned char * dmapAddr = getVirtualSVADMAP (paddr);
+            memset (dmapAddr, 0, X86_PAGE_SIZE);
+#else
+            memset (ptr, 0, X86_PAGE_SIZE);
+#endif
+	  }
+          free_frame(paddr);
+	}
       }
     }
   }
@@ -502,7 +508,12 @@ freeSecureMemory (void) {
 }
 
 void
-sva_ghost_fault (uintptr_t vaddr) {
+sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
+  uint64_t tsc_tmp;
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
+
+  kernel_to_usersva_pcid();
   /* Old interrupt flags */
   uintptr_t rflags;
 
@@ -522,6 +533,63 @@ sva_ghost_fault (uintptr_t vaddr) {
    */
   struct CPUState * cpup = getCPUState();
   struct SVAThread * threadp = cpup->currentThread;
+
+  /* copy-on-write page fault */
+  if((code & PGEX_P) && (code & PGEX_W)){
+     pml4e_t * pml4e_ptr = get_pml4eVaddr (get_pagetable(), vaddr);
+     if(!isPresent (pml4e_ptr)) 
+        panic("sva_ghost_fault: cow pgfault pml4e %p does not exist\n", pml4e);
+     pdpte_t * pdpte = get_pdpteVaddr (pml4e_ptr, vaddr);
+     if(!isPresent (pdpte)) 
+        panic("sva_ghost_fault: cow pgfault pdpte %p does not exist\n", pdpte);
+     pde_t * pde = get_pdeVaddr (pdpte, vaddr);
+     if(!isPresent (pde)) 
+        panic("sva_ghost_fault: cow pgfault pde %p does not exist\n", pde);
+     pte_t * pte = get_pteVaddr (pde, vaddr);
+     uintptr_t paddr = *pte & PG_FRAME;
+     page_desc_t * pgDesc = getPageDescPtr (paddr);
+
+     if(pgDesc->type != PG_GHOST)
+	panic("SVA: sva_ghost_fault: vaddr = 0x%lx paddr = 0x%lx is not a ghost memory page!\n", vaddr, paddr); 
+     /* If only one process maps this page, directly grant this process write permission */
+
+#ifndef SVA_DMAP
+     unprotect_paging();
+#endif
+     if(pgDesc->count == 1)
+     {
+        * pte = (* pte) | PTE_CANWRITE;
+     }
+     /* Otherwise copy-on-write */
+     else
+     {
+#ifdef SVA_DMAP
+        uintptr_t vaddr_old = (uintptr_t) getVirtualSVADMAP(paddr);
+#else
+        uintptr_t vaddr_old = (uintptr_t) getVirtual(paddr);
+#endif
+	uintptr_t paddr_new = alloc_frame();
+        page_desc_t * pgDesc_new = getPageDescPtr (paddr_new);
+        if (pgRefCount (pgDesc_new) > 1) {
+                panic ("SVA: Ghost page still in use somewhere else!\n");
+        }
+        if (isPTP(pgDesc_new) || isCodePG (pgDesc_new)) {
+                panic ("SVA: Ghost page has wrong type!\n");
+        }
+        	
+     	memcpy(getVirtualSVADMAP(paddr_new), (void *) vaddr_old, X86_PAGE_SIZE);   
+        *pte = (paddr_new & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
+	invlpg(vaddr);
+       
+        getPageDescPtr (paddr_new)->type = PG_GHOST;
+        getPageDescPtr (paddr_new)->count = 1;
+        pgDesc->count --;
+     }
+#ifndef SVA_DMAP 
+     protect_paging();
+#endif
+     return; 
+   }
 
   /*
    * Determine if this is the first secure memory allocation.
@@ -563,6 +631,8 @@ sva_ghost_fault (uintptr_t vaddr) {
 
   /* Re-enable interrupts if necessary */
   sva_exit_critical (rflags);
+  usersva_to_kernel_pcid();
+  record_tsc(sva_ghost_fault_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 

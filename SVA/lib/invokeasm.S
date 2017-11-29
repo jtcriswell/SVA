@@ -16,12 +16,24 @@
 
 #include "offsets.h"
 #include "sva/cfi.h"
+#include "sva/asmconfig.h"
+
+/*cache partitioning related macros*/
+#define COS_MSR 0xc8f
+#define APP_COS 0
+#define OS_COS  1
+#define SVA_COS 2
 
 .global sva_invoke
 .type sva_invoke, @function
 
 .global sva_invoke_except
 .type sva_invoke_except, @function
+
+#ifdef SVA_LLC_PART
+.global cache_part_enable_sva
+.type cache_part_enable_sva, @common
+#endif
 
 /*
  * Intrinsic: sva_invoke()
@@ -42,6 +54,29 @@
  *  1 - Stack was unwound.
  */
 sva_invoke:
+  
+  
+#ifdef SVA_LLC_PART
+  movq cache_part_enable_sva, %rax
+  testq %rax, %rax
+  je L10
+  
+  pushq %rax
+  pushq %rcx
+  pushq %rdx
+
+  movl $COS_MSR, %ecx
+  movl $0, %edx
+  movl $SVA_COS, %eax
+  wrmsr
+
+  popq  %rdx
+  popq  %rcx
+  popq  %rax
+  
+L10: 
+#endif
+
   /*
    * Create the new invoke frame.  Note that we save call the registers that
    * are saved and restored by callee functions.  This is because callees may
@@ -57,6 +92,32 @@ sva_invoke:
   pushq %rbx
   pushq %rbp
 
+  #ifdef SVA_ASID_PG
+  //change PCID from 1(kernel) to 0(SVA)
+  movq %cr3, %r15
+  movq %r15, %r13
+  shrq $12, %r13
+  movq $0xffffffffff, %r14
+  andq %r14, %r13
+  shlq $5, %r13
+  addq $24, %r13
+  movq page_desc(%r13), %r14
+  cmovneq %r14, %r15
+  shrq $12,  %r15  
+  shlq $12,  %r15
+  movq $0x8000000000000000,   %r14
+  orq  %r14, %r15
+  movq %r15, %cr3
+
+  movq  tsc_read_enable_sva(%rip), %r14
+  testq %r14, %r14
+  je L1
+  movq as_num(%rip), %r15
+  addq $1, %r15
+  movq %r15, as_num(%rip)
+
+L1:
+#endif
   /*
    * Save the location of the invoke frame into the CPUState.
    */
@@ -68,6 +129,55 @@ sva_invoke:
    */
   movq %rcx, %rbx
 
+
+#ifdef SVA_ASID_PG
+  //change PCID from 0(SVA) to 1(kernel)
+  movq %cr3, %r15
+  movq %r15, %r13
+  shrq $12, %r13
+  movq $0xffffffffff, %r14
+  andq %r14, %r13
+  shlq $5, %r13
+  addq $24, %r13
+  movq page_desc(%r13), %r14
+  cmovneq %r14, %r15 
+  shrq $12,  %r15
+  shlq $12,  %r15
+  orq $1,    %r15
+  movq $0x8000000000000000,   %r14
+  orq  %r14, %r15
+  movq %r15, %cr3
+
+  movq  tsc_read_enable_sva(%rip), %r14
+  testq %r14, %r14
+  je L2
+  movq as_num(%rip), %r15
+  addq $1, %r15
+  movq %r15, as_num(%rip)
+L2:
+#endif
+
+#ifdef SVA_LLC_PART
+  movq cache_part_enable_sva, %rax
+  testq %rax, %rax
+  je L11
+  
+  pushq %rax
+  pushq %rcx
+  pushq %rdx
+
+  movl $COS_MSR, %ecx
+  movl $0, %edx
+  movl $OS_COS, %eax
+  wrmsr
+
+  popq  %rdx
+  popq  %rcx
+  popq  %rax
+
+L11: 
+#endif
+
   /*
    * Call the function.
    *
@@ -76,12 +186,89 @@ sva_invoke:
   callq *%r8
   RETTARGET
 
+#ifdef SVA_LLC_PART
+  movq cache_part_enable_sva, %r15
+  testq %r15, %r15
+  je L12
+
+  pushq %rax
+  pushq %rcx
+  pushq %rdx 
+
+  movl $COS_MSR, %ecx
+  movl $0, %edx
+  movl $SVA_COS, %eax
+  wrmsr
+
+  popq  %rdx
+  popq  %rcx
+  popq  %rax
+
+L12:
+#endif
+
+#ifdef SVA_ASID_PG
+  //change PCID from 1(kernel) to 0(SVA)
+  movq %cr3, %r15
+  movq %r15, %r13
+  shrq $12, %r13
+  movq $0xffffffffff, %r14
+  andq %r14, %r13
+  shlq $5, %r13
+  addq $24, %r13
+  movq page_desc(%r13), %r14
+  cmovneq %r14, %r15 
+  shrq $12, %r15
+  shlq $12, %r15
+  movq $0x8000000000000000,   %r14
+  orq  %r14, %r15
+  movq %r15, %cr3 
+
+  movq  tsc_read_enable_sva(%rip), %r14
+  testq %r14, %r14
+  je L3
+  movq as_num(%rip), %r15
+  addq $1, %r15
+  movq %r15, as_num(%rip) 
+L3:
+#endif
+
   /*
    * Regular Return
    */
 
   /* Store the return value into the memory location */
   movq %rax, (%rbx)
+
+#ifdef SVA_ASID_PG
+  //change PCID from 0(SVA) to 1(kernel)
+  movq %cr3, %rbp
+  movq %rbp, %r13
+  shrq $12, %r13
+  movq $0xffffffffff, %r14
+  andq %r14, %r13
+  shlq $5, %r13
+  addq $24, %r13
+  movq page_desc(%r13), %r14
+  cmovneq %r14, %rbp 
+  shrq $12, %rbp
+  shlq $12, %rbp
+  orq $1, %rbp
+  movq $0x8000000000000000, %rbx
+  orq  %rbx, %rbp
+  movq %rbp, %cr3
+
+  movq  tsc_read_enable_sva(%rip), %rbx
+  testq %rbx, %rbx
+  je L4
+  movq as_num(%rip), %rbp
+  addq $1, %rbp
+  movq %rbp, as_num(%rip)
+
+L4:
+#endif
+
+
 
   /* Restore the saved registers */
   popq %rbp
@@ -94,6 +281,25 @@ sva_invoke:
   /* Remove the saved gip pointer */
   movq %gs:0x260, %rax
   popq CPU_GIP(%rax)
+
+#ifdef SVA_LLC_PART
+  movq cache_part_enable_sva, %rax
+  testq %rax, %rax
+  je L13
+
+  pushq %rcx
+  pushq %rdx
+
+  movl $COS_MSR, %ecx
+  movl $0, %edx
+  movl $OS_COS, %eax
+  wrmsr
+
+  popq %rdx
+  popq %rcx
+L13: 
+#endif
+
 
   /* Set the return value */
   movq $0, %rax

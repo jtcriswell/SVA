@@ -22,6 +22,10 @@
 #include "sva/mmu_types.h"
 #include "sva/keys.h"
 
+
+extern void usersva_to_kernel_pcid(void);
+extern void kernel_to_usersva_pcid(void);
+
 /* Processor privilege level */
 typedef unsigned char priv_level_t;
 
@@ -277,6 +281,7 @@ struct SVAThread {
 
   /* Randomly created identifier */
   uintptr_t rid;
+
 } __attribute__ ((aligned (16)));
 
 /*
@@ -337,6 +342,8 @@ getCPUState(void) {
  */
 static inline unsigned char
 sva_was_privileged (void) {
+  kernel_to_usersva_pcid();
+
   /* Constant mask for user-space code segments */
   const uintptr_t userCodeSegmentMask = 0x03;
 
@@ -362,6 +369,7 @@ sva_was_privileged (void) {
                        : "=r" (cs)
                        : "m" ((currentIC->cs)));
 
+  usersva_to_kernel_pcid();
   /*
    * Lookup the most recent interrupt context for this processor and see
    * if it's code segment has the user-mode segment bits turned on.  Apparently
@@ -468,4 +476,7 @@ save_fp (sva_fp_state_t * buffer) {
   __asm__ __volatile__ ("fxsave %0" : "=m" (buffer->words) :: "memory");
   buffer->present = 1;
 }
+
+
+
 #endif

@@ -40,6 +40,13 @@
  */
 void
 sva_iunwind (void) {
+  
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
+
+  kernel_to_usersva_pcid();
+
   /* Current processor status flags */
   uintptr_t rflags;
 
@@ -67,6 +74,8 @@ sva_iunwind (void) {
      * Re-enable interrupts.
      */
     sva_exit_critical (rflags);
+    usersva_to_kernel_pcid(); 
+    record_tsc(sva_iunwind_1_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
     return;
   }
 
@@ -106,6 +115,8 @@ sva_iunwind (void) {
    * Re-enable interrupts.
    */
   sva_exit_critical (rflags);
+  usersva_to_kernel_pcid();
+  record_tsc(sva_iunwind_2_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return;
 }
 
@@ -139,6 +150,12 @@ sva_iunwind (void) {
  */
 uintptr_t
 sva_invokestrncpy (char * dst, const char * src, uintptr_t count) {
+
+  uint64_t tsc_tmp;  
+  if(tsc_read_enable_sva)
+     tsc_tmp = sva_read_tsc();
+
+  kernel_to_usersva_pcid();
   /* The invoke frame placed on the stack */
   struct invoke_frame frame;
 
@@ -153,8 +170,11 @@ sva_invokestrncpy (char * dst, const char * src, uintptr_t count) {
    * Determine if there is anything to copy.  If not, then return now.
    */
   if (count == 0)
+  {
+    usersva_to_kernel_pcid();
+    record_tsc(sva_invokestrncpy_1_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
     return 0;
-
+  }
   /*
    * Get the pointer to the most recent invoke frame.
    */
@@ -191,6 +211,9 @@ sva_invokestrncpy (char * dst, const char * src, uintptr_t count) {
    * Pop off the invoke frame.
    */
   cpup->gip = frame.next;
+
+  usersva_to_kernel_pcid();
+  record_tsc(sva_invokestrncpy_2_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return res;
 }
 

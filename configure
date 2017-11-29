@@ -588,6 +588,7 @@ enable_option_checking=no
 ac_subst_vars='LTLIBOBJS
 LIBOBJS
 subdirs
+COPTFLAGS
 target_alias
 host_alias
 build_alias
@@ -631,7 +632,12 @@ ac_user_opts='
 enable_option_checking
 enable_vg
 enable_vg_random
+enable_mpx
 enable_mmuchecks
+enable_sva_dmap
+enable_asid
+enable_llc_part
+enable_pg_defenses
 enable_targets
 '
       ac_precious_vars='build_alias
@@ -1247,10 +1253,14 @@ Optional Features:
   --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
   --enable-vg             Enable Virtual Ghost (default is NO)
+  --enable-mpx            Enable MPX for SFI (default is NO)
   --enable-vg-random      Enable Ghost Memory allocation randomization
                           (default is NO)
   --enable-mmuchecks      Enable SVA MMU Checks (default is YES)
-
+  --enable-sva-dmap       Enable SVA Direct Map Feature (default is YES)
+  --enable-asid           Enable SVA ASID Feature (default is YES)
+  --enable-llc-part       Enable LLC cache partitioning feature to mitigate LLC side-channel attacks (default is YES)
+  --enable-pg-defenses    Enable defenses against page table side-channels (default is YES)
 
 Report bugs to <jtcriswel@gmail.com>.
 _ACEOF
@@ -1712,6 +1722,29 @@ else
 fi
 
 
+# Check whether --enable-mpx was given.
+if test "${enable_mpx+set}" = set; then :
+  enableval=$enable_mpx;
+else
+  enableval=default
+fi
+
+case "$enableval" in
+  yes) $as_echo "#define MPX 1" >>confdefs.h
+ ;;
+  no) $as_echo "#define NOMPX 1" >>confdefs.h
+ ;;
+  *) as_fn_error $? "Invalid setting for --enable-mpx. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
+esac
+
+case "$enableval" in
+  yes) COPTFLAGS="-mllvm -enable-mpx-sfi -no-integrated-as"
+ ;;
+  no)  COPTFLAGS=""
+ ;;
+  *) as_fn_error $? "Invalid setting for --enable-mpx. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
+esac
+
 # Check whether --enable-mmuchecks was given.
 if test "${enable_mmuchecks+set}" = set; then :
   enableval=$enable_mmuchecks; case "${enableval}" in
@@ -1726,6 +1759,66 @@ else
 
 fi
 
+
+# Check whether --enable-sva-dmap was given.
+if test "${enable_sva_dmap+set}" = set; then :
+  enableval=$enable_sva_dmap;
+else
+  enableval=default
+fi
+
+case "$enableval" in
+  yes) $as_echo "#define SVA_DMAP 1" >>confdefs.h
+ ;;
+  no) $as_echo "#define NOSVA_DMAP 1" >>confdefs.h
+ ;;
+  *) as_fn_error $? "Invalid setting for --enable-sva-dmap. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
+esac
+
+# Check whether --enable-asid was given.
+if test "${enable_asid+set}" = set; then :
+  enableval=$enable_asid;
+else
+  enableval=default
+fi
+
+case "$enableval" in
+  yes) $as_echo "#define SVA_ASID_PG 1" >>confdefs.h
+ ;;
+  no) $as_echo "#define NOSVA_ASID_PG 1" >>confdefs.h
+ ;;
+  *) as_fn_error $? "Invalid setting for --enable-asid. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
+esac
+
+# Check whether --enable-llc-part was given.
+if test "${enable_llc_part+set}" = set; then :
+  enableval=$enable_llc_part;
+else
+  enableval=default
+fi
+
+case "$enableval" in
+  yes) $as_echo "#define SVA_LLC_PART 1" >>confdefs.h
+ ;;
+  no) $as_echo "#define NOSVA_LLC_PART 1" >>confdefs.h
+ ;;
+  *) as_fn_error $? "Invalid setting for --enable-llc-part. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
+esac
+
+# Check whether --enable-pg-defenses was given.
+if test "${enable_pg_defenses+set}" = set; then :
+  enableval=$enable_pg_defenses;
+else
+  enableval=default
+fi
+
+case "$enableval" in
+  yes) $as_echo "#define SVA_PG_DEF 1" >>confdefs.h
+ ;;
+  no) $as_echo "#define NOSVA_PG_DEF 1" >>confdefs.h
+ ;;
+  *) as_fn_error $? "Invalid setting for --enable-pg-defenses. Use \"yes\" or \"no\"" "$LINENO" 5 ;;
+esac
 
 # Check whether --enable-targets was given.
 if test "${enable_targets+set}" = set; then :

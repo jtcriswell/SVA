@@ -25,7 +25,23 @@
  */
 #undef VG_RANDOM
 
+/* Let the configure script determine if we enable MPX support for SFI */
+#undef MPX
+
 /* Let the configure script determine if we enable SVA MMU Checks */
 #undef CHECKMMU
+
+/* Let the configure script determine if we enable the SVA Direct Map */
+#undef SVA_DMAP
+
+/* Let the configure script determine if we enable the SVA ASID Feature */
+#undef SVA_ASID_PG
+
+/* Let the configure script determine if we enable the LLC partitioning Feature */
+#undef SVA_LLC_PART
+
+/* Let the configure script determine if we enable the page table side-channel defenses for ghost memory*/
+#undef SVA_PG_DEF
+
 
 #endif
