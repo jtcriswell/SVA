@@ -18,6 +18,8 @@
 
 #include <sys/types.h>
 
+#include "icat.h"
+
 #include "sva/callbacks.h"
 #include "sva/config.h"
 #include "sva/mmu.h"

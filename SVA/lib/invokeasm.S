@@ -14,15 +14,10 @@
  *===----------------------------------------------------------------------===
  */
 
+#include "icat.h"
 #include "offsets.h"
 #include "sva/cfi.h"
 #include "sva/asmconfig.h"
-
-/*cache partitioning related macros*/
-#define COS_MSR 0xc8f
-#define APP_COS 0
-#define OS_COS  1
-#define SVA_COS 2
 
 .global sva_invoke
 .type sva_invoke, @function

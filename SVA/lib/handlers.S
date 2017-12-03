@@ -18,18 +18,13 @@
  * Macros
  ****************************************************************************/
 
+#include "icat.h"
 #include "offsets.h"
 #include <sva/cfi.h>
 #include <sva/asmconfig.h>
 
 /* FreeBSD segment selector for kernel code segment */
 #define USERCS 0x43
-
-/*cache partitioning related macros*/
-#define COS_MSR 0xc8f
-#define APP_COS 0
-#define OS_COS  1
-#define SVA_COS 2
 
 /*
  * Macro: TRAP
