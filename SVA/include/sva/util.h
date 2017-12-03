@@ -118,14 +118,13 @@ bochsBreak (void) {
  * Function: sva_read_tsc
  *
  * Descripton:
- * Loads the current value of the processor's time-stamp counter into the EDX:EAX registers.
+ *  Reads the processor time-stamp counter.
  *
  * Return value:
- * The current value of the time-stamp counter.
+ *  The current value of the time-stamp counter.
  * 
  */
-static inline uint64_t sva_read_tsc (void)
-{
+static inline uint64_t sva_read_tsc (void) {
   uint64_t hi, lo;
 
   __asm__ __volatile__ ("rdtsc\n" : "=a"(lo), "=d"(hi));
@@ -141,10 +140,8 @@ static inline uint64_t sva_read_tsc (void)
  * the 64-bit model specific register (MSR) specified in the ECX register.
  *
  */
-
 static inline void
-sva_store_tsc (uint64_t lo, uint64_t hi) 
-{
+sva_store_tsc (uint64_t lo, uint64_t hi) {
   __asm__ __volatile__ ("wrmsr\n" :: "a" (lo), "d" (hi), "c" (0x10));
 }
 
