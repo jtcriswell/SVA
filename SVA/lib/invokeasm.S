@@ -78,7 +78,7 @@ L10:
 #endif
 
   /*
-   * Create the new invoke frame.  Note that we save call the registers that
+   * Create the new invoke frame.  Note that we save the registers that
    * are saved and restored by callee functions.  This is because callees may
    * not be able to restore these registers in the case of an unwind.
    */
