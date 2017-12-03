@@ -61,6 +61,7 @@
 
 #include "sva/callbacks.h"
 #include "sva/state.h"
+#include "sva/util.h"
 
 /* Size of the smallest page frame in bytes */
 static const uintptr_t X86_PAGE_SIZE = 4096u;
@@ -102,10 +103,6 @@ static const uintptr_t secmemOffset = ((SECMEMSTART >> 39) << 3) & vmask;
 
 /* Zero mapping is the mapping that eliminates the previous entry */
 static const uintptr_t ZERO_MAPPING = 0;
-
-extern int tsc_read_enable_sva;
-extern uint64_t wp_num;
-
 
 /*
  * Assert macro for SVA

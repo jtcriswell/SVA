@@ -109,12 +109,14 @@ L10:
   orq  %r14, %r15
   movq %r15, %cr3
 
+#if 0
   movq  tsc_read_enable_sva(%rip), %r14
   testq %r14, %r14
   je L1
   movq as_num(%rip), %r15
   addq $1, %r15
   movq %r15, as_num(%rip)
+#endif
 
 L1:
 #endif
@@ -148,12 +150,14 @@ L1:
   orq  %r14, %r15
   movq %r15, %cr3
 
+#if 0
   movq  tsc_read_enable_sva(%rip), %r14
   testq %r14, %r14
   je L2
   movq as_num(%rip), %r15
   addq $1, %r15
   movq %r15, as_num(%rip)
+#endif
 L2:
 #endif
 
@@ -224,12 +228,14 @@ L12:
   orq  %r14, %r15
   movq %r15, %cr3 
 
+#if 0
   movq  tsc_read_enable_sva(%rip), %r14
   testq %r14, %r14
   je L3
   movq as_num(%rip), %r15
   addq $1, %r15
   movq %r15, as_num(%rip) 
+#endif
 L3:
 #endif
 
@@ -258,12 +264,14 @@ L3:
   orq  %rbx, %rbp
   movq %rbp, %cr3
 
+#if 0
   movq  tsc_read_enable_sva(%rip), %rbx
   testq %rbx, %rbx
   je L4
   movq as_num(%rip), %rbp
   addq $1, %rbp
   movq %rbp, as_num(%rip)
+#endif
 
 L4:
 #endif
