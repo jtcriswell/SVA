@@ -214,27 +214,23 @@ enum SVA_OS_NAME
 };
 
 static inline void
-clear_tsc (void)
-{
-  if(tsc_read_enable_sva)
+clear_tsc (void) {
+  if (tsc_read_enable_sva)
     sva_store_tsc(0, 0);
 }
 
 static inline void 
-record_tsc(int index, uint64_t tsc_tmp)
-{
-  if(tsc_read_enable_sva) //&& ( (int64_t) tsc_tmp >= 0))
-  {
+record_tsc(int index, uint64_t tsc_tmp) {
+  if (tsc_read_enable_sva) {
      sva_tsc_val[index] += (uint64_t) tsc_tmp;
      sva_call_freq[index] ++;
   }
 }
 
 static inline void
-init_sva_counter(void)
-{
+init_sva_counter(void) {
   int i;
-  for(i = 0; i < SVA_API_NUM; i++)
+  for (i = 0; i < SVA_API_NUM; i++)
     sva_tsc_val[i] = sva_call_freq[i] = 0;
   wp_num = as_num = 0;
 }
