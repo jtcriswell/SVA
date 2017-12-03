@@ -32,19 +32,17 @@ AC_ARG_ENABLE(vg-random,
 dnl Enable the use of MPX for SFI
 AC_ARG_ENABLE(mpx,
               AS_HELP_STRING([--enable-mpx],
-                             [Enable MPX for SFI (default is NO)]),,
-                             enableval=default)
-case "$enableval" in
-  yes) AC_DEFINE(MPX) ;;
-  no) AC_DEFINE(NOMPX) ;;
-  *) AC_MSG_ERROR([Invalid setting for --enable-mpx. Use "yes" or "no"]) ;;
-esac
-
-case "$enableval" in
-  yes) AC_SUBST([COPTFLAGS], ["-mllvm -enable-mpx-sfi -no-integrated-as"]) ;;
-  no)  AC_SUBST([COPTFLAGS], [""]) ;;
-  *) AC_MSG_ERROR([Invalid setting for --enable-mpx. Use "yes" or "no"]) ;;
-esac
+                             [Enable MPX for SFI (default is NO)]),
+                             [case "${enableval}" in
+                             	yes) AC_DEFINE(MPX)
+                                   AC_SUBST([COPTFLAGS], ["-mllvm -enable-mpx-sfi -no-integrated-as"])
+                                   ;;
+                             	no)  AC_DEFINE(NOMPX)
+                                   AC_SUBST([COPTFLAGS], [""])
+                                   ;;
+                             	*)   AC_MSG_ERROR([bad value ${enableval} for --enable-mpx]) ;;
+                             esac],
+                             AC_DEFINE(NOMPX))
 
 dnl Enable the SVA MMU Checks
 AC_ARG_ENABLE(mmuchecks,
@@ -60,46 +58,47 @@ AC_ARG_ENABLE(mmuchecks,
 dnl Enable SVA Direct Map Enhancement
 AC_ARG_ENABLE(sva-dmap,
               AS_HELP_STRING([--enable-sva-dmap],
-                             [Enable SVA Direct Map Feature (default is YES)]),,
-                             enableval=default)
-case "$enableval" in
-  yes) AC_DEFINE(SVA_DMAP) ;;
-  no) AC_DEFINE(NOSVA_DMAP) ;;
-  *) AC_MSG_ERROR([Invalid setting for --enable-sva-dmap. Use "yes" or "no"]) ;;
-esac
+                             [Enable SVA Direct Map Feature (default is NO)]),
+                             [case "${enableval}" in
+                             	yes) AC_DEFINE(SVA_DMAP) ;;
+                             	no)  AC_DEFINE(NOSVA_DMAP) ;;
+                             	*)   AC_MSG_ERROR([bad value ${enableval} for --enable-sva-dmap]) ;;
+                             esac],
+                             AC_DEFINE(NOSVA_DMAP))
 
 dnl Enable SVA ASID Feature
 AC_ARG_ENABLE(asid,
               AS_HELP_STRING([--enable-asid],
-                             [Enable SVA ASID Feature (default is YES)]),,
-                             enableval=default)
-case "$enableval" in
-  yes) AC_DEFINE(SVA_ASID_PG) ;;
-  no) AC_DEFINE(NOSVA_ASID_PG) ;;
-  *) AC_MSG_ERROR([Invalid setting for --enable-asid. Use "yes" or "no"]) ;;
-esac
+                             [Enable SVA ASID Feature (default is NO)]),
+                             [case "${enableval}" in
+                             	yes) AC_DEFINE(SVA_ASID_PG) ;;
+                             	no)  AC_DEFINE(NOSVA_ASID_PG) ;;
+                             	*)   AC_MSG_ERROR([bad value ${enableval} for --enable-sva-dmap]) ;;
+                             esac],
+                             AC_DEFINE(NOSVA_ASID_PG))
 
 dnl Enable LLC partitioning Feature
 AC_ARG_ENABLE(llc-part,
               AS_HELP_STRING([--enable-llc-part],
-                             [Enable SVA LLC partitioning Feature (default is YES)]),,
-                             enableval=default)
-case "$enableval" in
-  yes) AC_DEFINE(SVA_LLC_PART) ;;
-  no) AC_DEFINE(NOSVA_LLC_PART) ;;
-  *) AC_MSG_ERROR([Invalid setting for --enable-llc-part. Use "yes" or "no"]) ;;
-esac
+                             [Enable SVA LLC partitioning Feature (default is NO)]),
+                             [case "${enableval}" in
+                              yes) AC_DEFINE(SVA_LLC_PART) ;;
+                              no)  AC_DEFINE(NOSVA_LLC_PART) ;;
+                              *)   AC_MSG_ERROR([bad value ${enableval} for --enable-llc-part]) ;;
+                             esac],
+                             AC_DEFINE(NOSVA_LLC_PART))
 
 dnl Enable Defenses Against Page Table Side-channels
 AC_ARG_ENABLE(pg-defenses,
               AS_HELP_STRING([--enable-pg-defenses],
-                             [Enable defenses against page table side-channels (default is YES)]),,
-                             enableval=default)
-case "$enableval" in
-  yes) AC_DEFINE(SVA_PG_DEF) ;;
-  no) AC_DEFINE(NOSVA_PG_DEF) ;;
-  *) AC_MSG_ERROR([Invalid setting for --enable-pg-defenses. Use "yes" or "no"]) ;;
-esac
+                             [Enable defenses against page table side-channels (default is NO)]),
+                             [case "${enableval}" in
+                              yes) AC_DEFINE(SVA_PG_DEF) ;;
+                              no)  AC_DEFINE(NOSVA_PG_DEF) ;;
+                              *)   AC_MSG_ERROR([bad value ${enableval} for --enable-llc-part]) ;;
+                             esac],
+                             AC_DEFINE(NOSVA_PG_DEF))
+
 
 dnl
 dnl Include the command-line option to configure the targets used by LLVM
