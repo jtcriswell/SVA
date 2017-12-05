@@ -147,8 +147,8 @@ sva_store_tsc (uint64_t lo, uint64_t hi) {
 
 #define SVA_API_NUM 55 //54 
 
-static const int tsc_read_enable = 0;
-static const int tsc_read_enable_sva = 0;
+extern unsigned tsc_read_enable;
+extern unsigned tsc_read_enable_sva;
 extern uint64_t sva_tsc_val[SVA_API_NUM];
 extern uint64_t sva_call_freq[SVA_API_NUM];
 extern uint64_t wp_num;
