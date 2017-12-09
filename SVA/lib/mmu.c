@@ -1659,6 +1659,7 @@ void
 sva_mm_load_pgtable (void * pg_ptr) {
   /* Cast the page table pointer to an integer */
   uintptr_t pg = (uintptr_t) pg_ptr;
+  uintptr_t data = 0;
 
   uint64_t tsc_tmp;
   if(tsc_read_enable_sva)
@@ -1723,9 +1724,11 @@ sva_mm_load_pgtable (void * pg_ptr) {
     /*
      * Mark the page table pages as read-only again.
      */
-#ifndef SVA_DMAP
+
+    __asm __volatile("movq %%cr3,%0" : "=r" (data));
+    __asm __volatile("movq %0,%%cr3" : : "r" (data) : "memory");
+
     protect_paging();
-#endif
   }
 
   /* Restore interrupts */
