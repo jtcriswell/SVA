@@ -48,7 +48,7 @@ extern unsigned char
 sva_register_interrupt (unsigned char, interrupt_handler_t);
 
 extern unsigned char
-sva_register_syscall (unsigned char, syscall_t);
+sva_register_syscall (unsigned int, syscall_t);
 
 #if 0
 extern void sva_register_old_interrupt (int number, void *interrupt);

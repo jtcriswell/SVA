@@ -371,6 +371,20 @@ sva_register_interrupt (unsigned char number, interrupt_handler_t interrupt) {
   return 0;
 }
 
+typedef struct {
+	unsigned int nbr;
+	syscall_t fn; 
+}syscall_str;
+
+static syscall_str syscall_table[532] __attribute__ ((section ("svamem")));
+
+unsigned char sva_register_syscall (unsigned int number, syscall_t syscall_fn){
+
+	syscall_table[number].nbr = number;
+	syscall_table[number].fn = syscall_fn;
+	return 0;
+}
+
 #if 0
 /**************************** Inline Functions *******************************/
 
