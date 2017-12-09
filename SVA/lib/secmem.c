@@ -535,7 +535,7 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
   struct SVAThread * threadp = cpup->currentThread;
 
   /* copy-on-write page fault */
-  if((code & PGEX_P) && (code & PGEX_W)){
+  if ((code & PGEX_P) && (code & PGEX_W)){
      pml4e_t * pml4e_ptr = get_pml4eVaddr (get_pagetable(), vaddr);
      if(!isPresent (pml4e_ptr)) 
         panic("sva_ghost_fault: cow pgfault pml4e %p does not exist\n", pml4e);
@@ -549,26 +549,25 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
      uintptr_t paddr = *pte & PG_FRAME;
      page_desc_t * pgDesc = getPageDescPtr (paddr);
 
-     if(pgDesc->type != PG_GHOST)
-	panic("SVA: sva_ghost_fault: vaddr = 0x%lx paddr = 0x%lx is not a ghost memory page!\n", vaddr, paddr); 
-     /* If only one process maps this page, directly grant this process write permission */
+     if (pgDesc->type != PG_GHOST)
+      panic("SVA: sva_ghost_fault: vaddr = 0x%lx paddr = 0x%lx is not a ghost memory page!\n", vaddr, paddr); 
 
+     /*
+      * If only one process maps this page, directly grant this process write
+      * permission.  Otherwise, perform a copy-on-write.
+      */
 #ifndef SVA_DMAP
      unprotect_paging();
 #endif
-     if(pgDesc->count == 1)
-     {
+     if (pgDesc->count == 1) {
         * pte = (* pte) | PTE_CANWRITE;
-     }
-     /* Otherwise copy-on-write */
-     else
-     {
+     } else {
 #ifdef SVA_DMAP
         uintptr_t vaddr_old = (uintptr_t) getVirtualSVADMAP(paddr);
 #else
         uintptr_t vaddr_old = (uintptr_t) getVirtual(paddr);
 #endif
-	uintptr_t paddr_new = alloc_frame();
+        uintptr_t paddr_new = alloc_frame();
         page_desc_t * pgDesc_new = getPageDescPtr (paddr_new);
         if (pgRefCount (pgDesc_new) > 1) {
                 panic ("SVA: Ghost page still in use somewhere else!\n");
@@ -576,10 +575,10 @@ sva_ghost_fault (uintptr_t vaddr, unsigned long code) {
         if (isPTP(pgDesc_new) || isCodePG (pgDesc_new)) {
                 panic ("SVA: Ghost page has wrong type!\n");
         }
-        	
-     	memcpy(getVirtualSVADMAP(paddr_new), (void *) vaddr_old, X86_PAGE_SIZE);   
+
+        memcpy(getVirtualSVADMAP(paddr_new), (void *) vaddr_old, X86_PAGE_SIZE);   
         *pte = (paddr_new & addrmask) | PTE_CANWRITE | PTE_CANUSER | PTE_PRESENT;
-	invlpg(vaddr);
+        invlpg(vaddr);
        
         getPageDescPtr (paddr_new)->type = PG_GHOST;
         getPageDescPtr (paddr_new)->count = 1;
