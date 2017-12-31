@@ -378,10 +378,26 @@ typedef struct {
 
 static syscall_str syscall_table[532] __attribute__ ((section ("svamem")));
 
+static void* nosys[2];
+
+void register_syscall_helper(void** fns){
+	int i;
+	
+	nosys[0] = fns[0];
+	nosys[1] = fns[1]; 
+	for(i=0; i<532; i++){
+		syscall_table[i].fn = nosys[0];
+	}
+}
+
 unsigned char sva_register_syscall (unsigned int number, syscall_t syscall_fn){
 
-	syscall_table[number].nbr = number;
-	syscall_table[number].fn = syscall_fn;
+	if((syscall_table[number].fn == nosys[0]) || (syscall_table[number].fn == nosys[1])){
+		syscall_table[number].nbr = number;
+		syscall_table[number].fn = syscall_fn;
+	} else {
+		printf("syscall number not available :(\n");
+	}
 	return 0;
 }
 
