@@ -126,6 +126,7 @@ interrupt##x: \
 .data
 .comm interrupt_table, 2048
 .comm cache_part_enable_sva, 8
+.comm syscallnmbr, 8
 /*****************************************************************************
  * Text Section
  ****************************************************************************/
@@ -784,7 +785,8 @@ L22:
   pushq %rcx
   pushq %rbx
   pushq %rax
-
+  movq $0, syscallnmbr
+  movq  %rax, syscallnmbr
   pushq %rsi
   pushq %rdi
 
@@ -816,6 +818,7 @@ L22:
   cmpq $2, IC_RAX(%rsp)
   cmoveq %r13, %r12
   cmpq $66, IC_RAX(%rsp)
+  /*movq IC_RAX(%rsp), syscallnmbr*/
   cmoveq %r13, %r12
   cmpq $251, IC_RAX(%rsp)
   cmoveq %r13, %r12
@@ -943,7 +946,7 @@ L26:
   /*
    * Call the system software system call handler.
    */
-  callq sva_syscall
+  callq sva_syscall_wrapper
 sc_ret:
   RETTARGET
 

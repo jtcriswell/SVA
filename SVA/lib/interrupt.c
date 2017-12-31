@@ -32,7 +32,7 @@
 #define sva_safemem_exception   (27)
 
 extern void * interrupt_table[256];
-
+extern unsigned long syscallnmbr;
 
 
 /*
@@ -383,6 +383,11 @@ unsigned char sva_register_syscall (unsigned int number, syscall_t syscall_fn){
 	syscall_table[number].nbr = number;
 	syscall_table[number].fn = syscall_fn;
 	return 0;
+}
+
+void sva_syscall_wrapper(void){
+//printf("*************** in int %d\n", syscallnmbr);
+sva_syscall(0,0, syscall_table[syscallnmbr].fn);
 }
 
 #if 0
