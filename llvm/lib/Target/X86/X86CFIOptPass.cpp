@@ -696,25 +696,22 @@ void X86CFIOptPass::insertCheckRet(MachineBasicBlock& MBB,
     // 64-bit value and can't mask against a 64-bit immediate.  Note that we
     // need to use a shift:
     //
-    // movl $0xffffff80, %rdx
-    // shq $32, %rdx
+    // movl $0xffffff80, %rcx
+    // shq $32, %rcx
     //
-    // We use %rdx since it is not used for return values.
+    // We use %rcx since it is not used for return values.
     //
-    BuildMI(MBB,MI,dl,TII->get(X86::MOV32ri),X86::EDX).addImm(0xffffff80);
-    BuildMI(MBB,MI,dl,TII->get(X86::SHL64ri),X86::RDX).addReg(X86::RDX).addImm(32);
+    BuildMI(MBB,MI,dl,TII->get(X86::MOV32ri),X86::ECX).addImm(0xffffff80);
+    BuildMI(MBB,MI,dl,TII->get(X86::SHL64ri),X86::RCX).addReg(X86::RCX).addImm(32);
 
     //
     // Fetch the return address from the stack and OR it with the bitmask.  We
     // use %rcx because the callee does not need to preserve it for the caller:
     //
-    // movq (%rsp), %rcx,
-    // orq (%rsp), %rcx,
+    // orq (%rsp), %rcx
     //
-    BuildMI(MBB,MI,dl,TII->get(X86::MOV64rm), X86::RCX)
-    .addReg(X86::RSP).addImm(1).addReg(0).addImm(0).addReg(0);
-    BuildMI(MBB,MI,dl,TII->get(X86::OR64rr), X86::RCX)
-    .addReg(X86::RCX).addReg(X86::RDX);
+    BuildMI(MBB,MI,dl,TII->get(X86::OR64rm), X86::RCX)
+    .addReg(X86::RCX).addReg(X86::RSP).addImm(1).addReg(0).addImm(0).addReg(0);
 
     //
     // Adjust the stack pointer to remove the return address:
