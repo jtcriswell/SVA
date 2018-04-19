@@ -753,11 +753,24 @@ void X86CFIOptPass::insertCheckJmp64m(MachineBasicBlock& MBB, MachineInstr* MI,
     else
       abort();
 
+    //
+    // Save the register on the stack.
     // pushl %reg
+    //
     BuildMI (MBB,MI,dl,TII->get(X86::PUSH64r)).addReg(reg);
 
-    // MOV64rm  mem_loc, %reg
-    BuildMI(MBB,MI,dl,TII->get(X86::MOV64rm),reg)
+    //
+    // Load the bitmask into the register.
+    //
+    BuildMI(MBB,MI,dl,TII->get(X86::MOV32ri),reg).addImm(0x7fffff80);
+    BuildMI(MBB,MI,dl,TII->get(X86::SHL64ri),reg).addReg(reg).addImm(32);
+
+    //
+    // Use a bitwise OR to mask the target (stored in memory) with the mask and
+    // place the result into the register.
+    //
+    BuildMI(MBB,MI,dl,TII->get(X86::OR64rm),reg)
+      .addReg(reg)                         // target register operand
       .addReg(MI->getOperand(0).getReg())  // base
       .addImm(MI->getOperand(1).getImm())  // scale
       .addReg(MI->getOperand(2).getReg())  // index
