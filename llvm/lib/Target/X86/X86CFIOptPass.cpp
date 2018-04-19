@@ -250,9 +250,33 @@ void X86CFIOptPass::insertCheckCall64r(MachineBasicBlock& MBB, MachineInstr* MI,
   assert(MI->getOpcode() == X86::CALL64r && "opcode: CALL64r expected");
 
   //
-  // Add an instruction to perform the label check.
+  // Get the register operand that is holding the target of the call.
   //
   unsigned reg = MI->getOperand(0).getReg();
+
+  //
+  // Rotate the upper 32-bits to the lower 32-bits so that we can bit-mask
+  // using a constant 32-bit immediate operand.
+  //
+  BuildMI(MBB,MI,dl,TII->get(X86::ROR64ri),reg).addReg(reg).addImm(32);
+
+  //
+  // Mask the target to ensure that it points into the kernel code segment.
+  // This requires that we use a logical OR to set most of the bits and then
+  // a separate instruction to set the most significant bit.
+  //
+  BuildMI(MBB,MI,dl,TII->get(X86::OR64ri32),reg).addReg(reg).addImm(0x7fffff80);
+  BuildMI(MBB,MI,dl,TII->get(X86::BTS64ri8),reg).addImm(31);
+
+  //
+  // Rotate the pointer so that the higer-order word is back in the
+  // upper-level bits.
+  //
+  BuildMI(MBB,MI,dl,TII->get(X86::ROL64ri),reg).addReg(reg).addImm(32);
+
+  //
+  // Add an instruction to perform the label check.
+  //
   addCheckInstruction (MBB,MI,dl,TII, reg);
 
   // JNE_4 EMBB
