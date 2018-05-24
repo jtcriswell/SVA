@@ -32,7 +32,7 @@
 #define sva_safemem_exception   (27)
 
 extern void * interrupt_table[256];
-
+extern unsigned long syscallnmbr;
 
 
 /*
@@ -369,6 +369,41 @@ sva_register_interrupt (unsigned char number, interrupt_handler_t interrupt) {
 
   record_tsc(sva_register_interrupt_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return 0;
+}
+
+typedef struct {
+	unsigned int nbr;
+	syscall_t fn; 
+}syscall_str;
+
+static syscall_str syscall_table[532] __attribute__ ((section ("svamem")));
+
+static void* nosys[2];
+
+void register_syscall_helper(void** fns){
+	int i;
+	
+	nosys[0] = fns[0];
+	nosys[1] = fns[1]; 
+	for(i=0; i<532; i++){
+		syscall_table[i].fn = nosys[0];
+	}
+}
+
+unsigned char sva_register_syscall (unsigned int number, syscall_t syscall_fn){
+
+	if((syscall_table[number].fn == nosys[0]) || (syscall_table[number].fn == nosys[1])){
+		syscall_table[number].nbr = number;
+		syscall_table[number].fn = syscall_fn;
+	} else {
+		printf("syscall number not available :(\n");
+	}
+	return 0;
+}
+
+void sva_syscall_wrapper(void){
+//printf("*************** in int %d\n", syscallnmbr);
+sva_syscall(0,0, syscall_table[syscallnmbr].fn);
 }
 
 #if 0
