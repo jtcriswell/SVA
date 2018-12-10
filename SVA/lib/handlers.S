@@ -579,7 +579,7 @@ L14:
   movw IC_FS(%rsp), %ax
   movw IC_ES(%rsp), %bx
   movw IC_DS(%rsp), %cx
-  movw %ax, %fs
+  /* movw %ax, %fs */ /* Lele: don't set fs register here, use hypercall to SVA*/
   movw %bx, %es
   movw %cx, %ds
 
@@ -1021,7 +1021,7 @@ L18:
   movw IC_FS(%rsp), %cx
   movw IC_ES(%rsp), %bx
   movw IC_DS(%rsp), %ax
-  movw %cx, %fs
+  /*movw %cx, %fs  *//* this already done in sva_syscall*/
   movw %bx, %es
   movw %ax, %ds
 

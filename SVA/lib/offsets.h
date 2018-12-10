@@ -78,3 +78,10 @@
 #define INVOKE_MEMSET   2
 
 
+/* segment registers for TLS support
+ * refer: sys/amd64/include/specialreg.h
+*/
+#define	MSR_FSBASE	0xc0000100	/* base address of the %fs "segment" */
+#define	MSR_GSBASE	0xc0000101	/* base address of the %gs "segment" */
+#define	MSR_KGSBASE	0xc0000102	/* base address of the kernel %gs */
+
