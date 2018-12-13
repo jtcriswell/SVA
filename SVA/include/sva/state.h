@@ -23,6 +23,21 @@
 #include "sva/keys.h"
 
 
+// // from sys/amd64/include/specialreg.h
+#ifndef MSR_FSBASE
+#define	MSR_FSBASE	0xc0000100	/* base address of the %fs "segment" */
+#endif
+
+#ifndef MSR_GSBASE
+#define	MSR_GSBASE	0xc0000101	/* base address of the %gs "segment" */
+#endif 
+
+#ifndef MSR_KGSBASE
+#define	MSR_KGSBASE	0xc0000102	/* base address of the kernel %gs */
+#endif
+
+
+
 extern void usersva_to_kernel_pcid(void);
 extern void kernel_to_usersva_pcid(void);
 

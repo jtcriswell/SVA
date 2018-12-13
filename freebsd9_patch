@@ -1,5 +1,5 @@
 diff --git a/lib/libc/stdlib/malloc.c b/lib/libc/stdlib/malloc.c
-index fb634f80..31eed581 100644
+index fb634f80..47e9bea8 100644
 --- a/lib/libc/stdlib/malloc.c
 +++ b/lib/libc/stdlib/malloc.c
 @@ -155,7 +155,10 @@
@@ -90,7 +90,7 @@ index fb634f80..31eed581 100644
   */
 +
 +/* SVA: No TLS support for now */
-+#define NO_TLS
++//#define NO_TLS
 +
  #ifdef __i386__
  #  define LG_QUANTUM		4
@@ -674,7 +674,7 @@ index 0706fa61..e84c5ad0 100644
  	jmp	0b
  
 diff --git a/sys/amd64/amd64/machdep.c b/sys/amd64/amd64/machdep.c
-index 0890c1b0..52bcfb26 100644
+index 0890c1b0..6a01502a 100644
 --- a/sys/amd64/amd64/machdep.c
 +++ b/sys/amd64/amd64/machdep.c
 @@ -55,6 +55,7 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/amd64/amd64/machdep.c 225617 2011-09-16 13
@@ -700,15 +700,22 @@ index 0890c1b0..52bcfb26 100644
  /* Sanity check for __curthread() */
  CTASSERT(offsetof(struct pcpu, pc_curthread) == 0);
  
-@@ -334,6 +343,7 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
+@@ -334,20 +343,28 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
  	sf.sf_uc.uc_stack = td->td_sigstk;
  	sf.sf_uc.uc_stack.ss_flags = (td->td_pflags & TDP_ALTSTACK)
  	    ? ((oonstack) ? SS_ONSTACK : 0) : SS_DISABLE;
++
++	sf.sf_uc.uc_mcontext.mc_fsbase = pcb->pcb_fsbase;	/* fsbase */
++
 +#if 0
  	sf.sf_uc.uc_mcontext.mc_onstack = (oonstack) ? 1 : 0;
  	bcopy(regs, &sf.sf_uc.uc_mcontext.mc_rdi, sizeof(*regs));
  	sf.sf_uc.uc_mcontext.mc_len = sizeof(sf.sf_uc.uc_mcontext); /* magic */
-@@ -344,10 +354,14 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
+ 	get_fpcontext(td, &sf.sf_uc.uc_mcontext);
+ 	fpstate_drop(td);
+-	sf.sf_uc.uc_mcontext.mc_fsbase = pcb->pcb_fsbase;
++	sf.sf_uc.uc_mcontext.mc_fsbase = pcb->pcb_fsbase;	/* fsbase */
+ 	sf.sf_uc.uc_mcontext.mc_gsbase = pcb->pcb_gsbase;
  	bzero(sf.sf_uc.uc_mcontext.mc_spare,
  	    sizeof(sf.sf_uc.uc_mcontext.mc_spare));
  	bzero(sf.sf_uc.__spare__, sizeof(sf.sf_uc.__spare__));
@@ -723,7 +730,7 @@ index 0890c1b0..52bcfb26 100644
  		sp = td->td_sigstk.ss_sp +
  		    td->td_sigstk.ss_size - sizeof(struct sigframe);
  #if defined(COMPAT_43)
-@@ -363,27 +377,69 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
+@@ -363,27 +380,69 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
  		sig = p->p_sysent->sv_sigtbl[_SIG_IDX(sig)];
  
  	/* Build the argument list for the signal handler. */
@@ -793,17 +800,22 @@ index 0890c1b0..52bcfb26 100644
  	/*
  	 * Copy the sigframe out to the user's stack.
  	 */
-@@ -394,7 +450,9 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
+@@ -394,7 +453,14 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
  		PROC_LOCK(p);
  		sigexit(td, SIGILL);
  	}
 +#endif
  
++	regs->tf_cs = _ucodesel;		/* this would affect tls */
++	regs->tf_fs = _ufssel;			/* this would affect tls */
++	regs->tf_flags = TF_HASSEGS;
++	set_pcb_flags(pcb, PCB_FULL_IRET); /* this would affect tls */
++
 +#if 0
  	regs->tf_rsp = (long)sfp;
  	regs->tf_rip = p->p_sysent->sv_sigcode_base;
  	regs->tf_rflags &= ~(PSL_T | PSL_D);
-@@ -405,6 +463,7 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
+@@ -405,6 +471,7 @@ sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask)
  	regs->tf_gs = _ugssel;
  	regs->tf_flags = TF_HASSEGS;
  	set_pcb_flags(pcb, PCB_FULL_IRET);
@@ -811,7 +823,7 @@ index 0890c1b0..52bcfb26 100644
  	PROC_LOCK(p);
  	mtx_lock(&psp->ps_mtx);
  }
-@@ -436,8 +495,14 @@ sys_sigreturn(td, uap)
+@@ -436,8 +503,17 @@ sys_sigreturn(td, uap)
  	int cs, error, ret;
  	ksiginfo_t ksi;
  
@@ -823,22 +835,51 @@ index 0890c1b0..52bcfb26 100644
  	pcb = td->td_pcb;
  	p = td->td_proc;
 +#endif
++
++	pcb = td->td_pcb;		/** to recover fsbase related operations */
++	p = td->td_proc;
  
  	error = copyin(uap->sigcntxp, &uc, sizeof(uc));
  	if (error != 0) {
-@@ -446,6 +511,7 @@ sys_sigreturn(td, uap)
+@@ -446,13 +522,17 @@ sys_sigreturn(td, uap)
  		return (error);
  	}
  	ucp = &uc;
+-	if ((ucp->uc_mcontext.mc_flags & ~_MC_FLAG_MASK) != 0) {
++
++	regs = td->td_frame;						/**for fsbase **/
++
 +#if 0
- 	if ((ucp->uc_mcontext.mc_flags & ~_MC_FLAG_MASK) != 0) {
++	if ((ucp->uc_mcontext.mc_flags & ~_MC_FLAG_MASK) != 0) {		/**  for fsbase **/
  		uprintf("pid %d (%s): sigreturn mc_flags %x\n", p->p_pid,
  		    td->td_name, ucp->uc_mcontext.mc_flags);
-@@ -506,9 +572,17 @@ sys_sigreturn(td, uap)
+ 		return (EINVAL);
+ 	}
+-	regs = td->td_frame;
+-	rflags = ucp->uc_mcontext.mc_rflags;
++	regs = td->td_frame;						/**for fsbase **/
++	rflags = ucp->uc_mcontext.mc_rflags;		/** for fsbase **/
+ 	/*
+ 	 * Don't allow users to change privileged or reserved flags.
+ 	 */
+@@ -496,8 +576,8 @@ sys_sigreturn(td, uap)
+ 		    p->p_pid, td->td_name, ret);
+ 		return (ret);
+ 	}
+-	bcopy(&ucp->uc_mcontext.mc_rdi, regs, sizeof(*regs));
+-	pcb->pcb_fsbase = ucp->uc_mcontext.mc_fsbase;
++	bcopy(&ucp->uc_mcontext.mc_rdi, regs, sizeof(*regs));	/* for fsbase */
++	pcb->pcb_fsbase = ucp->uc_mcontext.mc_fsbase;			/* this fsbase related to TLS */
+ 	pcb->pcb_gsbase = ucp->uc_mcontext.mc_gsbase;
+ 
+ #if defined(COMPAT_43)
+@@ -506,9 +586,20 @@ sys_sigreturn(td, uap)
  	else
  		td->td_sigstk.ss_flags &= ~SS_ONSTACK;
  #endif
 +#endif
++
++	pcb->pcb_fsbase = ucp->uc_mcontext.mc_fsbase;			/* this fsbase related to TLS */
 +
 +#if 1
 +  /* Load the old interrupted state back on into the interrupt context. */
@@ -846,29 +887,54 @@ index 0890c1b0..52bcfb26 100644
 +#endif
  
  	kern_sigprocmask(td, SIG_SETMASK, &ucp->uc_sigmask, NULL, 0);
+-	set_pcb_flags(pcb, PCB_FULL_IRET);
 +#if 0
- 	set_pcb_flags(pcb, PCB_FULL_IRET);
++	set_pcb_flags(pcb, PCB_FULL_IRET); /* for fsbase */
 +#endif
++	set_pcb_flags(pcb, PCB_FULL_IRET); /* for fsbase */
  	return (EJUSTRETURN);
  }
  
-@@ -885,10 +959,13 @@ exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
+@@ -885,11 +976,25 @@ exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
  	else
  		mtx_unlock(&dt_lock);
  	
+-	pcb->pcb_fsbase = 0;
++	pcb->pcb_fsbase = 0;	/** fsbase **/
++
 +#if 0
- 	pcb->pcb_fsbase = 0;
  	pcb->pcb_gsbase = 0;
- 	clear_pcb_flags(pcb, PCB_32BIT | PCB_GS32BIT);
 +#endif
+ 	clear_pcb_flags(pcb, PCB_32BIT | PCB_GS32BIT);
++
  	pcb->pcb_initial_fpucw = __INITIAL_FPUCW__;
-+#if 0
++
++	/* re-enable fsbase related regs.*/
  	set_pcb_flags(pcb, PCB_FULL_IRET);
++	bzero((char *)regs, sizeof(struct trapframe));
++	regs->tf_rflags = PSL_USER | (regs->tf_rflags & PSL_T); /* TODO: fsbase related or not? */
++	regs->tf_cs = _ucodesel;		/** for fsbase SEL_RPL_MASK **/
++	regs->tf_fs = _ufssel;			/** fsbase **/
++	regs->tf_flags = TF_HASSEGS; 	/** fsbase **/
++
++#if 0
++	set_pcb_flags(pcb, PCB_FULL_IRET); /* fsbase */
  
  	bzero((char *)regs, sizeof(struct trapframe));
-@@ -904,7 +981,15 @@ exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
+ 	regs->tf_rip = imgp->entry_addr;
+@@ -897,14 +1002,22 @@ exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
+ 	regs->tf_rdi = stack;		/* argv */
+ 	regs->tf_rflags = PSL_USER | (regs->tf_rflags & PSL_T);
+ 	regs->tf_ss = _udatasel;
+-	regs->tf_cs = _ucodesel;
++	regs->tf_cs = _ucodesel;	/** for fsbase **/
+ 	regs->tf_ds = _udatasel;
+ 	regs->tf_es = _udatasel;
+-	regs->tf_fs = _ufssel;
++	regs->tf_fs = _ufssel;		/** for fsbase **/
  	regs->tf_gs = _ugssel;
- 	regs->tf_flags = TF_HASSEGS;
+-	regs->tf_flags = TF_HASSEGS;
++	regs->tf_flags = TF_HASSEGS; /** for/** fsbase **/ fsbase **/
  	td->td_retval[1] = 0;
 +#else
 +#if 1
@@ -882,7 +948,7 @@ index 0890c1b0..52bcfb26 100644
  	/*
  	 * Reset the hardware debug registers if they were in use.
  	 * They won't have any meaning for the newly exec'd process.
-@@ -926,6 +1011,7 @@ exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
+@@ -926,6 +1039,7 @@ exec_setregs(struct thread *td, struct image_params *imgp, u_long stack)
  		}
  		clear_pcb_flags(pcb, PCB_DBREGS);
  	}
@@ -890,7 +956,7 @@ index 0890c1b0..52bcfb26 100644
  
  	/*
  	 * Drop the FP state if we hold it, so that the process gets a
-@@ -945,7 +1031,14 @@ cpu_setregs(void)
+@@ -945,7 +1059,14 @@ cpu_setregs(void)
  	 * BSP.  See the comments there about why we set them.
  	 */
  	cr0 |= CR0_MP | CR0_NE | CR0_TS | CR0_WP | CR0_AM;
@@ -906,7 +972,7 @@ index 0890c1b0..52bcfb26 100644
  }
  
  /*
-@@ -1103,6 +1196,34 @@ setidt(idx, func, typ, dpl, ist)
+@@ -1103,6 +1224,34 @@ setidt(idx, func, typ, dpl, ist)
  {
  	struct gate_descriptor *ip;
  
@@ -941,7 +1007,7 @@ index 0890c1b0..52bcfb26 100644
  	ip = idt + idx;
  	ip->gd_looffset = (uintptr_t)func;
  	ip->gd_selector = GSEL(GCODE_SEL, SEL_KPL);
-@@ -1409,7 +1530,7 @@ getmemsize(caddr_t kmdp, u_int64_t first)
+@@ -1409,7 +1558,7 @@ getmemsize(caddr_t kmdp, u_int64_t first)
  	if (getenv_quad("dcons.addr", &dcons_addr) == 0 ||
  	    getenv_quad("dcons.size", &dcons_size) == 0)
  		dcons_addr = 0;
@@ -950,7 +1016,7 @@ index 0890c1b0..52bcfb26 100644
  	/*
  	 * physmap is in bytes, so when converting to page boundaries,
  	 * round up the start address and round down the end address.
-@@ -1446,7 +1567,13 @@ getmemsize(caddr_t kmdp, u_int64_t first)
+@@ -1446,7 +1595,13 @@ getmemsize(caddr_t kmdp, u_int64_t first)
  			/*
  			 * map page into kernel: valid, read/write,non-cacheable
  			 */
@@ -964,7 +1030,7 @@ index 0890c1b0..52bcfb26 100644
  			invltlb();
  
  			tmp = *(int *)ptr;
-@@ -1528,7 +1655,14 @@ do_next:
+@@ -1528,7 +1683,14 @@ do_next:
  				break;
  		}
  	}
@@ -979,7 +1045,7 @@ index 0890c1b0..52bcfb26 100644
  	invltlb();
  
  	/*
-@@ -1553,6 +1687,19 @@ do_next:
+@@ -1553,6 +1715,19 @@ do_next:
  	msgbufp = (struct msgbuf *)PHYS_TO_DMAP(phys_avail[pa_indx]);
  }
  
@@ -999,7 +1065,7 @@ index 0890c1b0..52bcfb26 100644
  u_int64_t
  hammer_time(u_int64_t modulep, u_int64_t physfree)
  {
-@@ -1611,9 +1758,24 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
+@@ -1611,9 +1786,24 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
  
  	wrmsr(MSR_FSBASE, 0);		/* User value */
  	wrmsr(MSR_GSBASE, (u_int64_t)pc);
@@ -1024,7 +1090,7 @@ index 0890c1b0..52bcfb26 100644
  	dpcpu_init((void *)(physfree + KERNBASE), 0);
  	physfree += DPCPU_SIZE;
  	PCPU_SET(prvspace, pc);
-@@ -1638,35 +1800,79 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
+@@ -1638,35 +1828,79 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
  	mtx_init(&icu_lock, "icu", NULL, MTX_SPIN | MTX_NOWITNESS);
  	mtx_init(&dt_lock, "descriptor tables", NULL, MTX_DEF);
  
@@ -1105,7 +1171,7 @@ index 0890c1b0..52bcfb26 100644
  
  	/*
  	 * Initialize the i8254 before the console so that console
-@@ -1691,8 +1897,13 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
+@@ -1691,8 +1925,13 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
  	 * Point the ICU spurious interrupt vectors at the APIC spurious
  	 * interrupt handler.
  	 */
@@ -1119,7 +1185,7 @@ index 0890c1b0..52bcfb26 100644
  #endif
  #else
  #error "have you forgotten the isa device?";
-@@ -1738,8 +1949,16 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
+@@ -1738,8 +1977,16 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
  	/* Set up the fast syscall stuff */
  	msr = rdmsr(MSR_EFER) | EFER_SCE;
  	wrmsr(MSR_EFER, msr);
@@ -1136,7 +1202,7 @@ index 0890c1b0..52bcfb26 100644
  	msr = ((u_int64_t)GSEL(GCODE_SEL, SEL_KPL) << 32) |
  	      ((u_int64_t)GSEL(GUCODE32_SEL, SEL_UPL) << 48);
  	wrmsr(MSR_STAR, msr);
-@@ -1747,9 +1966,9 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
+@@ -1747,9 +1994,9 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
  
  	getmemsize(kmdp, physfree);
  	init_param2(physmem);
@@ -1148,7 +1214,7 @@ index 0890c1b0..52bcfb26 100644
  	msgbufinit(msgbufp, msgbufsize);
  	fpuinit();
  
-@@ -1770,6 +1989,9 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
+@@ -1770,6 +2017,9 @@ hammer_time(u_int64_t modulep, u_int64_t physfree)
  	thread0.td_pcb->pcb_cr3 = KPML4phys;
  	thread0.td_frame = &proc0_tf;
  
@@ -1158,10 +1224,91 @@ index 0890c1b0..52bcfb26 100644
          env = getenv("kernelname");
  	if (env != NULL)
  		strlcpy(kernelname, env, sizeof(kernelname));
-@@ -2397,6 +2619,254 @@ user_dbreg_trap(void)
+@@ -2397,6 +2647,342 @@ user_dbreg_trap(void)
          return 0;
  }
  
++/**
++* missing part 1 compared to cpu_switch.S.
++*/
++static inline void sva_missing_part1_set_pcb_flag(struct thread *old){
++
++	/* movq	TD_PCB(%rdi),%r8 
++	orl	$PCB_FULL_IRET,PCB_FLAGS(%r8)  //  : full iret is set to 1
++	*/
++	old->td_pcb->pcb_flags |= PCB_FULL_IRET;
++
++}
++
++
++/* loading the new thread: 
++* At this point, we've switched address spaces and are ready
++* to load up the rest of the next context.
++*/
++static inline void sva_missing_part2_load_new_thr(struct thread *new){
++
++	/* Skip loading user fsbase/gsbase for kthreads 
++	testl	$TDP_KTHREAD,TD_PFLAGS(%rsi)  /* src/sys/sys/proc.h:426:#define	TDP_KTHREAD	0x00200000 // This is an official kernel thread 
++	jnz	do_kthread
++	*/
++	if ((new->td_pflags & TDP_KTHREAD) == 0){
++		// loading user fsbase/gsbase for user threads
++        if (new->td_proc->p_md.md_ldt != 0 ){
++			// do_ldt
++			set_user_ldt(&new->td_proc->p_md);
++
++	    }else{
++			lldt(0);
++	    }
++
++	    /* Restore fs base in GDT  */
++
++		uint64_t fsbse64__ = new->td_pcb->pcb_fsbase; 
++		unsigned int fsbse_low_ = (unsigned int)new->td_pcb->pcb_fsbase; 
++		struct user_segment_descriptor * pc_fs32p__ = PCPU_GET(fs32p);
++
++		USD_SETBASE(pc_fs32p__, fsbse_low_);
++
++		uint64_t pc_fs32p_int64;
++		memcpy(&pc_fs32p_int64, pc_fs32p__, sizeof(struct user_segment_descriptor));
++
++	}
++	 /* do_kthread: */
++	 struct amd64tss *pc_tssp_rax__ = PCPU_GET(tssp);
++
++	 struct amd64tss *pcb_tssp_rdx__ = new->td_pcb->pcb_tssp;
++	 if ( pcb_tssp_rdx__ == 0){
++	 	pcb_tssp_rdx__ = PCPU_GET(commontssp);
++	 }
++
++	 if ( pc_tssp_rax__ != pcb_tssp_rdx__){
++	 	// do_tss
++
++	 	PCPU_SET(tssp, pcb_tssp_rdx__);
++
++	 	struct system_segment_descriptor *pc_tss_rax__ = PCPU_GET(tss);
++
++		pc_tss_rax__->sd_lobase = (u_long)pcb_tssp_rdx__ & 0xffffff;
++		pc_tss_rax__->sd_hibase = ((u_long)pcb_tssp_rdx__ >> 24) & 0xfffffffffful;
++		pc_tss_rax__->sd_type = SDT_SYSTSS;
++		pc_tss_rax__->sd_p = 1;
++		ltr(GSEL(GPROC0_SEL, SEL_KPL));
++
++	 }
++
++	 /* done_tss: */
++	 PCPU_SET(rsp0, new->td_pcb);
++	 PCPU_SET(curpcb, new->td_pcb);
++	 //new->td_pcb->pcb_tssp->tss_rsp0 = new->td_pcb; // spin lock too long/stuck here
++	 //pcb_tssp_rdx__->tss_rsp0 = new->td_pcb; // masked for geom trap 14 in kernel
++
++	 /**
++	  * DONE missing part 2.
++	  * The last statement movq %rsi,PCPU(CURTHREAD) is done in original SVA immediately after this function 
++	  */
++
++}
++
 +/*
 + * Function: cpu_switch_sva()
 + *
@@ -1193,6 +1340,9 @@ index 0890c1b0..52bcfb26 100644
 +   * Use SVA to context switch from the old thread to the new thread.
 +   */
 +  if (new->sva) {
++
++	sva_missing_part1_set_pcb_flag(old);
++
 +    /*
 +     * Mark that the old process is about to have SVA state saved for it.
 +     */
@@ -1254,6 +1404,8 @@ index 0890c1b0..52bcfb26 100644
 +    }
 +    printf ("SVA: SMP Swap End\n");
 +#endif
++
++	sva_missing_part2_load_new_thr(new);
 +
 +    /*
 +     * Update the FreeBSD per-cpu data structure to know which thread is
@@ -1379,6 +1531,8 @@ index 0890c1b0..52bcfb26 100644
 +    }
 +    printf ("SVA: SMP Swap End\n");
 +#endif
++
++	sva_missing_part2_load_new_thr(new);
 +
 +    /*
 +     * Update the FreeBSD per-cpu data structure to know which thread is
@@ -3637,7 +3791,7 @@ index 743a1200..519f6ec5 100644
  	 * XXX
  	 * While this is restricted to root, we should probably figure out
 diff --git a/sys/amd64/amd64/trap.c b/sys/amd64/amd64/trap.c
-index f3db837e..af0769c3 100644
+index f3db837e..852510f2 100644
 --- a/sys/amd64/amd64/trap.c
 +++ b/sys/amd64/amd64/trap.c
 @@ -123,6 +123,9 @@ extern void syscall(struct trapframe *frame);
@@ -3650,19 +3804,17 @@ index f3db837e..af0769c3 100644
  static void trap_fatal(struct trapframe *, vm_offset_t);
  
  #define MAX_TRAP_MSG		33
-@@ -164,28 +167,489 @@ static char *trap_msg[] = {
- };
- 
- #ifdef KDB
--static int kdb_on_nmi = 1;
--SYSCTL_INT(_machdep, OID_AUTO, kdb_on_nmi, CTLFLAG_RW,
--	&kdb_on_nmi, 0, "Go to KDB on NMI");
--TUNABLE_INT("machdep.kdb_on_nmi", &kdb_on_nmi);
-+static int kdb_on_nmi = 1;
-+SYSCTL_INT(_machdep, OID_AUTO, kdb_on_nmi, CTLFLAG_RW,
-+	&kdb_on_nmi, 0, "Go to KDB on NMI");
-+TUNABLE_INT("machdep.kdb_on_nmi", &kdb_on_nmi);
-+#endif
+@@ -169,23 +172,484 @@ SYSCTL_INT(_machdep, OID_AUTO, kdb_on_nmi, CTLFLAG_RW,
+ 	&kdb_on_nmi, 0, "Go to KDB on NMI");
+ TUNABLE_INT("machdep.kdb_on_nmi", &kdb_on_nmi);
+ #endif
+-static int panic_on_nmi = 1;
+-SYSCTL_INT(_machdep, OID_AUTO, panic_on_nmi, CTLFLAG_RW,
+-	&panic_on_nmi, 0, "Panic on NMI");
+-TUNABLE_INT("machdep.panic_on_nmi", &panic_on_nmi);
+-static int prot_fault_translation = 0;
+-SYSCTL_INT(_machdep, OID_AUTO, prot_fault_translation, CTLFLAG_RW,
+-	&prot_fault_translation, 0, "Select signal to deliver on protection fault");
 +static int panic_on_nmi = 1;
 +SYSCTL_INT(_machdep, OID_AUTO, panic_on_nmi, CTLFLAG_RW,
 +	&panic_on_nmi, 0, "Panic on NMI");
@@ -4088,14 +4240,7 @@ index f3db837e..af0769c3 100644
 +#ifdef KDB
 +			if (kdb_trap(type, 0, frame))
 +				goto out;
- #endif
--static int panic_on_nmi = 1;
--SYSCTL_INT(_machdep, OID_AUTO, panic_on_nmi, CTLFLAG_RW,
--	&panic_on_nmi, 0, "Panic on NMI");
--TUNABLE_INT("machdep.panic_on_nmi", &panic_on_nmi);
--static int prot_fault_translation = 0;
--SYSCTL_INT(_machdep, OID_AUTO, prot_fault_translation, CTLFLAG_RW,
--	&prot_fault_translation, 0, "Select signal to deliver on protection fault");
++#endif
 +			break;
  
 -/*
@@ -4488,7 +4633,7 @@ index f3db837e..af0769c3 100644
  static void
  trap_fatal(frame, eva)
  	struct trapframe *frame;
-@@ -911,6 +1638,83 @@ amd64_syscall(struct thread *td, int traced)
+@@ -911,6 +1638,167 @@ amd64_syscall(struct thread *td, int traced)
  	int error;
  	ksiginfo_t ksi;
  
@@ -4528,6 +4673,81 @@ index f3db837e..af0769c3 100644
 +	syscallret(td, error, &sa);
 +}
 +
++/**
++ * missing part syscall-04: doreti in exception.S
++*/
++
++static inline void sva_missing_full_restore_3f(struct thread *td){
++	if (td != curthread){
++		panic("Lele: td is expected to be curthread\n");
++	}
++
++	if (td->td_frame->tf_cs & 0xff & SEL_RPL_MASK){
++
++		/* doreti_ast: */
++		disable_intr();
++		while (td->td_flags & (TDF_ASTPENDING | TDF_NEEDRESCHED)){
++				// enable_intr();
++				ast (td->td_frame); // will enable intr in ast()
++				disable_intr();
++				// BUFFER_WRITE("done ast; now go back to check ast again\n");
++		}
++	}
++  	/* doreti_exit: */
++	/*
++		* Do not reload segment registers for kernel.
++		* Since we do not reload segments registers with sane
++		* values on kernel entry, descriptors referenced by
++		* segments registers might be not valid.  This is fatal
++		* for user mode, but is not a problem for the kernel.
++		*/
++	struct pcb *curpcb_ = PCPU_GET(curpcb);
++	
++	/* testb	$SEL_RPL_MASK,TF_CS(%rsp) 
++	   jz	ld_regs*/
++	if ((SEL_RPL_MASK & td->td_frame->tf_cs & 0xff ) && 
++	/* testl	$PCB_FULL_IRET,PCB_FLAGS(%r8) 
++	   jz	ld_regs*/
++	// (td->td_pcb->pcb_flags & PCB_FULL_IRET & 0xffffffff)
++	(curpcb_->pcb_flags & PCB_FULL_IRET & 0xffffffff) ){  
++		/*
++		testl	$TF_HASSEGS,TF_FLAGS(%rsp)
++		je	set_segs
++		*/
++		if (!(td->td_frame->tf_flags & TF_HASSEGS)){
++			td->td_frame->tf_fs = GSEL(GUFS32_SEL, SEL_UPL);
++		}
++
++		/*
++		do_segs:
++			// Restore %fs and fsbase 
++			movw	TF_FS(%rsp),%ax
++			.globl	ld_fs
++		ld_fs:
++			movw	%ax,%fs
++			cmpw	$KUF32SEL,%ax
++			jne	1f
++			movl	$MSR_FSBASE,%ecx
++			movl	PCB_FSBASE(%r8),%eax
++			movl	PCB_FSBASE+4(%r8),%edx
++			.globl	ld_fsbase
++		ld_fsbase:
++			wrmsr
++		*/
++
++		load_fs(td->td_frame->tf_fs);
++
++      	if (td->td_frame->tf_fs == GSEL(GUFS32_SEL, SEL_UPL)){
++			wrmsr(MSR_FSBASE, curpcb_->pcb_fsbase);
++		}
++
++	}else{
++		  // ld_regs
++		  /* Those should be already done in SVA */
++	}
++
++}
++
 +#if 1
 +/*
 + *	syscall -	system call request C handler
@@ -4554,6 +4774,9 @@ index f3db837e..af0769c3 100644
 +  td = curthread;
 +  traced = 0;
 +
++  /* missing part syscall-01: reset td_pcb->pcb_flags */
++  td->td_pcb->pcb_flags &= (~PCB_FULL_IRET & 0xffffffff);
++  
 +  /*
 +   * Install a trap frame into the thread structure.
 +   */
@@ -4565,6 +4788,12 @@ index f3db837e..af0769c3 100644
 +	 */
 +	extern void sva_syscall_trapframe (struct trapframe * tf);
 +	sva_syscall_trapframe (&localframe);
++
++	/* Lele: missing part 02: 
++		movl	$TF_HASSEGS,TF_FLAGS(%rsp)
++	*/
++	td->td_frame->tf_flags &= TF_HASSEGS;
++
 +#if 0
 +  traced = localframe.tf_rflags & PSL_T;
 +#endif
@@ -4572,20 +4801,62 @@ index f3db837e..af0769c3 100644
  #ifdef DIAGNOSTIC
  	if (ISPL(td->td_frame->tf_cs) != SEL_UPL) {
  		panic("syscall");
-@@ -939,4 +1743,11 @@ amd64_syscall(struct thread *td, int traced)
+@@ -939,4 +1827,53 @@ amd64_syscall(struct thread *td, int traced)
  	     syscallname(td->td_proc, sa.code)));
  
  	syscallret(td, error, &sa);
 +
++  /**
++   * missing part 03
++   1:	movq	PCPU(CURPCB),%rax
++	// Disable interrupts before testing PCB_FULL_IRET. 
++    cli
++	testl	$PCB_FULL_IRET,PCB_FLAGS(%rax)
++	jnz	3f
++	// Check for and handle AST's on return to userland. 
++	movq	PCPU(CURTHREAD),%rax
++	testl	$TDF_ASTPENDING | TDF_NEEDRESCHED,TD_FLAGS(%rax)
++	jne	2f
++	// Restore preserved registers. 
++	MEXITCOUNT
++
++  */
++begin_1f:
++	
++	disable_intr();
++
++	if(td->td_pcb->pcb_flags & PCB_FULL_IRET) {
++	goto full_restore_reti_3f;  // 3f
++	}else{
++	//handle ast 
++	goto ast_2f;
++	}
++
++ast_2f:
++
 +#if 1
 +  /* SVA: The SVA assembly code does not run the AST */
-+  if (curthread->td_flags & (TDF_ASTPENDING | TDF_NEEDRESCHED))
++  if (curthread->td_flags & (TDF_ASTPENDING | TDF_NEEDRESCHED)){
++	enable_intr();
 +    ast (&localframe);
++	goto begin_1f;
++  }else{
++	 //no full iret, no ast, now exit
++	  goto out__;
++  }
 +#endif
++
++full_restore_reti_3f:
++
++	sva_missing_full_restore_3f(td);
++	
++out__:
++	enable_intr(); //just in case intr got masked in sva_missing_full_restore_3f
++
  }
 +#endif
 diff --git a/sys/amd64/amd64/vm_machdep.c b/sys/amd64/amd64/vm_machdep.c
-index c0be7202..10107ff7 100644
+index c0be7202..d844c736 100644
 --- a/sys/amd64/amd64/vm_machdep.c
 +++ b/sys/amd64/amd64/vm_machdep.c
 @@ -83,6 +83,10 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/amd64/amd64/vm_machdep.c 223758 2011-07-04
@@ -4599,10 +4870,79 @@ index c0be7202..10107ff7 100644
  static void	cpu_reset_real(void);
  #ifdef SMP
  static void	cpu_reset_proxy(void);
-@@ -90,6 +94,22 @@ static u_int	cpu_reset_proxyid;
+@@ -90,6 +94,96 @@ static u_int	cpu_reset_proxyid;
  static volatile u_int	cpu_reset_proxy_active;
  #endif
  
++/**
++ * missing part syscall-04: doreti
++*/
++static inline void sva_missing_thr_new_full_restore_3f(struct thread *td){
++  if (td != curthread){
++	  panic("Lele: td is expected to be curthread\n");
++  }
++
++  if (td->td_frame->tf_cs & 0xff & SEL_RPL_MASK){
++
++		/* doreti_ast: */
++		disable_intr();
++		while (td->td_flags & (TDF_ASTPENDING | TDF_NEEDRESCHED)){
++			ast (td->td_frame);
++			disable_intr();
++		}
++	}
++	/* doreti_exit: */
++	struct pcb *curpcb_ = PCPU_GET(curpcb);
++	
++	/* testb	$SEL_RPL_MASK,TF_CS(%rsp) 
++	   jz	ld_regs*/
++	if ((SEL_RPL_MASK & td->td_frame->tf_cs & 0xff ) && 
++	/* testl	$PCB_FULL_IRET,PCB_FLAGS(%r8) 
++	   jz	ld_regs*/
++	(td->td_pcb->pcb_flags & PCB_FULL_IRET & 0xffffffff) ){  
++		/*
++		testl	$TF_HASSEGS,TF_FLAGS(%rsp)
++		je	set_segs
++		*/
++		if (!(td->td_frame->tf_flags & TF_HASSEGS)){
++			/* set_segs: */
++		    // td->td_frame->tf_ds = GSEL(GUDATA_SEL, SEL_UPL);
++		    // td->td_frame->tf_es = GSEL(GUDATA_SEL, SEL_UPL);
++			td->td_frame->tf_fs = GSEL(GUFS32_SEL, SEL_UPL);
++			// td->td_frame->tf_gs = GSEL(GUGS32_SEL, SEL_UPL);
++		}
++
++		/*			
++		do_segs:
++			// Restore %fs and fsbase 
++			movw	TF_FS(%rsp),%ax
++			.globl	ld_fs
++		ld_fs:
++			movw	%ax,%fs
++			cmpw	$KUF32SEL,%ax
++			jne	1f
++			movl	$MSR_FSBASE,%ecx
++			movl	PCB_FSBASE(%r8),%eax
++			movl	PCB_FSBASE+4(%r8),%edx
++			.globl	ld_fsbase
++		ld_fsbase:
++			wrmsr
++		*/
++		load_fs(td->td_frame->tf_fs);
++	    if (td->td_frame->tf_fs == GSEL(GUFS32_SEL, SEL_UPL)){
++
++			wrmsr(MSR_FSBASE, td->td_pcb->pcb_fsbase);
++		
++		}
++		
++	}else{
++		  // ld_regs
++		  /* Those are done in SVA */
++	}
++
++}
++
++
 +#if 1
 +void
 +kernel_thread_trampoline (struct thread * td)
@@ -4611,6 +4951,11 @@ index c0be7202..10107ff7 100644
 +                        void *arg,
 +                        struct trapframe *frame);
 +
++#if defined (TLS_PATCH_THR_NEW) // Lele: disable this patch since multi-threading library is not supported yet
++
++	sva_missing_thr_new_full_restore_3f(td);
++
++#endif // TRACK_HELLO && TRACK_HELLLO_THR_NEW
 +  /*
 +   * Call the specified function.
 +   */
@@ -4622,7 +4967,7 @@ index c0be7202..10107ff7 100644
  /*
   * Finish a fork operation, with process p2 nearly set up.
   * Copy and update the pcb, set up the stack so that the child
-@@ -216,6 +236,27 @@ cpu_fork(td1, p2, td2, flags)
+@@ -216,6 +310,27 @@ cpu_fork(td1, p2, td2, flags)
  		mdp2->md_ldt = NULL;
  	mtx_unlock(&dt_lock);
  
@@ -4650,7 +4995,7 @@ index c0be7202..10107ff7 100644
  	/*
  	 * Now, cpu_switch() can schedule the new process.
  	 * pcb_rsp is loaded pointing to the cpu_switch() stack frame
-@@ -245,6 +286,10 @@ cpu_set_fork_handler(td, func, arg)
+@@ -245,6 +360,10 @@ cpu_set_fork_handler(td, func, arg)
  	 */
  	td->td_pcb->pcb_r12 = (long) func;	/* function */
  	td->td_pcb->pcb_rbx = (long) arg;	/* first arg */
@@ -4661,7 +5006,7 @@ index c0be7202..10107ff7 100644
  }
  
  void
-@@ -259,6 +304,13 @@ cpu_exit(struct thread *td)
+@@ -259,6 +378,13 @@ cpu_exit(struct thread *td)
  		user_ldt_free(td);
  	else
  		mtx_unlock(&dt_lock);
@@ -4675,7 +5020,7 @@ index c0be7202..10107ff7 100644
  }
  
  void
-@@ -327,12 +379,15 @@ cpu_thread_free(struct thread *td)
+@@ -327,12 +453,15 @@ cpu_thread_free(struct thread *td)
  void
  cpu_set_syscall_retval(struct thread *td, int error)
  {
@@ -4692,7 +5037,7 @@ index c0be7202..10107ff7 100644
  		break;
  
  	case ERESTART:
-@@ -345,8 +400,13 @@ cpu_set_syscall_retval(struct thread *td, int error)
+@@ -345,8 +474,13 @@ cpu_set_syscall_retval(struct thread *td, int error)
  		 * %r10 restore is only required for freebsd/amd64 processes,
  		 * but shall be innocent for any ia32 ABI.
  		 */
@@ -4706,7 +5051,7 @@ index c0be7202..10107ff7 100644
  		break;
  
  	case EJUSTRETURN:
-@@ -359,8 +419,12 @@ cpu_set_syscall_retval(struct thread *td, int error)
+@@ -359,8 +493,12 @@ cpu_set_syscall_retval(struct thread *td, int error)
  			else
  				error = td->td_proc->p_sysent->sv_errtbl[error];
  		}
@@ -4719,7 +5064,7 @@ index c0be7202..10107ff7 100644
  		break;
  	}
  }
-@@ -424,7 +488,108 @@ cpu_set_upcall(struct thread *td, struct thread *td0)
+@@ -424,7 +562,121 @@ cpu_set_upcall(struct thread *td, struct thread *td0)
  	/* Setup to release spin count in fork_exit(). */
  	td->td_md.md_spinlock_count = 1;
  	td->td_md.md_saved_flags = PSL_KERNEL | PSL_I;
@@ -4733,6 +5078,19 @@ index c0be7202..10107ff7 100644
 +  td->sva = 1;
 +  td->callout = fork_return;
 +  td->callarg = td;
++
++  /* Lele: this will affect how thr_new behaves. Original kernel
++	set fork_trampoline as starting address for new thread upon scheduled. It calls fork_exit and then doreti for syscall return.
++
++	However, the sva_init_stack would make the starting address of new thread
++	as kernel_thread_trampoline, and use 'sc_ret' for syscall return.
++
++	However, 'sc_ret' has missing part compared to doreti in terms of FSBASE restore for CPU. Therefore, we need either: 
++		1) update sc_ret to support FSBASE restore by adding fsbase to integer state.
++	or
++		2) hacking kernel_thread_trampoline. as shown above in sva_missing_thr_new_full_restore_3f
++
++   */
 +  td->svaID = sva_init_stack (td->td_kstack,
 +	                            stacklen,
 +	                            kernel_thread_trampoline,
