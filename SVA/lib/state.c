@@ -441,6 +441,11 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
   struct SVAThread * oldThread = cpup->currentThread;
   sva_integer_state_t * old = &(oldThread->integerState);
 
+  /* setup iret flag so that the old thread will have 
+   * its segmentations restored when it is scheduled back.
+   */
+  old->state_flags |= STATE_FULL_IRET;
+
   /* Get a pointer to the saved state (the ID is the pointer) */
   struct SVAThread * newThread = validateThreadPointer(newint);
   if (! newThread) {
@@ -931,6 +936,12 @@ sva_save_icontext (void) {
    */
   unsigned char savedICIndex = ++(threadp->savedICIndex);
 
+  /**
+   * set full iret flag for fsbase restore
+  */
+   threadp->integerState.state_flags |= STATE_FULL_IRET;
+
+
   /*
    * Re-enable interrupts.
    */
@@ -1012,6 +1023,14 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
    */
   struct SVAThread * threadp = getCPUState()->currentThread;
   sva_icontext_t * ep = getCPUState()->newCurrentIC;
+
+  /**
+   * Reset the fsbase and iret flag for each newly forked process. 
+   * This is used to support the TLS.
+   * refer: exec_setregs in machdep.c
+  */
+  threadp->integerState.fsbase = 0;
+  threadp->integerState.state_flags |= STATE_FULL_IRET;
 
   /*
    * Check the memory.
@@ -1339,6 +1358,8 @@ sva_init_stack (unsigned char * start_stackp,
 #endif
   integerp->fpstate.present = 0;
 
+  // integerp->state_flags |= STATE_FULL_IRET; // this is not necessary when sva_init_fsbase() is called following this function
+
   /*
    * Initialize the interrupt context of the new thread.  Note that we use
    * the last IC.
@@ -1409,4 +1430,34 @@ sva_init_stack (unsigned char * start_stackp,
   record_tsc(sva_init_stack_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return (unsigned long) newThread;
 }
+
+
+/**
+ * Hack/Intrinsics: sva_init_fsbase()
+ * 
+ * Description:
+ * init fsbase for the thread.
+ * This is a hack to replace the portion of sysarch system call with the same functionality.
+ * 
+ * To meet the design of SVA, a hypercall should be implemented to initialize the fsbase and update fsbase in the GDT.
+ * 
+*/
+void sva_init_fsbase(uintptr_t svaID, uint64_t base)
+{
+  /* Pointer to the current CPU State */
+  struct CPUState * cpup = getCPUState();
+
+  /* Get a pointer to the saved state (the ID is the pointer) */
+  struct SVAThread * newThread = validateThreadPointer(svaID);
+  if (! newThread) {
+	 panic("sva_init_fsbase: Invalid new-thread pointer %p", (void *) svaID);
+	 return;
+  }
+  sva_integer_state_t * newIntState =  newThread ? &(newThread->integerState) : 0;
+
+  newIntState->fsbase = base;
+  newIntState->state_flags |= STATE_FULL_IRET;
+
+}
+
 
