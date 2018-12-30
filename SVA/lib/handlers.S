@@ -576,10 +576,10 @@ L14:
   /*
    * Copy the registers from the interrupt context back on to the processor.
    */
-  movw IC_FS(%rsp), %ax
+  /* movw IC_FS(%rsp), %ax */ 
   movw IC_ES(%rsp), %bx
   movw IC_DS(%rsp), %cx
-  movw %ax, %fs
+  /* movw %ax, %fs */ /* handled below instead, for TLS support in AMD64*/
   movw %bx, %es
   movw %cx, %ds
 
@@ -798,6 +798,13 @@ L22:
   /* Push a NULL invoke pointer into the Interrupt Context */
   pushq $0
 
+  /*
+   * clear IRET flag:  If returned from syscall with no context switch,
+   * Then we do not need to restore FSBASE MSR
+   */
+  movq %gs:0x260, %rbp
+  movq CPU_THREAD(%rbp), %rax
+  andl $~STATE_FULL_IRET, TD_INTSTATE+IS_STATE_FLAGS(%rax)
 
   /*
    * Mark the interrupt context as valid.  Additionally, set the fork bit
@@ -1018,12 +1025,18 @@ L18:
  /*
    * Copy the registers from the interrupt context back on to the processor.
    */
-  movw IC_FS(%rsp), %cx
+  /* movw IC_FS(%rsp), %cx */
   movw IC_ES(%rsp), %bx
   movw IC_DS(%rsp), %ax
-  movw %cx, %fs
+  /* movw %cx, %fs */ /* this will be done in full_iret instead */
   movw %bx, %es
   movw %ax, %ds
+
+  movq CPU_THREAD(%rbp), %rbx
+  testl	$STATE_FULL_IRET, TD_INTSTATE + IS_STATE_FLAGS(%rbx)
+	jnz	full_iret
+
+done_full_iret:
 
   movq IC_RDI(%rsp), %rdi
   movq IC_RSI(%rsp), %rsi
@@ -1088,6 +1101,37 @@ L23:
    */
   sysretq
 
+
+/* 
+ * full_iret: This is used to replace the kernel's function of restoring 
+ * FS/GS/DS/ES segmentations when PCB_FULL_IRET is set upon the syscall return.
+ * 
+ * Currently used to restore FSBASE only. GSBASE can also use this 
+ * routine if applications use different GS segments in the future. 
+ * This helps avoid overhead of restoring everytime upon sysret, 
+ * 
+ */
+full_iret:
+
+	/* Restore %fs and fsbase */
+  /* %rbx points to the thread structure which contains integer state structure
+   * %rsp points to the IC context to restore
+   */
+	movw	IC_FS(%rsp),%ax
+	movw	%ax,%fs
+
+  /* make sure fs is valid */ 
+	cmpw	$SVA_FS_SEL,%ax
+	jne	invalidIC /*lele: here fs in IC_FS should always be SVA_FS_SEL (0x13) */
+
+  /* write MSR for fsbase */
+	movl	$MSR_FSBASE,%ecx
+	movl	TD_INTSTATE + IS_FSBASE(%rbx),%eax
+	movl	TD_INTSTATE + IS_FSBASE + 4(%rbx),%edx
+	wrmsr
+
+  jmp done_full_iret
+ 
 /* Define the trap handlers */
 TRAP(0)
 TRAP(1)

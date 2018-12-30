@@ -23,6 +23,8 @@
 #include "sva/keys.h"
 
 
+#define SVA_FS_SEL 0x13
+
 extern void usersva_to_kernel_pcid(void);
 extern void kernel_to_usersva_pcid(void);
 
@@ -223,6 +225,17 @@ typedef struct {
 
   /* Pointer to invoke frame */
   struct invoke_frame * ifp;
+
+  /* FS segment base address, for TLS support in SVA
+   * as a replacement of pcb_fsbase in kernel amd64/include/pcb.h 
+   */
+  uint64_t fsbase;
+
+  /* PCB flags,  to replace pcb_flags ( PCB_FULL_IRET,etc.) in kernel amd64/include/pcb.h */
+  uint32_t state_flags;
+
+#define	STATE_FULL_IRET	0x01	/* indicating a iret with restore of FSBASE and other segmentations (yet to implement) to MSR */
+  
 } sva_integer_state_t;
 
 /* The maximum number of interrupt contexts per CPU */
@@ -425,6 +438,8 @@ extern uintptr_t sva_init_stack (unsigned char * sp,
 extern void sva_reinit_icontext (void *, unsigned char, uintptr_t, uintptr_t);
 
 extern void sva_release_stack (uintptr_t id);
+
+extern void sva_init_fsbase(uintptr_t svaID, uint64_t base);
 
 /*****************************************************************************
  * Individual State Components
