@@ -200,10 +200,10 @@ L20:
   /*
    * Switch to the stack segment.
    */
-  movq %rax, %gs:0x268
+  movq %rax, %gs:0x2f0
   movw $0x28, %ax
   movw %ax, %ss
-  movq %gs:0x268, %rax
+  movq %gs:0x2f0, %rax
 
   /*
    * Allocate space for the SVA Interrupt Context.  Note that the hardware
@@ -308,7 +308,7 @@ L10:
    *
    * Record that no floating point state is saved (it is saved lazily).
    */
-  movq %gs:0x260, %rbp
+  movq %gs:0x2e8, %rbp
   testq $1, CPU_FPUSED(%rbp)
   jne 1f
   movq %cr0, %rsi
@@ -498,7 +498,7 @@ L16:
   /*
    * Switch the stack pointer back to the interrupt context.
    */
-  movq %gs:0x260, %rbp
+  movq %gs:0x2e8, %rbp
   movq CPU_NEWIC(%rbp), %rsp
 
   /*
@@ -622,7 +622,7 @@ L14:
   movl $COS_MSR, %ecx
   movl $0, %edx
 
-  movq %gs:0x260, %rax              // Test whether secmemSize is 0; if yes, use kernel's LLC partition
+  movq %gs:0x2e8, %rax              // Test whether secmemSize is 0; if yes, use kernel's LLC partition
   movq CPU_THREAD(%rax), %rax
   movq 0x7d58(%rax), %rax
   testq %rax, %rax
@@ -728,14 +728,14 @@ L22:
   /*
    * Save the stack pointer (%rsp) and frame pointer (%rbp) of the application.
    */
-  movq %rsp, %gs:0x268
-  movq %rbp, %gs:0x270
+  movq %rsp, %gs:0x2f0
+  movq %rbp, %gs:0x2f8
 
   /*
    * Get the location of the Interrupt Context within the current thread and
    * make the stack pointer point to it.
    */
-  movq %gs:0x260, %rbp
+  movq %gs:0x2e8, %rbp
   movq CPU_TSSP(%rbp), %rbp
   movq TSS_IST3(%rbp), %rsp
   addq $0x10, %rsp
@@ -750,7 +750,7 @@ L22:
   pushq $0
 
   /* Push the user-space stack pointer (%rsp) */
-  pushq %gs:0x268
+  pushq %gs:0x2f0
 
   /* Push the user-space status flags */
   pushq %r11
@@ -770,7 +770,7 @@ L22:
   /*
    * Save a copy of the interrupt context into SVA memory.
    */
-  pushq %gs:0x270
+  pushq %gs:0x2f8
   pushq %r15
   pushq %r14
   pushq %r13
@@ -802,7 +802,7 @@ L22:
    * clear IRET flag:  If returned from syscall with no context switch,
    * Then we do not need to restore FSBASE MSR
    */
-  movq %gs:0x260, %rbp
+  movq %gs:0x2e8, %rbp
   movq CPU_THREAD(%rbp), %rax
   andl $~STATE_FULL_IRET, TD_INTSTATE+IS_STATE_FLAGS(%rax)
 
@@ -844,7 +844,7 @@ L22:
    *
    * Record that no floating point state is saved (it is saved lazily).
    */
-  movq %gs:0x260, %rbp
+  movq %gs:0x2e8, %rbp
   testq $1, CPU_FPUSED(%rbp)
   jne 1f
   movq %cr0, %rsi
@@ -1002,7 +1002,7 @@ L18:
   /*
    * Switch the stack pointer back to the interrupt context.
    */
-  movq %gs:0x260, %rbp
+  movq %gs:0x2e8, %rbp
   movq CPU_NEWIC(%rbp), %rsp
 
   /*
@@ -1068,7 +1068,7 @@ done_full_iret:
   movl $COS_MSR, %ecx
   movl $0, %edx
 
-  movq %gs:0x260, %rax              // Test whether secmemSize is 0; if yes, use kernel's LLC partition
+  movq %gs:0x2e8, %rax              // Test whether secmemSize is 0; if yes, use kernel's LLC partition
   movq CPU_THREAD(%rax), %rax
   movq 0x7d58(%rax), %rax 
   testq %rax, %rax
@@ -1106,8 +1106,7 @@ L23:
  * full_iret: This is used to replace the kernel's function of restoring 
  * FS/GS/DS/ES segmentations when PCB_FULL_IRET is set upon the syscall return.
  * 
- * Currently used to restore FSBASE only. GSBASE can also use this 
- * routine if applications use different GS segments in the future. 
+ * Currently used to restore FSBASE only. In the future, GSBASE can also use this routine. 
  * This helps avoid overhead of restoring everytime upon sysret, 
  * 
  */
