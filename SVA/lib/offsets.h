@@ -75,12 +75,9 @@
 /* Offsets into the SVAThread and sva_integer_state_t structures */
 #define TD_INTSTATE    0x7a40 // __offsetof(struct SVAThread, integerState)
 #define IS_FSBASE      0x308 // __offsetof(sva_integer_state_t , fsbase)
-#define IS_STATE_FLAGS 0x310 // __offsetof(sva_integer_state_t , state_flags)
 
-#ifndef STATE_FULL_IRET
-#define	STATE_FULL_IRET	0x01
-#endif
-
+/* The 3rd lowest bit in IC->valid (the flag for a full iret) */
+#define IC_FULL_IRET 0x4 
 
 /* Types of Invoke Frames */
 #define INVOKE_NORMAL   0

@@ -73,6 +73,8 @@ struct invoke_frame {
 /* Constants for the different Interrupt Context flags in the valid field */
 static const unsigned long IC_is_valid = 0x00000001u;
 static const unsigned long IC_can_fork = 0x00000002u;
+/* 3rd bit as IC_FULL_IRET == 0x00000004u; it is defined as macro instead,
+ * since it is both used in C code and assembly code. */
 
 /*
  * Structure: icontext_t
@@ -226,16 +228,9 @@ typedef struct {
   /* Pointer to invoke frame */
   struct invoke_frame * ifp;
 
-  /* FS segment base address, for TLS support in SVA
-   * as a replacement of pcb_fsbase in kernel amd64/include/pcb.h 
-   */
+  /* FS segment base address, as TLS segment in x86_64 arch */
   uint64_t fsbase;
 
-  /* PCB flags,  to replace pcb_flags ( PCB_FULL_IRET,etc.) in kernel amd64/include/pcb.h */
-  uint32_t state_flags;
-
-#define	STATE_FULL_IRET	0x01	/* indicating a iret with restore of FSBASE and other segmentations (yet to implement) to MSR */
-  
 } sva_integer_state_t;
 
 /* The maximum number of interrupt contexts per CPU */
@@ -439,7 +434,7 @@ extern void sva_reinit_icontext (void *, unsigned char, uintptr_t, uintptr_t);
 
 extern void sva_release_stack (uintptr_t id);
 
-extern void sva_init_fsbase(uintptr_t svaID, uint64_t base);
+extern void sva_init_fsbase(uint64_t base);
 
 /*****************************************************************************
  * Individual State Components

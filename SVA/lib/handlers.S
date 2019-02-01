@@ -799,14 +799,6 @@ L22:
   pushq $0
 
   /*
-   * clear IRET flag:  If returned from syscall with no context switch,
-   * Then we do not need to restore FSBASE MSR
-   */
-  movq %gs:0x2e8, %rbp
-  movq CPU_THREAD(%rbp), %rax
-  andl $~STATE_FULL_IRET, TD_INTSTATE+IS_STATE_FLAGS(%rax)
-
-  /*
    * Mark the interrupt context as valid.  Additionally, set the fork bit
    * if this is the fork(), vfork(), rfork(), or pdfork() system calls.  The
    * system call number will be in %rax and can have the following values
@@ -829,6 +821,14 @@ L22:
   cmpq $518, IC_RAX(%rsp)
   cmoveq %r13, %r12
   movq %r12, IC_VALID(%rsp)
+
+  /* 
+   * Clear the IC_FULL_IRET (3rd lowest bit in IC->valid)
+   * When we return from syscall with no context switch, we do not need a 
+   * full iret (to restore FSBASE MSR)
+   */
+  andq $~IC_FULL_IRET, IC_VALID(%rsp)
+
 
 #ifdef MPX
   /* Reset the MPX bounds register for SFI checks */
@@ -1032,8 +1032,9 @@ L18:
   movw %bx, %es
   movw %ax, %ds
 
+  /* test whether we need a full iret to restore FSBASE MSR */
   movq CPU_THREAD(%rbp), %rbx
-  testl	$STATE_FULL_IRET, TD_INTSTATE + IS_STATE_FLAGS(%rbx)
+  testl	$IC_FULL_IRET, IC_VALID(%rsp)
 	jnz	full_iret
 
 done_full_iret:
@@ -1103,11 +1104,13 @@ L23:
 
 
 /* 
- * full_iret: This is used to replace the kernel's function of restoring 
- * FS/GS/DS/ES segmentations when PCB_FULL_IRET is set upon the syscall return.
+ * full_iret:
+ *   a full iret to restore segmentation base before returning to the user
+ * program. Currently used to restore FSBASE for TLS segment only. In the
+ * future, other GSBASE can also use this routine.
  * 
- * Currently used to restore FSBASE only. In the future, GSBASE can also use this routine. 
- * This helps avoid overhead of restoring everytime upon sysret, 
+ * Note: Since most of time full_iret will not be called, it is not inlined 
+ * with the caller routine for better cache locality.
  * 
  */
 full_iret:
