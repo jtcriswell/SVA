@@ -1,5 +1,5 @@
 diff --git a/lib/libc/stdlib/malloc.c b/lib/libc/stdlib/malloc.c
-index fb634f80..3f1c58df 100644
+index fb634f80..31eed581 100644
 --- a/lib/libc/stdlib/malloc.c
 +++ b/lib/libc/stdlib/malloc.c
 @@ -155,7 +155,10 @@
@@ -90,7 +90,7 @@ index fb634f80..3f1c58df 100644
   */
 +
 +/* SVA: No TLS support for now */
-+// #define NO_TLS
++#define NO_TLS
 +
  #ifdef __i386__
  #  define LG_QUANTUM		4
@@ -674,7 +674,7 @@ index 0706fa61..e84c5ad0 100644
  	jmp	0b
  
 diff --git a/sys/amd64/amd64/machdep.c b/sys/amd64/amd64/machdep.c
-index 0890c1b0..1fb3486b 100644
+index 0890c1b0..52bcfb26 100644
 --- a/sys/amd64/amd64/machdep.c
 +++ b/sys/amd64/amd64/machdep.c
 @@ -55,6 +55,7 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/amd64/amd64/machdep.c 225617 2011-09-16 13
@@ -1158,17 +1158,7 @@ index 0890c1b0..1fb3486b 100644
          env = getenv("kernelname");
  	if (env != NULL)
  		strlcpy(kernelname, env, sizeof(kernelname));
-@@ -2143,6 +2365,9 @@ set_mcontext(struct thread *td, const mcontext_t *mcp)
- 		pcb->pcb_gsbase = mcp->mc_gsbase;
- 	}
- 	set_pcb_flags(pcb, PCB_FULL_IRET);
-+
-+	/* update fsbase in SVA */
-+	sva_init_fsbase(td->svaID, pcb->pcb_fsbase); // never reached here yet.
- 	return (0);
- }
- 
-@@ -2397,6 +2622,259 @@ user_dbreg_trap(void)
+@@ -2397,6 +2619,254 @@ user_dbreg_trap(void)
          return 0;
  }
  
@@ -1269,10 +1259,7 @@ index 0890c1b0..1fb3486b 100644
 +     * Update the FreeBSD per-cpu data structure to know which thread is
 +     * running on this CPU.
 +     */
-+
-+    PCPU_SET(curpcb, new->td_pcb);
 +    PCPU_SET (curthread, new);
-+
 +
 +    /*
 +     * Swap to the new state.
@@ -1397,8 +1384,6 @@ index 0890c1b0..1fb3486b 100644
 +     * Update the FreeBSD per-cpu data structure to know which thread is
 +     * running on this CPU.
 +     */
-+
-+    PCPU_SET(curpcb, new->td_pcb);
 +    PCPU_SET (curthread, new);
 +
 +    /*
@@ -3639,25 +3624,10 @@ index 00000000..ed8ff1dc
 +  }
 +}
 diff --git a/sys/amd64/amd64/sys_machdep.c b/sys/amd64/amd64/sys_machdep.c
-index 743a1200..78428beb 100644
+index 743a1200..519f6ec5 100644
 --- a/sys/amd64/amd64/sys_machdep.c
 +++ b/sys/amd64/amd64/sys_machdep.c
-@@ -271,6 +271,14 @@ sysarch(td, uap)
- 				pcb->pcb_fsbase = a64base;
- 				set_pcb_flags(pcb, PCB_FULL_IRET);
- 				td->td_frame->tf_fs = _ufssel;
-+
-+				/* Setup fsbase in SVA. This is a hack since we should allow SVA
-+				 * to control the initialization of FS segmentation (for TLS support).
-+				 * For example, a better solution could be allow application/libc to 
-+				 * invoke a hypercall to setup its fsbase.
-+				 */
-+				sva_init_fsbase(td->svaID, a64base);
-+
- 			} else
- 				error = EINVAL;
- 		}
-@@ -318,6 +326,8 @@ amd64_set_ioperm(td, uap)
+@@ -318,6 +318,8 @@ amd64_set_ioperm(td, uap)
  	if (uap->start + uap->length > IOPAGES * PAGE_SIZE * NBBY)
  		return (EINVAL);
  
@@ -4615,7 +4585,7 @@ index f3db837e..af0769c3 100644
  }
 +#endif
 diff --git a/sys/amd64/amd64/vm_machdep.c b/sys/amd64/amd64/vm_machdep.c
-index c0be7202..8ded2e4f 100644
+index c0be7202..10107ff7 100644
 --- a/sys/amd64/amd64/vm_machdep.c
 +++ b/sys/amd64/amd64/vm_machdep.c
 @@ -83,6 +83,10 @@ __FBSDID("$FreeBSD: release/9.0.0/sys/amd64/amd64/vm_machdep.c 223758 2011-07-04
@@ -4652,7 +4622,7 @@ index c0be7202..8ded2e4f 100644
  /*
   * Finish a fork operation, with process p2 nearly set up.
   * Copy and update the pcb, set up the stack so that the child
-@@ -216,6 +236,33 @@ cpu_fork(td1, p2, td2, flags)
+@@ -216,6 +236,27 @@ cpu_fork(td1, p2, td2, flags)
  		mdp2->md_ldt = NULL;
  	mtx_unlock(&dt_lock);
  
@@ -4676,17 +4646,11 @@ index c0be7202..8ded2e4f 100644
 +	                             td2,
 +	                             0,
 +                               0);
-+
-+  /* Update fsbase in SVA -- TLS support */
-+  if (pcb2->pcb_fsbase != 0){
-+	sva_init_fsbase(td2->svaID, pcb2->pcb_fsbase);
-+  }
-+
 +#endif
  	/*
  	 * Now, cpu_switch() can schedule the new process.
  	 * pcb_rsp is loaded pointing to the cpu_switch() stack frame
-@@ -245,6 +292,10 @@ cpu_set_fork_handler(td, func, arg)
+@@ -245,6 +286,10 @@ cpu_set_fork_handler(td, func, arg)
  	 */
  	td->td_pcb->pcb_r12 = (long) func;	/* function */
  	td->td_pcb->pcb_rbx = (long) arg;	/* first arg */
@@ -4697,7 +4661,7 @@ index c0be7202..8ded2e4f 100644
  }
  
  void
-@@ -259,6 +310,13 @@ cpu_exit(struct thread *td)
+@@ -259,6 +304,13 @@ cpu_exit(struct thread *td)
  		user_ldt_free(td);
  	else
  		mtx_unlock(&dt_lock);
@@ -4711,7 +4675,7 @@ index c0be7202..8ded2e4f 100644
  }
  
  void
-@@ -327,12 +385,15 @@ cpu_thread_free(struct thread *td)
+@@ -327,12 +379,15 @@ cpu_thread_free(struct thread *td)
  void
  cpu_set_syscall_retval(struct thread *td, int error)
  {
@@ -4728,7 +4692,7 @@ index c0be7202..8ded2e4f 100644
  		break;
  
  	case ERESTART:
-@@ -345,8 +406,13 @@ cpu_set_syscall_retval(struct thread *td, int error)
+@@ -345,8 +400,13 @@ cpu_set_syscall_retval(struct thread *td, int error)
  		 * %r10 restore is only required for freebsd/amd64 processes,
  		 * but shall be innocent for any ia32 ABI.
  		 */
@@ -4742,7 +4706,7 @@ index c0be7202..8ded2e4f 100644
  		break;
  
  	case EJUSTRETURN:
-@@ -359,8 +425,12 @@ cpu_set_syscall_retval(struct thread *td, int error)
+@@ -359,8 +419,12 @@ cpu_set_syscall_retval(struct thread *td, int error)
  			else
  				error = td->td_proc->p_sysent->sv_errtbl[error];
  		}
@@ -4755,7 +4719,7 @@ index c0be7202..8ded2e4f 100644
  		break;
  	}
  }
-@@ -424,7 +494,120 @@ cpu_set_upcall(struct thread *td, struct thread *td0)
+@@ -424,7 +488,108 @@ cpu_set_upcall(struct thread *td, struct thread *td0)
  	/* Setup to release spin count in fork_exit(). */
  	td->td_md.md_spinlock_count = 1;
  	td->td_md.md_saved_flags = PSL_KERNEL | PSL_I;
@@ -4775,12 +4739,6 @@ index c0be7202..8ded2e4f 100644
 +                              td,
 +                              0,
 +	                            0);
-+
-+  /* Update fsbase in SVA -- TLS support */
-+  if (pcb2->pcb_fsbase != 0){
-+	sva_init_fsbase(td->svaID, pcb2->pcb_fsbase);
-+  }
-+
 +#endif
 +}
 +
@@ -4863,12 +4821,6 @@ index c0be7202..8ded2e4f 100644
 +                              td,
 +                              0,
 +	                            0);
-+
-+  /* Update fsbase in SVA -- TLS support */
-+  if (pcb2->pcb_fsbase != 0){
-+	sva_init_fsbase(td->svaID, pcb2->pcb_fsbase);
-+  }
-+
 +#endif
  }
 +#endif
@@ -4876,21 +4828,6 @@ index c0be7202..8ded2e4f 100644
  
  /*
   * Set that machine state for performing an upcall that has to
-@@ -506,6 +689,14 @@ cpu_set_user_tls(struct thread *td, void *tls_base)
- #endif
- 	pcb->pcb_fsbase = (register_t)tls_base;
- 	set_pcb_flags(pcb, PCB_FULL_IRET);
-+
-+	if (td->svaID){
-+		sva_init_fsbase(td->svaID, tls_base); // never reached here yet.
-+	}else{
-+		panic("%s[%d:%d] has no svaID, cannot init fsbase for thread\n", 
-+			td->td_proc->p_comm, td->td_proc->p_pid, td->td_tid);
-+	}
-+
- 	return (0);
- }
- 
 diff --git a/sys/amd64/conf/SVA b/sys/amd64/conf/SVA
 new file mode 100644
 index 00000000..aeb23998
