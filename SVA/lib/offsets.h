@@ -88,12 +88,15 @@
 
 
 
-/* segment registers for TLS support
- * refer: sys/amd64/include/specialreg.h
-*/
+/*
+ * Segment registers for TLS support.
+ *
+ * reference: sys/amd64/include/specialreg.h
+ */
 
 #ifndef SVA_FS_SEL
 #define SVA_FS_SEL 0x13
 #endif 
 
-#define	MSR_FSBASE	0xc0000100	/* base address of the %fs "segment" */
+/* Base address of the %fs segment */
+#define	MSR_FSBASE	0xc0000100	

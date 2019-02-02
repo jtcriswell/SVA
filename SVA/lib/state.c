@@ -443,8 +443,9 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
   struct SVAThread * oldThread = cpup->currentThread;
   sva_integer_state_t * old = &(oldThread->integerState);
 
-  /* setup iret flag so that the old thread will have 
-   * its segmentations restored when it is scheduled back.
+  /* 
+   * Setup iret flag so that the old thread will have its segmentations
+   * restored when it is scheduled back.
    */
   cpup->newCurrentIC->valid |= IC_FULL_IRET;
 
@@ -1021,9 +1022,10 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
   sva_icontext_t * ep = getCPUState()->newCurrentIC;
 
   /*
-   * Reset the fsbase and iret flag for each newly forked process.
+   * Reset the fsbase and iret flag for tge newly forked process.
    * This is used to support the TLS.
-   * refer: exec_setregs in machdep.c
+   * 
+   * Reference: exec_setregs in src/sys/amd64/amd64/machdep.c
   */
   threadp->integerState.fsbase = 0;
   ep->valid |= IC_FULL_IRET;
@@ -1354,7 +1356,7 @@ sva_init_stack (unsigned char * start_stackp,
 #endif
   integerp->fpstate.present = 0;
 
-  /* Copy the fsbase from parent thread, and set the flag for a full iret*/
+  /* Copy fsbase from parent thread */
   integerp->fsbase = oldThread->integerState.fsbase;
 
   /*
@@ -1440,8 +1442,11 @@ sva_init_stack (unsigned char * start_stackp,
  * Intrinsics: sva_init_fsbase()
  * 
  * Description:
- *   This is used to initialize the TLS segment (FSBASE as its base address) 
- * for the current thread. 
+ *   sva_init_fsbase() is used to initialize the TLS segment for current
+ * SVAThread. The base address of TLS segment is stored in integer state 
+ * struct of each thread. This value will be loaded into FSBASE MSR in CPU 
+ * to take effect. This usually happens before the return of a system call 
+ * and IC_FULL_IRET flag is set.
  * 
  * Input:
  *   base - base address of TLS (or FS) segment for the application.

@@ -1107,7 +1107,7 @@ L23:
  * full_iret:
  *   a full iret to restore segmentation base before returning to the user
  * program. Currently used to restore FSBASE for TLS segment only. In the
- * future, other GSBASE can also use this routine.
+ * future, other segments such as GSBASE can also use this routine.
  * 
  * Note: Since most of time full_iret will not be called, it is not inlined 
  * with the caller routine for better cache locality.
@@ -1115,22 +1115,22 @@ L23:
  */
 full_iret:
 
-	/* Restore %fs and fsbase */
+  /* Restore %fs and fsbase.
   /* %rbx points to the thread structure which contains integer state structure
    * %rsp points to the IC context to restore
    */
-	movw	IC_FS(%rsp),%ax
-	movw	%ax,%fs
+  movw	IC_FS(%rsp),%ax
+  movw	%ax,%fs
 
   /* make sure fs is valid */ 
-	cmpw	$SVA_FS_SEL,%ax
-	jne	invalidIC /*lele: here fs in IC_FS should always be SVA_FS_SEL (0x13) */
+  cmpw	$SVA_FS_SEL,%ax
+  jne	invalidIC /* Note: here fs in IC_FS should always be SVA_FS_SEL(0x13) */
 
-  /* write MSR for fsbase */
-	movl	$MSR_FSBASE,%ecx
-	movl	TD_INTSTATE + IS_FSBASE(%rbx),%eax
-	movl	TD_INTSTATE + IS_FSBASE + 4(%rbx),%edx
-	wrmsr
+  /* restore FSBASE MSR */
+  movl	$MSR_FSBASE,%ecx
+  movl	TD_INTSTATE + IS_FSBASE(%rbx),%eax
+  movl	TD_INTSTATE + IS_FSBASE + 4(%rbx),%edx
+  wrmsr
 
   jmp done_full_iret
  
