@@ -1116,7 +1116,7 @@ L23:
 full_iret:
 
   /* Restore %fs and fsbase.
-  /* %rbx points to the thread structure which contains integer state structure
+   * %rbx points to the thread structure which contains integer state structure
    * %rsp points to the IC context to restore
    */
   movw	IC_FS(%rsp),%ax
