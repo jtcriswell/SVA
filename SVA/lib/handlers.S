@@ -576,10 +576,8 @@ L14:
   /*
    * Copy the registers from the interrupt context back on to the processor.
    */
-  /* movw IC_FS(%rsp), %ax */ 
   movw IC_ES(%rsp), %bx
   movw IC_DS(%rsp), %cx
-  /* movw %ax, %fs */ /* handled below instead, for TLS support in AMD64*/
   movw %bx, %es
   movw %cx, %ds
 
@@ -1025,10 +1023,8 @@ L18:
  /*
    * Copy the registers from the interrupt context back on to the processor.
    */
-  /* movw IC_FS(%rsp), %cx */
   movw IC_ES(%rsp), %bx
   movw IC_DS(%rsp), %ax
-  /* movw %cx, %fs */ /* this will be done in full_iret instead */
   movw %bx, %es
   movw %ax, %ds
 
