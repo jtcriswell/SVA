@@ -214,6 +214,11 @@ sva_ipush_function5 (void *newf,
   ep->valid |= (IC_is_valid);
 
   /*
+   * Set a full return to restore the FSBASE upon return.
+   */
+  ep->valid |= IC_FULL_IRET;
+
+  /*
    * Re-enable interrupts.
    */
   sva_exit_critical (rflags);
@@ -862,6 +867,11 @@ sva_load_icontext (void) {
    */
   *icontextp = threadp->savedInterruptContexts[--(threadp->savedICIndex)];
 
+  if (icontextp->valid & IC_FULL_IRET){
+    // panic("%s:IC_FULL_IRET flag not set\n", __FUNCTION__);
+    icontextp->valid |= IC_FULL_IRET;
+  }
+
   /*
    * Re-enable interrupts.
    */
@@ -932,6 +942,12 @@ sva_save_icontext (void) {
    * Save the interrupt context.
    */
   threadp->savedInterruptContexts[threadp->savedICIndex] = *icontextp;
+
+  /*
+   * set the full iret flag to restore FSBASE to the CPU when the IC restored.
+   */
+  icontextp->valid |= IC_FULL_IRET;
+  threadp->savedInterruptContexts[threadp->savedICIndex].valid |= IC_FULL_IRET;
 
   /*
    * Increment the saved interrupt context index and save it in a local
