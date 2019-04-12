@@ -70,6 +70,15 @@
 #define TSS_RSP0 4
 #define TSS_IST3 52
 
+
+
+/* Offsets into the SVAThread and sva_integer_state_t structures */
+#define TD_INTSTATE    0x7a40 // __offsetof(struct SVAThread, integerState)
+#define IS_FSBASE      0x308 // __offsetof(sva_integer_state_t , fsbase)
+
+/* The 3rd lowest bit in IC->valid (the flag for a full iret) */
+#define IC_FULL_IRET 0x4 
+
 /* Types of Invoke Frames */
 #define INVOKE_NORMAL   0
 #define INVOKE_MEMCPY_W 1
@@ -78,3 +87,16 @@
 #define INVOKE_MEMSET   2
 
 
+
+/*
+ * Segment registers for TLS support.
+ *
+ * reference: sys/amd64/include/specialreg.h
+ */
+
+#ifndef SVA_FS_SEL
+#define SVA_FS_SEL 0x13
+#endif 
+
+/* Base address of the %fs segment */
+#define	MSR_FSBASE	0xc0000100	

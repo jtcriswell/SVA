@@ -27,6 +27,8 @@
 #include <sva/x86.h>
 #include "thread_stack.h"
 
+#include "offsets.h" // for IC_FULL_IRET
+
 /*****************************************************************************
  * Externally Visibile Utility Functions
  ****************************************************************************/
@@ -210,6 +212,11 @@ sva_ipush_function5 (void *newf,
    * invalidated it, an sva_ipush_function() makes it valid again.
    */
   ep->valid |= (IC_is_valid);
+
+  /*
+   * Set a full return to restore the FSBASE upon return.
+   */
+  ep->valid |= IC_FULL_IRET;
 
   /*
    * Re-enable interrupts.
@@ -440,6 +447,12 @@ sva_swap_integer (uintptr_t newint, uintptr_t * statep) {
    */
   struct SVAThread * oldThread = cpup->currentThread;
   sva_integer_state_t * old = &(oldThread->integerState);
+
+  /* 
+   * Setup iret flag so that the old thread will have its segmentations
+   * restored when it is scheduled back.
+   */
+  cpup->newCurrentIC->valid |= IC_FULL_IRET;
 
   /* Get a pointer to the saved state (the ID is the pointer) */
   struct SVAThread * newThread = validateThreadPointer(newint);
@@ -854,6 +867,11 @@ sva_load_icontext (void) {
    */
   *icontextp = threadp->savedInterruptContexts[--(threadp->savedICIndex)];
 
+  if (icontextp->valid & IC_FULL_IRET){
+    // panic("%s:IC_FULL_IRET flag not set\n", __FUNCTION__);
+    icontextp->valid |= IC_FULL_IRET;
+  }
+
   /*
    * Re-enable interrupts.
    */
@@ -924,6 +942,12 @@ sva_save_icontext (void) {
    * Save the interrupt context.
    */
   threadp->savedInterruptContexts[threadp->savedICIndex] = *icontextp;
+
+  /*
+   * set the full iret flag to restore FSBASE to the CPU when the IC restored.
+   */
+  icontextp->valid |= IC_FULL_IRET;
+  threadp->savedInterruptContexts[threadp->savedICIndex].valid |= IC_FULL_IRET;
 
   /*
    * Increment the saved interrupt context index and save it in a local
@@ -1012,6 +1036,15 @@ sva_reinit_icontext (void * handle, unsigned char priv, uintptr_t stackp, uintpt
    */
   struct SVAThread * threadp = getCPUState()->currentThread;
   sva_icontext_t * ep = getCPUState()->newCurrentIC;
+
+  /*
+   * Reset the fsbase and iret flag for tge newly forked process.
+   * This is used to support the TLS.
+   * 
+   * Reference: exec_setregs in src/sys/amd64/amd64/machdep.c
+  */
+  threadp->integerState.fsbase = 0;
+  ep->valid |= IC_FULL_IRET;
 
   /*
    * Check the memory.
@@ -1339,6 +1372,9 @@ sva_init_stack (unsigned char * start_stackp,
 #endif
   integerp->fpstate.present = 0;
 
+  /* Copy fsbase from parent thread */
+  integerp->fsbase = oldThread->integerState.fsbase;
+
   /*
    * Initialize the interrupt context of the new thread.  Note that we use
    * the last IC.
@@ -1350,6 +1386,13 @@ sva_init_stack (unsigned char * start_stackp,
    */
   icontextp = integerp->currentIC = newThread->interruptContexts + maxIC - 1;
   *icontextp = *(cpup->newCurrentIC);
+
+  /* 
+   * Set flag of full iret, so that the FSBASE could be restored to CPU when
+   * the thread returns from the interrupt.
+   */
+  icontextp->valid |= IC_FULL_IRET;
+
 #if 0
   printf("Before set the return value to zero, check rax, rax = 0x%lx\n",icontextp->rax);
 #endif  
@@ -1409,4 +1452,43 @@ sva_init_stack (unsigned char * start_stackp,
   record_tsc(sva_init_stack_api, ((uint64_t) sva_read_tsc() - tsc_tmp));
   return (unsigned long) newThread;
 }
+
+
+/**
+ * Intrinsics: sva_init_fsbase()
+ * 
+ * Description:
+ *   sva_init_fsbase() is used to initialize the TLS segment for current
+ * SVAThread. The base address of TLS segment is stored in integer state 
+ * struct of each thread. This value will be loaded into FSBASE MSR in CPU 
+ * to take effect. This usually happens before the return of a system call 
+ * and IC_FULL_IRET flag is set.
+ * 
+ * Input:
+ *   base - base address of TLS (or FS) segment for the application.
+ *
+ * Note: 
+ *   This is a hack which is called by sysarch system call from the kernel.
+ *   To meet the design of SVA, a hypercall should be implemented to initialize
+ *   the fsbase and this should be called by the application directly without
+ *   interleaving of the kernel.
+ * 
+*/
+void sva_init_fsbase(uint64_t base)
+{
+
+  
+  /* Pointer to the current CPU State */
+  struct CPUState * cpup = getCPUState();
+  struct SVAThread * curThread = cpup->currentThread;
+  sva_integer_state_t * newIntState =  &(curThread->integerState);
+
+  /* set the base address */
+  newIntState->fsbase = base;
+
+  /* set the flag to restore FSBASE before return to userland */
+  cpup->newCurrentIC->valid |= IC_FULL_IRET;
+
+}
+
 
